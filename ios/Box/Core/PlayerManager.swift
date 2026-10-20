@@ -84,6 +84,9 @@ final class PlayerManager: ObservableObject {
     /// Şarkılar arası yumuşak geçiş (saniye) ve ses efektleri.
     var crossfade: () -> Double = { 0 }
     var effects: () -> (EQPreset, Bool) = { (.flat, false) }
+    var visualizer: () -> Bool = { false }
+    /// Görselleştirici seviyeleri (bant başına 0...1).
+    private(set) var meter: TapContext?
     private var fadeInStarted: Date?
     @Published private(set) var radioLoading = false
 
@@ -723,10 +726,15 @@ final class PlayerManager: ObservableObject {
         player.replaceCurrentItem(with: item)
         isBuffering = streaming
         let (preset, normalize) = effects()
-        if preset != .flat || normalize {
+        let wantsMeter = visualizer()
+        meter = nil
+        if preset != .flat || normalize || wantsMeter {
             Task { @MainActor in
-                let mix = await AudioEffects.audioMix(for: item, preset: preset, normalize: normalize)
-                if self.player.currentItem === item { item.audioMix = mix }
+                guard let (mix, context) = await AudioEffects.audioMix(for: item, preset: preset, normalize: normalize, meter: wantsMeter) else { return }
+                if self.player.currentItem === item {
+                    item.audioMix = mix
+                    self.meter = wantsMeter ? context : nil
+                }
             }
         }
         fadeInStarted = crossfade() > 0 && record ? Date() : nil
