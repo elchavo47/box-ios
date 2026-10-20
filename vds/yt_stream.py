@@ -221,6 +221,9 @@ def stat(name: str, ok: bool, ms: float) -> None:
         s["err"] += 1
 
 
+SUPPORTED_HL = {"ar", "cs", "de", "en", "es", "fr", "hi", "it", "ja", "ko", "nl", "pt", "ru", "tr", "ur", "zh_CN", "zh_TW"}
+
+
 def ytm(language: str = "en"):
     """Her iş parçacığına bir YTMusic (requests oturumu iş parçacıkları arasında paylaşılmasın).
 
@@ -710,12 +713,14 @@ async def music_charts(country: str = "TR", exp: str = "", sig: str = ""):
 
 
 @app.get("/stream/music/moods")
-async def music_moods(exp: str = "", sig: str = ""):
-    """YouTube Music'in "Ruh hali ve türler" kategorileri (Türkçe adlarla)."""
+async def music_moods(hl: str = "tr", exp: str = "", sig: str = ""):
+    """YouTube Music'in "Ruh hali ve türler" kategorileri (uygulamanın dilinde; varsayılan Türkçe)."""
     check_music_signature(exp, sig)
+    if hl not in SUPPORTED_HL:
+        hl = "en"
 
     def run():
-        sections = ytm_call("get_mood_categories", languages=("tr", "en"))
+        sections = ytm_call("get_mood_categories", languages=(hl, "en") if hl != "en" else ("en",))
         out, seen = [], set()
         names = list(sections.keys())
         # İlk bölüm ("Senin için") hesaba özel; ruh hali ve türler sonra gelir.
@@ -728,7 +733,7 @@ async def music_moods(exp: str = "", sig: str = ""):
                     out.append({"key": c["params"], "title": title})
         return out[:24]
 
-    return {"ok": True, "results": await cached("moods", 24 * 3600, run)}
+    return {"ok": True, "results": await cached("moods:" + hl, 24 * 3600, run)}
 
 
 @app.get("/stream/music/mood")

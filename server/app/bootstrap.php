@@ -103,6 +103,8 @@ function jsonOut(mixed $data, int $code = 200): never {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
+    // Uygulama dilini gönderdiyse hata mesajı o dilde (panel Türkçe kalır).
+    if (is_array($data) && isset($data['error']) && is_string($data['error']) && function_exists('__t') && boxLang() !== 'tr') $data['error'] = __t($data['error']);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
@@ -269,6 +271,7 @@ require_once ROOT . '/app/box.php';
 require_once ROOT . '/app/apple.php';
 require_once ROOT . '/app/library.php';
 require_once ROOT . '/app/devices.php';
+require_once ROOT . '/app/i18n.php';
 
 if (PHP_SAPI !== 'cli') {
     $setup = setupState();

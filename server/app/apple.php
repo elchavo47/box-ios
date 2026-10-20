@@ -241,7 +241,14 @@ function boxPushSend(array $devices, string $title, string $body, array $data = 
 }
 
 /** Bir kullanıcının bütün cihazlarına bildirim (premium açıldı vb.). Hata uygulamayı durdurmaz. */
-function boxNotifyUser(int $userId, string $title, string $body, array $data = []): array {
+/**
+ * Tek kullanıcıya bildirim (ve bildirim kutusuna kayıt). $title ve $body Türkçe şablondur;
+ * kullanıcının son kullandığı dile çevrilir ({0}, {1} → $titleArgs / $bodyArgs).
+ */
+function boxNotifyUser(int $userId, string $title, string $body, array $data = [], array $titleArgs = [], array $bodyArgs = []): array {
+    $lang = function_exists('boxUserLang') ? boxUserLang($userId) : 'tr';
+    $title = function_exists('__t') ? __t($title, $titleArgs, $lang) : $title;
+    $body = function_exists('__t') ? __t($body, $bodyArgs, $lang) : $body;
     if (function_exists('boxInboxAdd')) boxInboxAdd($userId, 'user:' . $userId, $title, $body, isset($data['box']['open']) ? (string)$data['box']['open'] : null);
     try {
         $devices = q('SELECT * FROM push_devices WHERE user_id=?', [$userId])->fetchAll();
@@ -256,10 +263,10 @@ function boxNotifyUser(int $userId, string $title, string $body, array $data = [
 function boxPushAudience(string $target, ?int $userId = null): array {
     $prem = '(u.is_premium=1 AND (u.premium_until IS NULL OR u.premium_until>NOW()))';
     return match ($target) {
-        'premium' => q("SELECT d.* FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0 AND $prem")->fetchAll(),
-        'free' => q("SELECT d.* FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0 AND NOT $prem")->fetchAll(),
-        'user' => q('SELECT * FROM push_devices WHERE user_id=?', [(int)$userId])->fetchAll(),
-        default => q('SELECT d.* FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0')->fetchAll(),
+        'premium' => q("SELECT d.*, u.lang AS user_lang FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0 AND $prem")->fetchAll(),
+        'free' => q("SELECT d.*, u.lang AS user_lang FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0 AND NOT $prem")->fetchAll(),
+        'user' => q('SELECT d.*, u.lang AS user_lang FROM push_devices d JOIN users u ON u.id=d.user_id WHERE d.user_id=?', [(int)$userId])->fetchAll(),
+        default => q('SELECT d.*, u.lang AS user_lang FROM push_devices d JOIN users u ON u.id=d.user_id WHERE u.is_banned=0')->fetchAll(),
     };
 }
 
@@ -271,7 +278,7 @@ function boxNotifyExpiringPremiums(): int {
     foreach ($rows as $r) {
         q('UPDATE users SET expiry_notified_for=premium_until WHERE id=?', [(int)$r['id']]);
         $days = max(1, (int)ceil((strtotime((string)$r['premium_until']) - time()) / 86400));
-        $res = boxNotifyUser((int)$r['id'], 'Premium\'un bitmek üzere', "Premium üyeliğin $days gün içinde bitiyor. İndirdiğin şarkılar kitaplığında kalır.", ['box' => ['open' => 'account']]);
+        $res = boxNotifyUser((int)$r['id'], 'Premium\'un bitmek üzere', 'Premium üyeliğin {0} gün içinde bitiyor. İndirdiğin şarkılar kitaplığında kalır.', ['box' => ['open' => 'account']], [], [$days]);
         $n += $res['sent'];
     }
     return $n;

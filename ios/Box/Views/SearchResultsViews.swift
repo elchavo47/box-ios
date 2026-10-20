@@ -3,16 +3,19 @@ import SwiftUI
 // MARK: - Biçimlendirme
 
 enum MusicFormat {
-    /// "99M" / "1.2B" / "546K" / "99M plays" → "99 Mn", "1,2 Mr", "546 B".
+    /// YouTube Music'in İngilizce sayıları ("99M", "1.2B", "546K", "99M plays") → seçili dilde kısa sayı
+    /// (tr: "99 Mn", en: "99M", ja: "9900万").
     static func count(_ raw: String?) -> String? {
         guard var text = raw?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
         if let space = text.firstIndex(of: " ") { text = String(text[..<space]) }
-        let units: [Character: String] = ["K": "B", "M": L("Mn"), "B": L("Mr")]
-        if let last = text.last, let unit = units[last.uppercased().first ?? last] {
-            let number = String(text.dropLast()).replacingOccurrences(of: ".", with: ",")
-            return number.isEmpty ? nil : number + " " + unit
+        let multipliers: [Character: Double] = ["K": 1e3, "M": 1e6, "B": 1e9]
+        var factor = 1.0
+        if let last = text.uppercased().last, let m = multipliers[last] {
+            factor = m
+            text = String(text.dropLast())
         }
-        return text.allSatisfy({ $0.isNumber || $0 == "." || $0 == "," }) ? text.replacingOccurrences(of: ",", with: ".") : nil
+        guard let number = Double(text.replacingOccurrences(of: ",", with: ".")) else { return nil }
+        return (number * factor).formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(Lang.shared.locale))
     }
 
     static func albumType(_ raw: String?) -> String {
@@ -29,19 +32,19 @@ enum MusicFormat {
         case .song:
             parts.append(L("Şarkı"))
             if !inCard, let channel = item.channel, !channel.isEmpty { parts.append(channel) }
-            if let plays = count(item.views) { parts.append(plays + L(" kez dinlendi")) }
+            if let plays = count(item.views) { parts.append(L("{0} kez dinlendi", plays)) }
             else if inCard, let duration = item.duration, duration > 0 { parts.append(Formatters.time(Double(duration))) }
         case .video:
             parts.append(L("Video"))
             if let channel = item.channel, !channel.isEmpty { parts.append(channel) }
-            if let views = count(item.views) { parts.append(views + L(" görüntüleme")) }
+            if let views = count(item.views) { parts.append(L("{0} görüntüleme", views)) }
         case .album:
             parts.append(albumType(item.albumType))
             if let channel = item.channel, !channel.isEmpty { parts.append(channel) }
             if let year = item.year, !year.isEmpty { parts.append(year) }
         case .artist:
             parts.append(L("Sanatçı"))
-            if let subs = count(item.subscribers) { parts.append(subs + L(" dinleyici")) }
+            if let subs = count(item.subscribers) { parts.append(L("{0} dinleyici", subs)) }
         case .playlist:
             parts.append(L("Çalma listesi"))
             if let author = item.author, !author.isEmpty { parts.append(author) }

@@ -412,6 +412,12 @@ switch ($route) {
         $artists = array_filter(array_map('trim', explode('|', mb_substr((string)($_GET['artists'] ?? ''), 0, 300))));
         try { $sections = boxFeed(array_values($artists)); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
+        // Bölüm başlıkları uygulamanın dilinde (ruh hali başlıkları YouTube Music'ten o dilde gelir).
+        foreach ($sections as &$section) {
+            if (isset($section['title'])) $section['title'] = __t((string)$section['title']);
+            if (isset($section['subtitle'])) $section['subtitle'] = __t((string)$section['subtitle']);
+        }
+        unset($section);
         jsonOut(['ok' => true, 'sections' => $sections, 'genres' => boxMoods()]);
 
     case 'feed/genre':
@@ -422,7 +428,7 @@ switch ($route) {
         $genre = boxGenres()[$key] ?? null;
         if (!$genre && boxMusicEnabled() && preg_match('/^[A-Za-z0-9_%=-]{6,200}$/', $key)) {
             // YouTube Music ruh hali kategorisi: kategorinin listelerinden şarkılar.
-            $title = 'Ruh hali';
+            $title = __t('Ruh hali');
             foreach (boxMoods() as $m) if ($m['key'] === $key) { $title = $m['title']; break; }
             try { $data = boxMusic('/stream/music/mood', ['params' => $key], 43200); }
             catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => 'Bu kategori şu an açılamıyor.'], 502); }
@@ -433,7 +439,7 @@ switch ($route) {
         if (!$genre) jsonOut(['ok' => false, 'error' => 'Bilinmeyen tür.'], 404);
         try { $items = boxSearch($genre[1], true, 30, 43200); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
-        jsonOut(['ok' => true, 'title' => $genre[0], 'results' => $items]);
+        jsonOut(['ok' => true, 'title' => __t($genre[0]), 'results' => $items]);
 
     case 'radio':
         $u = boxApiUser();

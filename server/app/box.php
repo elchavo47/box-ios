@@ -93,7 +93,8 @@ function boxApiUser(): array {
         q('UPDATE tokens SET last_used_at=NOW() WHERE id=?', [(int)$u['token_id']]);
         boxTouchDevice((int)$u['token_id']);
         $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
-        q('UPDATE users SET last_seen_at=NOW(), app_version=COALESCE(NULLIF(?,\'\'),app_version) WHERE id=?', [$ver, (int)$u['id']]);
+        $lang = boxLangMatch($_SERVER['HTTP_X_BOX_LANG'] ?? null);
+        q('UPDATE users SET last_seen_at=NOW(), app_version=COALESCE(NULLIF(?,\'\'),app_version), lang=COALESCE(?,lang) WHERE id=?', [$ver, $lang, (int)$u['id']]);
     }
     return $u;
 }
@@ -361,14 +362,15 @@ function boxCharts(): ?array {
 function boxMoods(): array {
     if (boxMusicEnabled()) {
         try {
-            $data = boxMusic('/stream/music/moods', [], 86400);
+            $hl = boxYtmLang(boxLang());
+            $data = boxMusic('/stream/music/moods', $hl !== 'tr' ? ['hl' => $hl] : [], 86400);
             $out = [];
             foreach ($data['results'] ?? [] as $m) if (!empty($m['key']) && !empty($m['title'])) $out[] = ['key' => (string)$m['key'], 'title' => (string)$m['title']];
             if ($out) return $out;
         } catch (RuntimeException $e) {}
     }
     $out = [];
-    foreach (boxGenres() as $key => [$title]) $out[] = ['key' => $key, 'title' => $title];
+    foreach (boxGenres() as $key => [$title]) $out[] = ['key' => $key, 'title' => __t($title)];
     return $out;
 }
 
@@ -772,16 +774,18 @@ function boxServiceWatch(): void {
 }
 
 /** Uygulamadaki bildirim kutusuna yazar (telefona bildirim gitmese de kutuda durur). */
-function boxInboxAdd(?int $userId, string $target, string $title, string $body, ?string $open = null): void {
+function boxInboxAdd(?int $userId, string $target, string $title, string $body, ?string $open = null, ?string $titleEn = null, ?string $bodyEn = null): void {
     try {
-        q('INSERT INTO notifications(user_id,target,title,body,open_to) VALUES(?,?,?,?,?)', [$userId, mb_substr($target, 0, 40), mb_substr($title, 0, 120), mb_substr($body, 0, 400), $open]);
+        q('INSERT INTO notifications(user_id,target,title,body,title_en,body_en,open_to) VALUES(?,?,?,?,?,?,?)', [$userId, mb_substr($target, 0, 40), mb_substr($title, 0, 120), mb_substr($body, 0, 400), $titleEn !== null && $titleEn !== '' ? mb_substr($titleEn, 0, 120) : null, $bodyEn !== null && $bodyEn !== '' ? mb_substr($bodyEn, 0, 400) : null, $open]);
     } catch (Throwable $e) { error_log('inbox: ' . $e->getMessage()); }
 }
 
 function boxInbox(array $u, int $limit = 50): array {
     $prem = boxIsPremium($u) ? 'premium' : 'free';
-    $rows = q("SELECT id,title,body,open_to,created_at FROM notifications WHERE (user_id=? OR (user_id IS NULL AND target IN ('all', ?))) AND created_at>=? ORDER BY id DESC LIMIT " . max(1, min(100, $limit)), [$u['id'], $prem, $u['created_at']])->fetchAll();
-    return array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'body' => (string)$r['body'], 'open' => $r['open_to'], 'created_at' => date(DATE_ATOM, (int)strtotime((string)$r['created_at']))], $rows);
+    $rows = q("SELECT id,title,body,title_en,body_en,open_to,created_at FROM notifications WHERE (user_id=? OR (user_id IS NULL AND target IN ('all', ?))) AND created_at>=? ORDER BY id DESC LIMIT " . max(1, min(100, $limit)), [$u['id'], $prem, $u['created_at']])->fetchAll();
+    // Türkçe dışındaki dillerde, panelden İngilizcesi yazıldıysa o gösterilir.
+    $en = boxLang() !== 'tr';
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)($en && $r['title_en'] ? $r['title_en'] : $r['title']), 'body' => (string)($en && $r['body_en'] ? $r['body_en'] : $r['body']), 'open' => $r['open_to'], 'created_at' => date(DATE_ATOM, (int)strtotime((string)$r['created_at']))], $rows);
 }
 
 function boxDailyCleanup(): void {

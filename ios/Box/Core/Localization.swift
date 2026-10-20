@@ -83,8 +83,9 @@ final class Lang: ObservableObject {
 
     /// Otomatik: iOS'un bu uygulama için seçtiği dil (Ayarlar › Box › Dil ya da telefonun dili).
     static func resolveAutomatic() -> String {
-        let preferred = Bundle.main.preferredLocalizations + Locale.preferredLanguages
-        for raw in preferred {
+        // Locale.preferredLanguages, Ayarlar › Box › Dil seçimini de yansıtır. Bundle.preferredLocalizations
+        // desteklenmeyen dillerde geliştirme diline (tr) düştüğü için önce kullanıcının dil listesine bakılır.
+        for raw in Locale.preferredLanguages {
             if let match = match(raw) { return match }
         }
         return "en"

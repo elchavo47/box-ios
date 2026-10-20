@@ -38,7 +38,7 @@ function boxModelName(?string $code): ?string {
         'iPhone18,1' => 'iPhone 17 Pro', 'iPhone18,2' => 'iPhone 17 Pro Max', 'iPhone18,3' => 'iPhone 17', 'iPhone18,4' => 'iPhone Air',
         'arm64' => 'Simülatör', 'x86_64' => 'Simülatör',
     ];
-    if (isset($map[$code])) return $map[$code];
+    if (isset($map[$code])) return __t($map[$code]);
     if (str_starts_with($code, 'iPad')) return 'iPad';
     if (str_starts_with($code, 'iPhone')) return 'iPhone (' . $code . ')';
     return $code;
@@ -53,7 +53,7 @@ function boxDeviceRow(array $t): array {
         // Eski sürüm: "Box/25 CFNetwork/3896.100.1.2.1 Darwin/27.0.0"
         $ua = (string)($t['device'] ?? '');
         $name = str_contains($ua, 'iPad') ? 'iPad' : 'iPhone';
-        if (!$app && preg_match('#^Box/(\d+)#', $ua, $m)) $app = 'derleme ' . $m[1];
+        if (!$app && preg_match('#^Box/(\d+)#', $ua, $m)) $app = __t('derleme {0}', [$m[1]]);
     }
     return [
         'id' => (int)$t['id'],

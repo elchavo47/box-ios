@@ -261,7 +261,7 @@ function panelAction(array $admin): string|array {
                 if ($days < 0 || $days > 3650) throw new RuntimeException('Süre 0 (süresiz) ile 3650 gün arasında olmalı.');
                 $until = boxGrantPremium($uid, $days, (int)$admin['id'], boxIsPremium($u) ? 'extend' : 'grant');
                 logAdmin((int)$admin['id'], 'premium_grant', ['user_id' => $uid, 'days' => $days, 'until' => $until]);
-                if (site('push_auto_premium', '1') === '1') boxNotifyUser($uid, boxIsPremium($u) ? 'Premium\'un uzatıldı' : 'Premium\'un açıldı', $days ? 'Premium üyeliğin ' . nbDate($until, 'd.m.Y') . ' tarihine kadar açık. İyi dinlemeler!' : 'Süresiz premium üyeliğin açıldı. İyi dinlemeler!', ['box' => ['open' => 'search']]);
+                if (site('push_auto_premium', '1') === '1') boxNotifyUser($uid, boxIsPremium($u) ? 'Premium\'un uzatıldı' : 'Premium\'un açıldı', $days ? 'Premium üyeliğin {0} tarihine kadar açık. İyi dinlemeler!' : 'Süresiz premium üyeliğin açıldı. İyi dinlemeler!', ['box' => ['open' => 'search']], [], $days ? [boxLocalDate((string)$until, boxUserLang($uid))] : []);
                 if ($days >= 365 || $days === 0) staffAlert('premium', "⚡ Premium verildi: {$who}\nSüre: " . ($days ? "$days gün" : 'süresiz') . "\nYapan: {$admin['username']}");
                 return $days ? "Premium " . (boxIsPremium($u) ? 'uzatıldı' : 'açıldı') . ': ' . nbDate($until, 'd.m.Y H:i') . ' tarihine kadar.' : 'Süresiz premium açıldı.';
             case 'premium_revoke':
@@ -275,7 +275,7 @@ function panelAction(array $admin): string|array {
                 q('UPDATE users SET is_banned=1, ban_reason=? WHERE id=?', [$reason !== '' ? $reason : null, $uid]);
                 q('DELETE FROM tokens WHERE user_id=?', [$uid]);
                 // Cihaz kayıtları silinmez: askı kaldırılınca da haber verilebilsin.
-                if (site('push_auto_ban', '1') === '1') boxNotifyUser($uid, 'Hesabın askıya alındı', $reason !== '' ? 'Gerekçe: ' . $reason : 'Ayrıntı için bize yazabilirsin.');
+                if (site('push_auto_ban', '1') === '1') boxNotifyUser($uid, 'Hesabın askıya alındı', $reason !== '' ? 'Gerekçe: {0}' : 'Ayrıntı için bize yazabilirsin.', [], [], $reason !== '' ? [$reason] : []);
                 logAdmin((int)$admin['id'], 'user_ban', ['user_id' => $uid, 'reason' => $reason]);
                 return 'Hesap askıya alındı ve bütün cihazlardan çıkarıldı.';
             case 'user_unban':
@@ -413,6 +413,10 @@ function panelAction(array $admin): string|array {
         $title = mb_substr(trim((string)($_POST['title'] ?? '')), 0, 120);
         $body = mb_substr(trim((string)($_POST['body'] ?? '')), 0, 400);
         if ($title === '' || $body === '') throw new RuntimeException('Başlık ve metin gerekli.');
+        // İsteğe bağlı İngilizce metin: Türkçe dışındaki dillerdeki kullanıcılara bu gider.
+        $titleEn = mb_substr(trim((string)($_POST['title_en'] ?? '')), 0, 120);
+        $bodyEn = mb_substr(trim((string)($_POST['body_en'] ?? '')), 0, 400);
+        if (($titleEn === '') !== ($bodyEn === '')) throw new RuntimeException('İngilizce metin için başlık ve metni birlikte yaz (ya da ikisini de boş bırak).');
         $uid = null; $label = $target;
         if ($target === 'user') {
             $who = trim((string)($_POST['user'] ?? ''));
@@ -421,14 +425,21 @@ function panelAction(array $admin): string|array {
             $uid = (int)$u['id']; $label = 'user:' . $uid;
         }
         // Bildirim kutusuna her durumda yazılır; telefona yalnızca izin veren cihazlara gider.
-        boxInboxAdd($uid, $target === 'user' ? 'user:' . $uid : $target, $title, $body);
+        boxInboxAdd($uid, $target === 'user' ? 'user:' . $uid : $target, $title, $body, null, $titleEn ?: null, $bodyEn ?: null);
         $devices = boxPushAudience($target, $uid);
         if (!$devices) {
             q('INSERT INTO push_log(admin_id,target,title,body,sent,failed,error) VALUES(?,?,?,?,0,0,?)', [(int)$admin['id'], $label, $title, $body, 'Yalnızca bildirim kutusuna eklendi']);
             logAdmin((int)$admin['id'], 'push_send', ['target' => $label, 'sent' => 0, 'inbox_only' => true]);
             return 'Bildirime izin vermiş cihaz yok; uygulamadaki bildirim kutusuna eklendi.';
         }
-        $r = boxPushSend($devices, $title, $body);
+        // Cihazları dile göre ayır: Türkçe olmayanlara (İngilizcesi yazıldıysa) İngilizce gider.
+        $trDevices = $titleEn === '' ? $devices : array_values(array_filter($devices, fn($d) => ($d['user_lang'] ?? 'tr') === 'tr' || empty($d['user_lang'])));
+        $enDevices = $titleEn === '' ? [] : array_values(array_filter($devices, fn($d) => !empty($d['user_lang']) && $d['user_lang'] !== 'tr'));
+        $r = $trDevices ? boxPushSend($trDevices, $title, $body) : ['sent' => 0, 'failed' => 0, 'removed' => 0, 'error' => null];
+        if ($enDevices) {
+            $r2 = boxPushSend($enDevices, $titleEn, $bodyEn);
+            $r = ['sent' => $r['sent'] + $r2['sent'], 'failed' => $r['failed'] + $r2['failed'], 'removed' => $r['removed'] + $r2['removed'], 'error' => $r['error'] ?: $r2['error']];
+        }
         q('INSERT INTO push_log(admin_id,target,title,body,sent,failed,error) VALUES(?,?,?,?,?,?,?)', [(int)$admin['id'], $label, $title, $body, $r['sent'], $r['failed'], $r['error'] ? mb_substr($r['error'], 0, 120) : null]);
         logAdmin((int)$admin['id'], 'push_send', ['target' => $label, 'sent' => $r['sent'], 'failed' => $r['failed']]);
         if ($r['sent'] === 0) throw new RuntimeException('Telefonlara gönderilemedi' . ($r['error'] ? ': ' . $r['error'] : '.') . ' Bildirim kutusuna eklendi.');

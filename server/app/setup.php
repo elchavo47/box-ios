@@ -108,6 +108,11 @@ function ensureSchema(bool $force = false): void {
         if (!$hasIndex('users', 'idx_users_premium')) { q('ALTER TABLE users ADD INDEX idx_users_premium(is_premium,premium_until)'); $note('Dizin eklendi', 'users.idx_users_premium'); }
         if (!$hasIndex('users', 'idx_users_seen')) { q('ALTER TABLE users ADD INDEX idx_users_seen(last_seen_at)'); $note('Dizin eklendi', 'users.idx_users_seen'); }
         // 3.0: hesaba bağlı kitaplık (listeler ve beğeniler tabloları şemadan oluşur)
+        $add('users', 'lang', 'lang VARCHAR(8) NULL DEFAULT NULL AFTER expiry_notified_for');
+        if ($tableExists('notifications')) {
+            $add('notifications', 'title_en', 'title_en VARCHAR(120) NULL DEFAULT NULL AFTER body');
+            $add('notifications', 'body_en', 'body_en VARCHAR(400) NULL DEFAULT NULL AFTER title_en');
+        }
         $add('users', 'library_order_at', 'library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER expiry_notified_for');
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');
         // 3.0: cihaz bilgisi

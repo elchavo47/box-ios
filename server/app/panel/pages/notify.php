@@ -20,6 +20,10 @@ $targets = ['all' => 'Herkes', 'premium' => 'Premium üyeler', 'free' => 'Ücret
   field('Kullanıcı (yalnızca "Tek kullanıcı" seçiliyse)', 'user', $prefill, 'text', ['placeholder' => 'Numara ya da e-posta']);
   field('Başlık', 'title', '', 'text', ['required' => true, 'maxlength' => 120, 'placeholder' => 'Örnek: Yeni sürüm hazır']);
   area('Metin', 'body', '', ['required' => true, 'maxlength' => 400, 'rows' => 3, 'placeholder' => 'Örnek: TestFlight\'tan güncelle, yeni özellikler seni bekliyor.']);
+  echo '<details class="stack"><summary class="muted">İngilizce metin (isteğe bağlı)</summary>';
+  field('Title (English)', 'title_en', '', 'text', ['maxlength' => 120, 'placeholder' => 'Example: New version is ready', 'hint' => 'Uygulamayı Türkçe dışında bir dilde kullananlara bu gider. Boş bırakırsan herkese Türkçe metin gider.']);
+  area('Text (English)', 'body_en', '', ['maxlength' => 400, 'rows' => 3, 'placeholder' => 'Example: Update from TestFlight, new features are waiting for you.']);
+  echo '</details>';
   echo '<div class="row-actions">' . button('Gönder', 'primary', ['icon' => 'bell', 'confirm' => 'Bildirim seçtiğin herkese hemen gönderilecek.']) . '</div>';
   formEnd(); cardEnd(); ?>
 

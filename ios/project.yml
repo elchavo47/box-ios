@@ -4,10 +4,11 @@ options:
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
+  developmentLanguage: tr
 
 settings:
   base:
-    MARKETING_VERSION: "2.12"
+    MARKETING_VERSION: "3.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
 
@@ -38,6 +39,9 @@ targets:
       path: Box/Info.plist
       properties:
         CFBundleDisplayName: Box
+        CFBundleDevelopmentRegion: tr
+        CFBundleAllowMixedLocalizations: true
+        CFBundleLocalizations: [tr, en, de, fr, es, it, pt-BR, nl, ru, uk, pl, az, ar, fa, hi, id, ja, ko, zh-Hans, zh-Hant, sv, el, ro, cs, hu, vi, th]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: true
