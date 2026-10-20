@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 
 /// Son aramalar ve son bakılan sonuçlar (yalnızca bu cihazda).
@@ -73,7 +74,10 @@ final class ServerState: ObservableObject {
         guard let config: RemoteConfig = try? await APIClient.shared.send("config") else { return }
         maintenanceMessage = config.maintenance.on ? config.maintenance.message : nil
         registrationOpen = config.registrationOpen
-        updateRequired = Self.isVersion(AppConfig.shortVersion, lowerThan: config.minAppVersion)
+        let required = Self.isVersion(AppConfig.shortVersion, lowerThan: config.minAppVersion)
+        if updateRequired != required {
+            withAnimation(.easeOut(duration: 0.3)) { updateRequired = required }
+        }
         if let item = config.announcement, UserDefaults.standard.string(forKey: seenKey) != item.id {
             announcement = item
         }

@@ -103,6 +103,20 @@ struct RootView: View {
                 showSplash = false
             }
         }
+        .onChange(of: server.updateRequired) { required in
+            // Güncelleme ekranı açık sayfaların (oynatıcı, profil) altında kalmasın.
+            guard required else { return }
+            player.showFullPlayer = false
+            router.showAccount = false
+            player.pause()
+        }
+        .task {
+            // Uygulama açıkken de minimum sürümü dakikada bir kontrol et.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                await server.refresh()
+            }
+        }
     }
 }
 
