@@ -252,6 +252,8 @@ switch ($route) {
         boxAppleRevoke($u);
         boxDeleteAvatarFile($u['avatar_file'] ?? null);
         q('DELETE FROM users WHERE id=?', [$u['id']]);
+        // Silinen premium üye izleme parmak izini değiştirir; kendi işlemimiz olduğunu bildir (yanlış alarm olmasın).
+        if ((int)$u['is_premium'] === 1) watchRefresh();
         jsonOut(['ok' => true]);
 
     /* ---------------- Premium ---------------- */
