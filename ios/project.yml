@@ -43,6 +43,7 @@ targets:
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio]
+        CADisableMinimumFrameDurationOnPhone: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UIUserInterfaceStyle: Dark

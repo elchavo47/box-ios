@@ -287,8 +287,13 @@ final class FlowingBackgroundView: UIView {
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
+    private var laidOutSize: CGSize = .zero
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Boyut değişmediyse (SwiftUI yeniden çizimi, sayfa sürükleme) animasyonu baştan başlatma: zıplar.
+        guard bounds.size != laidOutSize else { return }
+        laidOutSize = bounds.size
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         base.frame = bounds
@@ -312,7 +317,8 @@ final class FlowingBackgroundView: UIView {
         let animated = !palette.isEmpty
         palette = next
         CATransaction.begin()
-        CATransaction.setDisableActions(!animated)
+        // Hareket kapalıyken (katman durdurulmuş) renk geçişi donar; doğrudan değiştir.
+        CATransaction.setDisableActions(!animated || !moving)
         CATransaction.setAnimationDuration(0.9)
         base.backgroundColor = next[0].withAlphaComponent(0.9).cgColor
         for (index, blob) in blobs.enumerated() {
@@ -323,10 +329,22 @@ final class FlowingBackgroundView: UIView {
         CATransaction.commit()
     }
 
+    /// Duraklatınca hareket olduğu yerde yavaşça durur, devam edince kaldığı yerden sürer (zıplamadan).
     func setMoving(_ on: Bool) {
         guard on != moving else { return }
         moving = on
-        restartMotion(force: true)
+        let now = layer.convertTime(CACurrentMediaTime(), from: nil)
+        if on {
+            let paused = layer.timeOffset
+            layer.speed = 1
+            layer.timeOffset = 0
+            layer.beginTime = 0
+            layer.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) - paused
+            if blobs.contains(where: { $0.animation(forKey: "flow") == nil }) { restartMotion(force: false) }
+        } else {
+            layer.speed = 0
+            layer.timeOffset = now
+        }
     }
 
     private func startPoint(_ index: Int) -> CGPoint {
@@ -337,10 +355,6 @@ final class FlowingBackgroundView: UIView {
     private func restartMotion(force: Bool) {
         guard bounds.width > 0, bounds.height > 0 else { return }
         for (index, blob) in blobs.enumerated() {
-            if !moving {
-                blob.removeAnimation(forKey: "flow")
-                continue
-            }
             if !force, blob.animation(forKey: "flow") != nil { continue }
             let orbit = orbits[index]
             let rect = CGRect(
@@ -366,27 +380,130 @@ final class FlowingBackgroundView: UIView {
 // MARK: - Görselleştirici
 
 /// Müziğe göre oynayan çubuklar (ses akışından ölçülür).
-struct VisualizerBars: View {
+/// Ekranın kendi kare hızında (ProMotion'da 120 fps) Core Animation ile çizilir; her karede o anın
+/// ölçümüne doğru yumuşakça gider (hızlı yükselir, yavaş düşer).
+struct VisualizerBars: UIViewRepresentable {
     @EnvironmentObject private var player: PlayerManager
     var height: CGFloat = 28
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !player.isPlaying)) { _ in
-            let levels = player.meter?.levels() ?? []
-            HStack(alignment: .center, spacing: 4) {
-                ForEach(0..<TapContext.bandCount * 2 - 1, id: \.self) { index in
-                    // Ortadan iki yana yansıyan bantlar.
-                    let band = abs(index - (TapContext.bandCount - 1))
-                    let value = levels.indices.contains(band) ? CGFloat(levels[band]) : 0.08
-                    Capsule()
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: 4, height: max(4, height * (player.isPlaying ? value : 0.12)))
-                }
-            }
-            .frame(height: height)
-            .animation(.linear(duration: 1.0 / 30), value: levels)
+    func makeUIView(context: Context) -> VisualizerBarsView {
+        let view = VisualizerBarsView()
+        view.isAccessibilityElement = false
+        return view
+    }
+
+    func updateUIView(_ view: VisualizerBarsView, context: Context) {
+        let player = player
+        view.barHeight = height
+        view.source = { [weak player] in player?.meter }
+        view.isPlaying = player.isPlaying
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: VisualizerBarsView, context: Context) -> CGSize? {
+        CGSize(width: CGFloat(TapContext.bandCount * 2 - 1) * 8 - 4, height: height)
+    }
+}
+
+final class VisualizerBarsView: UIView {
+    var source: (() -> TapContext?)?
+    var barHeight: CGFloat = 28 { didSet { if barHeight != oldValue { invalidateIntrinsicContentSize(); setNeedsLayout() } } }
+    var isPlaying = false { didSet { if isPlaying != oldValue { updateLink() } } }
+
+    private let barWidth: CGFloat = 4
+    private let spacing: CGFloat = 4
+    private var bars: [CALayer] = []
+    private var current = [CGFloat](repeating: 0.12, count: TapContext.bandCount)
+    private var link: CADisplayLink?
+    private var lastTime: CFTimeInterval = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        for _ in 0..<(TapContext.bandCount * 2 - 1) {
+            let bar = CALayer()
+            bar.backgroundColor = UIColor.white.withAlphaComponent(0.85).cgColor
+            bar.cornerRadius = barWidth / 2
+            layer.addSublayer(bar)
+            bars.append(bar)
         }
-        .accessibilityHidden(true)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) kullanılmıyor") }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: CGFloat(bars.count) * (barWidth + spacing) - spacing, height: barHeight)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateLink()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        draw()
+    }
+
+    deinit { link?.invalidate() }
+
+    private func updateLink() {
+        // Ekranda değilse çizme; duraklatıldığında çubuklar dinlenme hâline inince dur.
+        if window != nil, isPlaying || current.contains(where: { abs($0 - 0.12) > 0.01 }) {
+            guard link == nil else { return }
+            let proxy = DisplayLinkProxy(self)
+            let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 120)
+            link.add(to: .main, forMode: .common)
+            self.link = link
+            lastTime = 0
+        } else {
+            link?.invalidate()
+            link = nil
+        }
+    }
+
+    fileprivate func tick(_ link: CADisplayLink) {
+        let dt = lastTime == 0 ? 1.0 / 60 : min(max(link.targetTimestamp - lastTime, 1.0 / 240), 0.1)
+        lastTime = link.targetTimestamp
+        let rest: CGFloat = 0.12
+        let targets: [Float]? = isPlaying ? source?()?.levels(at: link.targetTimestamp) : nil
+        var settled = true
+        for band in 0..<current.count {
+            let target = targets.map { CGFloat($0[band]) } ?? (isPlaying ? 0.08 : rest)
+            // 60 fps'e göre ayarlanmış katsayılar, kare süresine göre ölçeklenir.
+            let k: CGFloat = target > current[band] ? 0.55 : 0.16
+            let alpha = 1 - pow(1 - k, CGFloat(dt * 60))
+            current[band] += (target - current[band]) * alpha
+            if abs(current[band] - target) > 0.005 { settled = false }
+        }
+        draw()
+        if !isPlaying && settled { updateLink() }
+    }
+
+    private func draw() {
+        let height = bounds.height > 0 ? bounds.height : barHeight
+        let total = CGFloat(bars.count) * (barWidth + spacing) - spacing
+        let originX = (bounds.width - total) / 2
+        let center = TapContext.bandCount - 1
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, bar) in bars.enumerated() {
+            // Ortadan iki yana yansıyan bantlar.
+            let band = abs(index - center)
+            let h = max(4, height * min(max(current[band], 0), 1))
+            bar.frame = CGRect(x: originX + CGFloat(index) * (barWidth + spacing), y: (height - h) / 2, width: barWidth, height: h)
+        }
+        CATransaction.commit()
+    }
+}
+
+/// CADisplayLink hedefini zayıf tutar (görünüm serbest kalabilsin).
+private final class DisplayLinkProxy: NSObject {
+    weak var view: VisualizerBarsView?
+    init(_ view: VisualizerBarsView) { self.view = view }
+    @objc func tick(_ link: CADisplayLink) {
+        guard let view else { link.invalidate(); return }
+        view.tick(link)
     }
 }
 

@@ -1,6 +1,7 @@
 import Accelerate
 import AVFoundation
 import MediaToolbox
+import QuartzCore
 
 /// Ekolayzer ve ses seviyesi eşitleme. AVPlayer'ın ses akışına bir "tap" ile girer.
 enum AudioEffects {
@@ -41,19 +42,55 @@ final class TapContext {
     let meter: Bool
     var setup: vDSP_biquad_Setup?
 
-    // Görselleştirici: 1024 örneklik FFT, 9 bant (log aralıklı).
+    // Görselleştirici: 1024 örneklik FFT, 9 bant (log aralıklı), %50 örtüşmeli (512 örnekte bir).
+    // Ses parça parça (ör. 4096 örnek) geldiği için her ölçüm çalınacağı ana göre zaman damgalanır;
+    // ekran her karede o anın değerini ara değerle bulur (çubuklar kesik kesik zıplamaz).
     static let bandCount = 9
     private let fftSize = 1024
+    private let hop = 512
     private var fftSetup: FFTSetup?
     private var window: [Float] = []
-    private var sampleBuffer: [Float] = []
+    private var ring: [Float] = []
+    private var ringFill = 0
+    private var windowed: [Float] = []
+    private var real: [Float] = []
+    private var imag: [Float] = []
+    private var magnitudes: [Float] = []
+    private var bandBins: [(Int, Int)] = []
     private var bands = [Float](repeating: 0, count: TapContext.bandCount)
     private let lock = NSLock()
+    private var outputLatency: Double = 0
+    private var timelineEnd: Double = 0
+
+    private struct Snapshot {
+        var time: Double
+        var bands: [Float]
+    }
+    private var snapshots: [Snapshot] = []
+    private let snapshotCapacity = 64
 
     /// 0...1 arası bant seviyeleri (ana iş parçacığından okunur).
     func levels() -> [Float] {
         lock.lock(); defer { lock.unlock() }
         return bands
+    }
+
+    /// Verilen andaki (CACurrentMediaTime) bant seviyeleri: iki ölçüm arasında doğrusal ara değer.
+    func levels(at time: Double) -> [Float]? {
+        lock.lock(); defer { lock.unlock() }
+        guard !snapshots.isEmpty else { return nil }
+        let t = time - outputLatency
+        guard let next = snapshots.firstIndex(where: { $0.time > t }) else {
+            // Yeni ölçüm gelmedi (duraklatıldı / takıldı): son değer.
+            return snapshots.last?.bands
+        }
+        guard next > 0 else { return snapshots[0].bands }
+        let a = snapshots[next - 1], b = snapshots[next]
+        let span = max(b.time - a.time, 0.0001)
+        let f = Float(min(max((t - a.time) / span, 0), 1))
+        var out = [Float](repeating: 0, count: Self.bandCount)
+        for i in 0..<Self.bandCount { out[i] = a.bands[i] + (b.bands[i] - a.bands[i]) * f }
+        return out
     }
     var delays: [[Float]] = []
     var usable = false
@@ -67,7 +104,13 @@ final class TapContext {
             fftSetup = vDSP_create_fftsetup(vDSP_Length(log2(Float(fftSize))), FFTRadix(kFFTRadix2))
             window = [Float](repeating: 0, count: fftSize)
             vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
-            sampleBuffer.reserveCapacity(fftSize)
+            ring = [Float](repeating: 0, count: fftSize)
+            windowed = [Float](repeating: 0, count: fftSize)
+            real = [Float](repeating: 0, count: fftSize / 2)
+            imag = [Float](repeating: 0, count: fftSize / 2)
+            magnitudes = [Float](repeating: 0, count: fftSize / 2)
+            snapshots.reserveCapacity(snapshotCapacity)
+            outputLatency = AVAudioSession.sharedInstance().outputLatency + AVAudioSession.sharedInstance().ioBufferDuration
         }
     }
 
@@ -78,61 +121,85 @@ final class TapContext {
 
     private var sampleRate: Double = 44100
 
-    /// Son 1024 örneğin frekans dağılımını bantlara böler.
+    /// Gelen örnekleri kayan pencereye ekler; her 512 örnekte bir son 1024 örneğin bantlarını ölçer.
     private func analyze(_ data: UnsafeMutablePointer<Float>, frames: Int) {
-        guard let fftSetup else { return }
+        guard fftSetup != nil, ring.count == fftSize else { return }
+        let secondsPerFrame = 1 / max(sampleRate, 1)
+        // Parçalar arka arkaya çalınır: bir öncekinin bittiği andan devam et (çok sapmadıysa).
+        let now = CACurrentMediaTime()
+        let start = timelineEnd > now && timelineEnd - now < 0.5 ? timelineEnd : now
+        timelineEnd = start + Double(frames) * secondsPerFrame
         var index = 0
         while index < frames {
-            let take = min(fftSize - sampleBuffer.count, frames - index)
-            sampleBuffer.append(contentsOf: UnsafeBufferPointer(start: data + index, count: take))
+            let take = min(hop - ringFill, frames - index)
+            ring.withUnsafeMutableBufferPointer { buf in
+                let base = buf.baseAddress!
+                // Pencereyi sola kaydır, yeni örnekleri sona ekle.
+                memmove(base, base + take, (fftSize - take) * MemoryLayout<Float>.size)
+                memcpy(base + (fftSize - take), data + index, take * MemoryLayout<Float>.size)
+            }
+            ringFill += take
             index += take
-            guard sampleBuffer.count == fftSize else { continue }
+            if ringFill >= hop {
+                ringFill = 0
+                let next = measure()
+                // Bu ölçümün temsil ettiği an: parçanın başından bu yana geçen örnek kadar sonra.
+                let time = start + Double(index) * secondsPerFrame
+                lock.lock()
+                for band in 0..<Self.bandCount {
+                    bands[band] = next[band] > bands[band] ? next[band] : bands[band] * 0.82 + next[band] * 0.18
+                }
+                if let last = snapshots.last, last.time > time { snapshots.removeAll(keepingCapacity: true) }
+                snapshots.append(Snapshot(time: time, bands: next))
+                if snapshots.count > snapshotCapacity { snapshots.removeFirst(snapshots.count - snapshotCapacity) }
+                lock.unlock()
+            }
+        }
+    }
 
-            var windowed = [Float](repeating: 0, count: fftSize)
-            vDSP_vmul(sampleBuffer, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
-            sampleBuffer.removeAll(keepingCapacity: true)
-
-            let half = fftSize / 2
-            var real = [Float](repeating: 0, count: half)
-            var imag = [Float](repeating: 0, count: half)
-            var magnitudes = [Float](repeating: 0, count: half)
-            real.withUnsafeMutableBufferPointer { rp in
-                imag.withUnsafeMutableBufferPointer { ip in
-                    var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
-                    windowed.withUnsafeBufferPointer { wp in
-                        wp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) {
-                            vDSP_ctoz($0, 2, &split, 1, vDSP_Length(half))
-                        }
+    private func measure() -> [Float] {
+        guard let fftSetup else { return [Float](repeating: 0, count: Self.bandCount) }
+        let half = fftSize / 2
+        let log2n = vDSP_Length(log2(Float(fftSize)))
+        vDSP_vmul(ring, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
+        real.withUnsafeMutableBufferPointer { rp in
+            imag.withUnsafeMutableBufferPointer { ip in
+                var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                windowed.withUnsafeBufferPointer { wp in
+                    wp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) {
+                        vDSP_ctoz($0, 2, &split, 1, vDSP_Length(half))
                     }
-                    vDSP_fft_zrip(fftSetup, &split, 1, vDSP_Length(log2(Float(fftSize))), FFTDirection(FFT_FORWARD))
-                    vDSP_zvmags(&split, 1, &magnitudes, 1, vDSP_Length(half))
+                }
+                vDSP_fft_zrip(fftSetup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+                magnitudes.withUnsafeMutableBufferPointer { mp in
+                    vDSP_zvmags(&split, 1, mp.baseAddress!, 1, vDSP_Length(half))
                 }
             }
-
+        }
+        if bandBins.isEmpty {
             // 40 Hz – 16 kHz arası log aralıklı bantlar.
             let binHz = Float(sampleRate) / Float(fftSize)
-            var next = [Float](repeating: 0, count: Self.bandCount)
             for band in 0..<Self.bandCount {
                 let low = 40 * pow(400, Float(band) / Float(Self.bandCount))
                 let high = 40 * pow(400, Float(band + 1) / Float(Self.bandCount))
                 let start = max(1, Int(low / binHz)), end = min(half - 1, max(start + 1, Int(high / binHz)))
-                var sum: Float = 0
-                for bin in start..<end { sum += magnitudes[bin] }
-                let average = sum / Float(end - start)
-                let db = 10 * log10(max(average, 1e-12))
-                next[band] = min(max((db + 20) / 70, 0), 1)
+                bandBins.append((start, end))
             }
-            lock.lock()
-            for band in 0..<Self.bandCount {
-                // Yükselirken hızlı, düşerken yavaş.
-                bands[band] = next[band] > bands[band] ? next[band] : bands[band] * 0.82 + next[band] * 0.18
-            }
-            lock.unlock()
         }
+        var next = [Float](repeating: 0, count: Self.bandCount)
+        for (band, range) in bandBins.enumerated() {
+            var sum: Float = 0
+            for bin in range.0..<range.1 { sum += magnitudes[bin] }
+            let average = sum / Float(range.1 - range.0)
+            let db = 10 * log10(max(average, 1e-12))
+            next[band] = min(max((db + 20) / 70, 0), 1)
+        }
+        return next
     }
 
     func prepare(sampleRate: Double, channels: Int, isFloat: Bool, nonInterleaved: Bool) {
         usable = isFloat && nonInterleaved && sampleRate > 0
+        bandBins = []
         guard usable else { return }
         self.sampleRate = sampleRate
         var coefficients: [Double] = []
