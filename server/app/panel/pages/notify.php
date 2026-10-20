@@ -27,6 +27,9 @@ $targets = ['all' => 'Herkes', 'premium' => 'Premium üyeler', 'free' => 'Ücret
   formStart('push_auto_save', 'stack');
   echo toggle('Premium açılınca / uzatılınca', 'push_auto_premium', site('push_auto_premium', '1') === '1', 'Panelden premium verdiğinde kullanıcıya haber verir.');
   echo toggle('Premium bitmeden 3 gün önce', 'push_auto_expiring', site('push_auto_expiring', '1') === '1', 'Her üyelik dönemi için bir kez hatırlatır (zamanlanmış görevle çalışır).');
+  echo toggle('Premium süresi dolunca', 'push_auto_expired', site('push_auto_expired', '1') === '1', '"Premium üyeliğin sona erdi"');
+  echo toggle('Panelden premium kapatılınca', 'push_auto_revoke', site('push_auto_revoke', '1') === '1', '"Premium üyeliğin kapatıldı"');
+  echo toggle('Hesap askıya alınınca / açılınca', 'push_auto_ban', site('push_auto_ban', '1') === '1', 'Gerekçe yazdıysan bildirimde görünür.');
   echo '<div class="row-actions">' . button('Kaydet', 'ghost') . '</div>';
   formEnd(); cardEnd(); ?>
 </div>

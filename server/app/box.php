@@ -135,6 +135,9 @@ function boxExpirePremiums(): int {
     foreach ($ids as $id) {
         q('UPDATE users SET is_premium=0, premium_since=NULL WHERE id=?', [$id]);
         q("INSERT INTO premium_log(user_id,action) VALUES(?, 'expired')", [$id]);
+        if (function_exists('boxNotifyUser') && site('push_auto_expired', '1') === '1') {
+            boxNotifyUser((int)$id, 'Premium üyeliğin sona erdi', 'İndirdiğin şarkılar kitaplığında kalır. Premium\'u yeniden açtırmak için bize yazabilirsin.', ['box' => ['open' => 'account']]);
+        }
     }
     if ($ids) watchRefresh();
     return count($ids);

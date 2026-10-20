@@ -268,16 +268,20 @@ function panelAction(array $admin): string|array {
                 if (!boxIsPremium($u) && (int)$u['is_premium'] === 0) throw new RuntimeException('Bu kullanıcının premiumu zaten yok.');
                 boxRevokePremium($uid, (int)$admin['id']);
                 logAdmin((int)$admin['id'], 'premium_revoke', ['user_id' => $uid]);
+                if (site('push_auto_revoke', '1') === '1') boxNotifyUser($uid, 'Premium üyeliğin kapatıldı', 'İndirdiğin şarkılar kitaplığında kalır.', ['box' => ['open' => 'account']]);
                 return 'Premium kapatıldı. Arama ve indirme sekmesi bir sonraki açılışta kaybolur.';
             case 'user_ban':
                 $reason = mb_substr(trim((string)($_POST['reason'] ?? '')), 0, 255);
                 q('UPDATE users SET is_banned=1, ban_reason=? WHERE id=?', [$reason !== '' ? $reason : null, $uid]);
                 q('DELETE FROM tokens WHERE user_id=?', [$uid]);
+                // Cihaz kayıtları silinmez: askı kaldırılınca da haber verilebilsin.
+                if (site('push_auto_ban', '1') === '1') boxNotifyUser($uid, 'Hesabın askıya alındı', $reason !== '' ? 'Gerekçe: ' . $reason : 'Ayrıntı için bize yazabilirsin.');
                 logAdmin((int)$admin['id'], 'user_ban', ['user_id' => $uid, 'reason' => $reason]);
                 return 'Hesap askıya alındı ve bütün cihazlardan çıkarıldı.';
             case 'user_unban':
                 q('UPDATE users SET is_banned=0, ban_reason=NULL WHERE id=?', [$uid]);
                 logAdmin((int)$admin['id'], 'user_unban', ['user_id' => $uid]);
+                if (site('push_auto_ban', '1') === '1') boxNotifyUser($uid, 'Hesabın yeniden açıldı', 'Box\'a tekrar giriş yapabilirsin.', ['box' => ['open' => 'account']]);
                 return 'Hesap yeniden aktif.';
             case 'user_note':
                 $note = mb_substr(trim((string)($_POST['note'] ?? '')), 0, 2000);
@@ -419,6 +423,7 @@ function panelAction(array $admin): string|array {
     if ($action === 'push_auto_save') {
         saveSite('push_auto_premium', isset($_POST['push_auto_premium']) ? '1' : '0');
         saveSite('push_auto_expiring', isset($_POST['push_auto_expiring']) ? '1' : '0');
+        foreach (['push_auto_expired', 'push_auto_revoke', 'push_auto_ban'] as $k) saveSite($k, isset($_POST[$k]) ? '1' : '0');
         logAdmin((int)$admin['id'], 'push_auto_save');
         return 'Otomatik bildirim ayarları kaydedildi.';
     }
