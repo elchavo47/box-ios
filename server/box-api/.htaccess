@@ -1,0 +1,10 @@
+# Box 2: bu klasördeki eski dosyalar artık çalışmaz; istekler kök index.php'ye gider.
+Options -Indexes
+<FilesMatch "^(?!index\.php$).+$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>

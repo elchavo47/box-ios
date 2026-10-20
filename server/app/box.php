@@ -1,0 +1,283 @@
+<?php
+if (!defined('ROOT')) { http_response_code(404); exit; }
+
+/*
+ * Box iş mantığı: kullanıcılar, premium, kotalar, YouTube araması, VDS indirme bağlantısı ve servis izleme.
+ * API (app/api.php) ve panel bu fonksiyonları ortak kullanır.
+ */
+
+const BOX_VIDEO_ID = '/^[A-Za-z0-9_-]{11}$/D';
+
+/* ---------------- Kullanıcılar ---------------- */
+
+function boxFindUser(int $id): ?array {
+    $u = q('SELECT * FROM users WHERE id=? LIMIT 1', [$id])->fetch();
+    return is_array($u) ? $u : null;
+}
+
+function boxFindUserByEmail(string $email): ?array {
+    $u = q('SELECT * FROM users WHERE email=? LIMIT 1', [mb_strtolower(trim($email))])->fetch();
+    return is_array($u) ? $u : null;
+}
+
+function boxIsPremium(array $u): bool {
+    if ((int)($u['is_premium'] ?? 0) !== 1) return false;
+    if (empty($u['premium_until'])) return true;
+    return strtotime((string)$u['premium_until']) > time();
+}
+
+/** Uygulamaya giden kullanıcı nesnesi (sürüm 1 uygulamasıyla uyumlu alan adları). */
+function boxUserPublic(array $u): array {
+    return [
+        'id' => (int)$u['id'],
+        'email' => (string)$u['email'],
+        'name' => (string)$u['display_name'],
+        'premium' => boxIsPremium($u),
+        'premium_until' => !empty($u['premium_until']) ? date(DATE_ATOM, (int)strtotime((string)$u['premium_until'])) : null,
+        'created_at' => date(DATE_ATOM, (int)strtotime((string)$u['created_at'])),
+    ];
+}
+
+function boxIssueToken(int $userId, string $device = ''): string {
+    $token = bin2hex(random_bytes(32));
+    $days = max(1, (int)site('token_ttl_days', '180'));
+    q('INSERT INTO tokens(user_id,token_hash,device,expires_at) VALUES(?,?,?,DATE_ADD(NOW(),INTERVAL ? DAY))', [$userId, hash('sha256', $token), $device !== '' ? mb_substr($device, 0, 120) : null, $days]);
+    return $token;
+}
+
+function boxBearer(): ?string {
+    $candidates = [$_SERVER['HTTP_AUTHORIZATION'] ?? null, $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null];
+    if (function_exists('getallheaders')) foreach ((array)getallheaders() as $k => $v) if (strtolower((string)$k) === 'authorization') $candidates[] = $v;
+    foreach ($candidates as $h) if (is_string($h) && preg_match('/^Bearer\s+([a-f0-9]{64})$/i', trim($h), $m)) return strtolower($m[1]);
+    $fallback = trim((string)($_SERVER['HTTP_X_BOX_TOKEN'] ?? ''));
+    return preg_match('/^[a-f0-9]{64}$/i', $fallback) ? strtolower($fallback) : null;
+}
+
+/** Oturumu açık kullanıcı; yoksa 401 döner. */
+function boxApiUser(): array {
+    $token = boxBearer();
+    if ($token === null) jsonOut(['ok' => false, 'error' => 'Oturum açman gerekiyor.'], 401);
+    $u = q('SELECT u.*, t.id AS token_id, t.last_used_at AS token_last_used FROM tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.expires_at>NOW() LIMIT 1', [hash('sha256', $token)])->fetch();
+    if (!is_array($u)) jsonOut(['ok' => false, 'error' => 'Oturumun sona erdi, tekrar giriş yap.'], 401);
+    if ((int)$u['is_banned'] === 1) jsonOut(['ok' => false, 'error' => 'Hesabın askıya alındı.', 'reason' => (string)($u['ban_reason'] ?? '')], 403);
+    $last = $u['token_last_used'] ? strtotime((string)$u['token_last_used']) : 0;
+    if (time() - (int)$last > 600) {
+        q('UPDATE tokens SET last_used_at=NOW() WHERE id=?', [(int)$u['token_id']]);
+        $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
+        q('UPDATE users SET last_seen_at=NOW(), app_version=COALESCE(NULLIF(?,\'\'),app_version) WHERE id=?', [$ver, (int)$u['id']]);
+    }
+    return $u;
+}
+
+/* ---------------- Premium ---------------- */
+
+/** Premium ver ya da uzat. $days = 0 süresiz. Mevcut süre varsa üstüne eklenir. */
+function boxGrantPremium(int $userId, int $days, ?int $adminId, string $action = 'grant'): ?string {
+    $u = boxFindUser($userId);
+    if (!$u) throw new RuntimeException('Kullanıcı bulunamadı.');
+    if ($days <= 0) {
+        q('UPDATE users SET is_premium=1, premium_until=NULL, premium_since=COALESCE(premium_since,NOW()) WHERE id=?', [$userId]);
+        $until = null;
+    } else {
+        $base = boxIsPremium($u) && !empty($u['premium_until']) ? 'premium_until' : 'NOW()';
+        // MySQL atamaları soldan sağa uygular: önce eski değerlere bakan premium_since hesaplanır.
+        q("UPDATE users SET premium_since=IF(is_premium=1 AND (premium_until IS NULL OR premium_until>NOW()),COALESCE(premium_since,NOW()),NOW()), premium_until=DATE_ADD($base, INTERVAL ? DAY), is_premium=1 WHERE id=?", [$days, $userId]);
+        $until = (string)q('SELECT premium_until FROM users WHERE id=?', [$userId])->fetchColumn();
+    }
+    q('INSERT INTO premium_log(user_id,admin_id,action,days,until_at) VALUES(?,?,?,?,?)', [$userId, $adminId, $action, max(0, $days), $until]);
+    watchRefresh();
+    return $until;
+}
+
+function boxRevokePremium(int $userId, ?int $adminId, string $action = 'revoke'): void {
+    q('UPDATE users SET is_premium=0, premium_until=NULL, premium_since=NULL WHERE id=?', [$userId]);
+    q('INSERT INTO premium_log(user_id,admin_id,action) VALUES(?,?,?)', [$userId, $adminId, $action]);
+    watchRefresh();
+}
+
+/** Süresi dolan üyelikleri kapatır (cron ve trafik zamanlayıcısı çağırır). */
+function boxExpirePremiums(): int {
+    $ids = q('SELECT id FROM users WHERE is_premium=1 AND premium_until IS NOT NULL AND premium_until<=NOW() LIMIT 500')->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($ids as $id) {
+        q('UPDATE users SET is_premium=0, premium_since=NULL WHERE id=?', [$id]);
+        q("INSERT INTO premium_log(user_id,action) VALUES(?, 'expired')", [$id]);
+    }
+    if ($ids) watchRefresh();
+    return count($ids);
+}
+
+/* ---------------- Kotalar ---------------- */
+
+function boxTodayDownloads(int $userId): int {
+    return (int)q('SELECT COUNT(*) FROM downloads WHERE user_id=? AND created_at>=CURDATE()', [$userId])->fetchColumn();
+}
+
+function boxTodaySearches(int $userId): int {
+    return (int)q('SELECT n FROM search_log WHERE day=CURDATE() AND user_id=?', [$userId])->fetchColumn();
+}
+
+function boxQuota(array $u): array {
+    $dl = (int)configValue('premium_daily_downloads', 150);
+    $se = (int)configValue('premium_daily_searches', 400);
+    $usedDl = boxTodayDownloads((int)$u['id']);
+    $usedSe = boxTodaySearches((int)$u['id']);
+    return [
+        'downloads_limit' => $dl, 'downloads_used' => $usedDl, 'downloads_left' => $dl > 0 ? max(0, $dl - $usedDl) : null,
+        'searches_limit' => $se, 'searches_used' => $usedSe, 'searches_left' => $se > 0 ? max(0, $se - $usedSe) : null,
+    ];
+}
+
+/* ---------------- YouTube araması ---------------- */
+
+function boxYoutubeKey(): string { return secretSetting('yt_api_key'); }
+
+function boxCacheGet(string $key, int $ttl): ?array {
+    $file = nbPrivateDir('cache') . '/' . hash('sha256', $key) . '.json';
+    if (!is_file($file) || time() - (int)@filemtime($file) >= $ttl) return null;
+    $data = json_decode((string)@file_get_contents($file), true);
+    return is_array($data) ? $data : null;
+}
+
+function boxCachePut(string $key, array $data): void {
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json !== false) @file_put_contents(nbPrivateDir('cache') . '/' . hash('sha256', $key) . '.json', $json, LOCK_EX);
+}
+
+function boxYoutube(string $resource, array $params): array {
+    $key = boxYoutubeKey();
+    if ($key === '') throw new RuntimeException('Arama servisi yapılandırılmamış.');
+    $cacheKey = $resource . '?' . http_build_query($params);
+    $ttl = max(60, (int)site('search_cache_seconds', '3600'));
+    if ($cached = boxCacheGet($cacheKey, $ttl)) return $cached;
+
+    $params['key'] = $key;
+    $ch = curl_init('https://www.googleapis.com/youtube/v3/' . $resource . '?' . http_build_query($params));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_TIMEOUT => 15, CURLOPT_ENCODING => '', CURLOPT_HTTPHEADER => ['Accept: application/json'], CURLOPT_USERAGENT => 'Box/' . boxVersion()]);
+    $response = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if (!is_string($response)) {
+        error_log('[Box] YouTube bağlantı hatası: ' . $error);
+        throw new RuntimeException('Arama servisine ulaşılamadı.');
+    }
+    $data = json_decode($response, true);
+    if (!is_array($data) || $status < 200 || $status >= 300) {
+        $reason = (string)($data['error']['errors'][0]['reason'] ?? '');
+        saveSite('yt_last_error', json_encode(['at' => date('Y-m-d H:i:s'), 'status' => $status, 'reason' => $reason, 'message' => mb_substr((string)($data['error']['message'] ?? ''), 0, 200)], JSON_UNESCAPED_UNICODE));
+        if ($reason === 'quotaExceeded') secEvent('warn', 'yt_quota', 'YouTube API günlük kotası doldu; arama gece yarısı (Pasifik saati) sıfırlanana kadar çalışmaz.', null, 'ytq' . date('Y-m-d'), 12);
+        throw new RuntimeException($reason === 'quotaExceeded' ? 'Arama şu an yoğun, biraz sonra tekrar dene.' : 'Arama şu an yapılamıyor.');
+    }
+    $units = $resource === 'search' ? 100 : 1;
+    q("INSERT INTO site_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=setting_value+VALUES(setting_value)", ['yt_units_' . gmdate('Y-m-d', time() - 8 * 3600), (string)$units]);
+    boxCachePut($cacheKey, $data);
+    return $data;
+}
+
+function boxIsoSeconds(string $duration): int {
+    if (!preg_match('/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/', $duration, $m)) return 0;
+    return ((int)($m[1] ?? 0)) * 86400 + ((int)($m[2] ?? 0)) * 3600 + ((int)($m[3] ?? 0)) * 60 + ((int)($m[4] ?? 0));
+}
+
+function boxCleanText(string $t): string { return trim(html_entity_decode($t, ENT_QUOTES | ENT_HTML5, 'UTF-8')); }
+
+function boxSearch(string $query): array {
+    $search = boxYoutube('search', ['part' => 'snippet', 'q' => $query, 'type' => 'video', 'maxResults' => 25, 'regionCode' => 'TR', 'safeSearch' => 'none']);
+    $ids = [];
+    foreach (($search['items'] ?? []) as $item) {
+        $id = $item['id']['videoId'] ?? null;
+        if (is_string($id) && preg_match(BOX_VIDEO_ID, $id)) $ids[] = $id;
+    }
+    $durations = [];
+    if ($ids) {
+        $details = boxYoutube('videos', ['part' => 'contentDetails', 'id' => implode(',', $ids)]);
+        foreach (($details['items'] ?? []) as $item) $durations[(string)$item['id']] = boxIsoSeconds((string)($item['contentDetails']['duration'] ?? ''));
+    }
+    $out = [];
+    foreach (($search['items'] ?? []) as $item) {
+        $id = $item['id']['videoId'] ?? null;
+        if (!is_string($id) || !in_array($id, $ids, true)) continue;
+        $sn = $item['snippet'] ?? []; $th = $sn['thumbnails'] ?? [];
+        $out[] = [
+            'id' => $id,
+            'title' => boxCleanText((string)($sn['title'] ?? '')),
+            'channel' => boxCleanText((string)($sn['channelTitle'] ?? '')),
+            'thumbnail' => $th['high']['url'] ?? $th['medium']['url'] ?? $th['default']['url'] ?? null,
+            'duration' => $durations[$id] ?? 0,
+        ];
+    }
+    return $out;
+}
+
+function boxYoutubeUnitsToday(): int {
+    return (int)site('yt_units_' . gmdate('Y-m-d', time() - 8 * 3600), '0');
+}
+
+/* ---------------- VDS indirme servisi ---------------- */
+
+function boxVdsUrl(): string { return rtrim(site('vds_url', 'https://yt2.aydworks.com.tr'), '/'); }
+function boxVdsKey(): string { return secretSetting('vds_signing_key'); }
+
+function boxSignedDownload(string $videoId): array {
+    $key = boxVdsKey();
+    if ($key === '') throw new RuntimeException('İndirme servisi yapılandırılmamış.');
+    $ttl = max(60, min(3600, (int)site('download_link_ttl', '300')));
+    $exp = time() + $ttl;
+    return ['url' => boxVdsUrl() . '/get?' . http_build_query(['v' => $videoId, 'exp' => $exp, 'sig' => hash_hmac('sha256', $videoId . ':' . $exp, $key)]), 'expires_at' => $exp];
+}
+
+/** VDS sağlık kontrolü: /health yanıtı ve süresi. */
+function boxVdsHealth(): array {
+    $ch = curl_init(boxVdsUrl() . '/health');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_TIMEOUT => 6, CURLOPT_USERAGENT => 'Box-Health/' . boxVersion()]);
+    $t = microtime(true);
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    $ok = is_string($body) && $code === 200 && str_contains($body, 'ok');
+    return ['at' => date('Y-m-d H:i:s'), 'ok' => $ok, 'ms' => (int)round((microtime(true) - $t) * 1000), 'code' => $code, 'error' => $ok ? '' : ($err !== '' ? $err : 'HTTP ' . $code)];
+}
+
+/** Saatlik servis izleme: VDS iki kontrol üst üste ulaşılamazsa uyarı üretir. */
+function boxServiceWatch(): void {
+    $prev = json_decode(site('vds_health'), true);
+    $now = boxVdsHealth();
+    $now['fails'] = $now['ok'] ? 0 : (int)($prev['fails'] ?? 0) + 1;
+    saveSite('vds_health', json_encode($now, JSON_UNESCAPED_UNICODE));
+    if ($now['fails'] === 2) secEvent('critical', 'vds_down', 'VDS indirme servisine ulaşılamıyor (' . $now['error'] . '). Kullanıcılar şarkı indiremiyor. Panel > Servisler.', null, 'vds' . date('YmdH'), 6);
+    if ($now['ok'] && (int)($prev['fails'] ?? 0) >= 2) staffAlert('services', '✅ VDS indirme servisi yeniden çalışıyor (' . $now['ms'] . ' ms).');
+}
+
+function boxDailyCleanup(): void {
+    q('DELETE FROM login_attempts WHERE attempted_at<DATE_SUB(NOW(),INTERVAL 2 DAY)');
+    q('DELETE FROM tokens WHERE expires_at<NOW()');
+    q('DELETE FROM search_log WHERE day<DATE_SUB(CURDATE(),INTERVAL 120 DAY)');
+    q('DELETE FROM api_metrics WHERE bucket<DATE_SUB(NOW(),INTERVAL 30 DAY)');
+    q("DELETE FROM site_settings WHERE setting_key LIKE 'yt\\_units\\_%' AND setting_key<?", ['yt_units_' . date('Y-m-d', strtotime('-40 days'))]);
+    foreach (glob(nbPrivateDir('cache') . '/*.json') ?: [] as $f) if (time() - (int)@filemtime($f) > 86400) @unlink($f);
+}
+
+/* ---------------- API metrikleri ---------------- */
+
+function boxApiMetric(int $status, float $started): void {
+    try {
+        $ms = (int)round((microtime(true) - $started) * 1000);
+        $bucket = date('Y-m-d H:i:00', (int)(floor(time() / 300) * 300));
+        q('INSERT INTO api_metrics(bucket,requests,client_errors,server_errors,total_ms,max_ms) VALUES(?,1,?,?,?,?) ON DUPLICATE KEY UPDATE requests=requests+1,client_errors=client_errors+VALUES(client_errors),server_errors=server_errors+VALUES(server_errors),total_ms=total_ms+VALUES(total_ms),max_ms=GREATEST(max_ms,VALUES(max_ms))',
+            [$bucket, $status >= 400 && $status < 500 ? 1 : 0, $status >= 500 ? 1 : 0, $ms, $ms]);
+    } catch (Throwable $e) {}
+}
+
+/* ---------------- Sürüm karşılaştırma ---------------- */
+
+function boxVersionLess(string $a, string $b): bool {
+    $na = array_map('intval', explode('.', preg_replace('/[^0-9.]/', '', $a) ?: '0'));
+    $nb = array_map('intval', explode('.', preg_replace('/[^0-9.]/', '', $b) ?: '0'));
+    for ($i = 0; $i < max(count($na), count($nb)); $i++) {
+        $x = $na[$i] ?? 0; $y = $nb[$i] ?? 0;
+        if ($x !== $y) return $x < $y;
+    }
+    return false;
+}

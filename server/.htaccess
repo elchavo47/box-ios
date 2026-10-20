@@ -1,0 +1,45 @@
+# Box: yalnızca index.php ve /assets dışarıya açıktır. Kod, ayar, yedek ve günlük klasörleri kapalıdır.
+# Not: Aynı alan adındaki eski YouTube API'si (api.php) çalışmaya devam eder.
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_headers.c>
+  Header always unset X-Powered-By
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  <FilesMatch "\.(css|js|woff2|svg|png)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Authorization başlığı PHP'ye ulaşsın (bazı hostinglerde kayboluyor).
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Gizli dosyalar (.git, .env, .htaccess ...) ve iç klasörler: 403.
+  RewriteRule (^|/)\. - [F,L]
+  RewriteRule ^(app|bin|config|database|logs|storage|vendor|cache|_inc|install/.+)(/|$) - [F,L]
+
+  # Aynı alan adındaki eski YouTube ses API'si
+  RewriteRule ^api\.php$ - [L]
+
+  # Statik dosyalar doğrudan sunulur.
+  RewriteRule ^index\.php$ - [L]
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^(assets/[A-Za-z0-9_./-]+\.(css|js|woff2|svg|png|jpg|webp|ico))$ - [L]
+
+  # Geri kalan her şey uygulamaya gider (başka hiçbir .php dosyası doğrudan çalışmaz).
+  RewriteRule ^ index.php [L,QSA]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+  <FilesMatch "^(?!(index|api)\.php$).+\.php$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+
+<FilesMatch "^(VERSION|\.env.*|.*\.(sql|log|lock|md|bak|zip|gz|ini|json|yml|yaml|sh|dist|tmp))$">
+  Require all denied
+</FilesMatch>
