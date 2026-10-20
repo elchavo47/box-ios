@@ -8,7 +8,7 @@ struct OnboardingView: View {
 
     private let pages: [(icon: String, title: String, text: String)] = [
         ("folder.badge.plus", "Müziğini getir", "Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamada \"Box ile aç\" de. Klasörlerin olduğu gibi kalır."),
-        ("magnifyingglass", "Ara, dinle, indir", "Premium ile istediğin şarkıyı bul: dokun hemen dinle, beğendiğini tek dokunuşla indir. YouTube listelerini de içe aktarabilirsin."),
+        ("music.note.list", "Kitaplığını düzenle", "Çalma listeleri oluştur, sevdiklerini beğen, kapakları değiştir. Akıllı listeler en çok dinlediklerini kendiliğinden toplar."),
         ("moon.zzz.fill", "Sana göre", "Uyku zamanlayıcısı, şarkı sözleri, radyo, ekolayzer ve dinlediklerine göre öneriler. Hepsi Ayarlar'da."),
     ]
 

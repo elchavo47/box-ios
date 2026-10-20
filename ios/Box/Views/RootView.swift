@@ -194,25 +194,20 @@ private struct UpdateRequiredView: View {
 }
 
 
-/// Box tasarımında, alttan açılan duyuru kartı.
+/// Box tasarımında, ekranın ortasında açılan duyuru kartı.
 private struct AnnouncementCard: View {
     let announcement: RemoteConfig.Announcement
     let onClose: () -> Void
 
     @State private var shown = false
-    @State private var dragY: CGFloat = 0
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Color.black.opacity(shown ? 0.55 : 0)
+        ZStack {
+            Color.black.opacity(shown ? 0.6 : 0)
                 .ignoresSafeArea()
                 .onTapGesture { close() }
 
             VStack(alignment: .leading, spacing: 16) {
-                Capsule().fill(Color.white.opacity(0.25)).frame(width: 40, height: 5)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 2)
-
                 HStack(spacing: 12) {
                     BoxMark(size: 34)
                     VStack(alignment: .leading, spacing: 2) {
@@ -225,6 +220,7 @@ private struct AnnouncementCard: View {
                             .foregroundColor(.white)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    Spacer(minLength: 0)
                 }
 
                 ScrollView {
@@ -234,7 +230,7 @@ private struct AnnouncementCard: View {
                         .lineSpacing(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 260)
+                .frame(maxHeight: 300)
                 .fixedSize(horizontal: false, vertical: true)
 
                 Button(action: close) {
@@ -243,42 +239,34 @@ private struct AnnouncementCard: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 4)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 12)
-            .padding(.bottom, 26)
+            .padding(22)
+            .frame(maxWidth: 400)
             .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(Color.boxSurface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                    )
                     .overlay(alignment: .top) {
                         LinearGradient(colors: [Color.accent.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)
                             .frame(height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                     }
-                    .ignoresSafeArea(edges: .bottom)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
             )
-            .padding(.horizontal, 8)
-            .offset(y: shown ? max(0, dragY) : 600)
-            .gesture(
-                DragGesture()
-                    .onChanged { dragY = $0.translation.height }
-                    .onEnded { value in
-                        if value.translation.height > 110 { close() }
-                        else { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 } }
-                    }
-            )
+            .padding(.horizontal, 24)
+            .scaleEffect(shown ? 1 : 0.88)
+            .opacity(shown ? 1 : 0)
         }
         .onAppear {
             Haptics.soft()
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) { shown = true }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { shown = true }
         }
     }
 
     private func close() {
-        withAnimation(.easeIn(duration: 0.22)) { shown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { onClose() }
+        withAnimation(.easeIn(duration: 0.18)) { shown = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onClose() }
     }
 }
