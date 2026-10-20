@@ -17,7 +17,11 @@ import shutil
 import sys
 import threading
 import time
+import logging
+import traceback
 from urllib.parse import parse_qs, urlparse
+
+log = logging.getLogger("yt-stream")
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -179,13 +183,43 @@ def stat(name: str, ok: bool, ms: float) -> None:
         s["err"] += 1
 
 
-def ytm():
-    """Her iş parçacığına bir YTMusic (requests oturumu iş parçacıkları arasında paylaşılmasın)."""
-    inst = getattr(_local, "ytm", None)
+def ytm(language: str = "en"):
+    """Her iş parçacığına bir YTMusic (requests oturumu iş parçacıkları arasında paylaşılmasın).
+
+    Arama/sanatçı/albüm ayrıştırması ytmusicapi'nin İngilizce bölüm başlıklarıyla en sağlam çalışır
+    (Türkçe arayüzde "songs" filtresi boş/KeyError dönüyor). Bölge her zaman TR kalır; böylece
+    sonuçlar Türkiye'ye göre gelir. Kullanıcıya başlık gösterilen uçlar (ruh hali, listeler) "tr" kullanır.
+    """
+    cache = getattr(_local, "ytm", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        _local.ytm = cache
+    inst = cache.get(language)
     if inst is None:
-        inst = YTMusic(language="tr", location="TR")
-        _local.ytm = inst
+        inst = YTMusic(language=language, location="TR")
+        cache[language] = inst
     return inst
+
+
+SEARCH_TYPES = {"songs": "song", "videos": "video", "artists": "artist", "albums": "album"}
+
+
+def safe_search(q: str, kind: str, limit: int) -> list:
+    """Filtreli arama; boş dönerse ya da ayrıştırma patlarsa filtresiz aramadan süz."""
+    want = SEARCH_TYPES.get(kind)
+    for language in ("en", "tr"):
+        try:
+            items = ytm(language).search(q, filter=kind, limit=limit)
+            if items:
+                return items
+        except Exception:
+            log.warning("music search %s/%s failed for %r\n%s", kind, language, q, traceback.format_exc(limit=4))
+    try:
+        items = ytm("en").search(q, limit=max(limit, 20))
+        return [i for i in items if not want or i.get("resultType") == want]
+    except Exception:
+        log.warning("music search (unfiltered) failed for %r\n%s", q, traceback.format_exc(limit=4))
+        raise
 
 
 def check_music_signature(exp: str, sig: str, require_music: bool = True) -> None:
@@ -286,7 +320,7 @@ async def music_search(q: str = "", limit: int = 20, filter: str = "songs", exp:
 
     def run():
         out, seen = [], set()
-        for item in ytm().search(q, filter=kind, limit=limit):
+        for item in safe_search(q, kind, limit):
             t = track(item)
             if t and t["id"] not in seen:
                 seen.add(t["id"])
@@ -339,7 +373,7 @@ async def clip_for(v: str):
         title = (first.get("title") or "").lower()
         artist = ((first.get("artists") or [{}])[0].get("name") or "")
         if title:
-            for item in ytm().search(f"{first.get('title')} {artist}", filter="videos", limit=5):
+            for item in safe_search(f"{first.get('title')} {artist}", "videos", 5):
                 if title[:20] in (item.get("title") or "").lower() and item.get("videoId"):
                     return item["videoId"]
         return None
@@ -379,7 +413,7 @@ def album_card(item: dict, artist: str = "") -> dict | None:
 
 
 def find_artist_id(q: str) -> str | None:
-    for item in ytm().search(q, filter="artists", limit=3):
+    for item in safe_search(q, "artists", 3):
         if item.get("browseId"):
             return item["browseId"]
     return None
@@ -394,7 +428,7 @@ async def music_artists(q: str = "", limit: int = 3, exp: str = "", sig: str = "
         raise HTTPException(400, "Arama metni gerekli.")
 
     def run():
-        return [c for c in (artist_card(i) for i in ytm().search(q, filter="artists", limit=max(1, min(limit, 10)))) if c]
+        return [c for c in (artist_card(i) for i in safe_search(q, "artists", max(1, min(limit, 10)))) if c]
 
     return {"ok": True, "results": await cached(f"as:{q.lower()}:{limit}", 12 * 3600, run)}
 
@@ -462,7 +496,7 @@ async def music_album(id: str = "", q: str = "", exp: str = "", sig: str = ""):
     def run():
         bid = id
         if not bid:
-            found = ytm().search(q, filter="albums", limit=3)
+            found = safe_search(q, "albums", 3)
             bid = next((i.get("browseId") for i in found if i.get("browseId")), None)
         if not bid:
             return None
@@ -534,7 +568,7 @@ async def music_moods(exp: str = "", sig: str = ""):
     check_music_signature(exp, sig)
 
     def run():
-        sections = ytm().get_mood_categories()
+        sections = ytm("tr").get_mood_categories()
         out, seen = [], set()
         names = list(sections.keys())
         # İlk bölüm ("Senin için") hesaba özel; ruh hali ve türler sonra gelir.
@@ -558,7 +592,7 @@ async def music_mood(params: str = "", exp: str = "", sig: str = ""):
         raise HTTPException(400, "Geçersiz kategori.")
 
     def run():
-        playlists = ytm().get_mood_playlists(params)[:3]
+        playlists = ytm("tr").get_mood_playlists(params)[:3]
         tracks, seen = [], set()
         for pl in playlists:
             if not pl.get("playlistId"):

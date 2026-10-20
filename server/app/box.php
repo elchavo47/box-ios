@@ -288,7 +288,8 @@ function boxMusic(string $path, array $params, int $ttl): array {
     }
     q("INSERT INTO site_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=setting_value+VALUES(setting_value)", ['music_calls_' . date('Y-m-d'), '1']);
     saveSite('music_last_ok', json_encode(['at' => date('Y-m-d H:i:s'), 'ms' => (int)round((microtime(true) - $t) * 1000)]));
-    boxCachePut($cacheKey, $data);
+    // Boş sonuç önbelleğe yazılmaz (VDS geçici olarak boş dönerse saatlerce boş kalmasın).
+    if (!array_key_exists('results', $data) || !empty($data['results'])) boxCachePut($cacheKey, $data);
     return $data;
 }
 
