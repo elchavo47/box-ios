@@ -41,6 +41,14 @@ $hourLabel = fn($p) => substr((string)$p['at'], 11, 2);
   <div><p class="muted">VDS yanıt süresi (ms)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)$p['ms']], $recent), 'ms')?></div>
   <div><p class="muted">Şarkı hazırlama süresi (ort. ms)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)($p['resolve']['avg_ms'] ?? 0)], $recent), 'ms')?></div>
 </div>
+<?php $vdsInfo = json_decode(site('vds_info'), true) ?: null; if ($vdsInfo): $le = $vdsInfo['last_error'] ?? null; ?>
+<p class="muted">
+  <?= $vdsInfo['ytmusicapi'] ? 'ytmusicapi ' . h($vdsInfo['ytmusicapi']) : 'ytmusicapi sürümü bilinmiyor (yt_stream.py eski)' ?>
+  <?php if (is_array($le) && !empty($le['at']) && time() - (int)$le['at'] < 86400): ?>
+   · Son YouTube Music hatası: <code><?=h(($le['where'] ?? '') . ' ' . ($le['type'] ?? ''))?></code><?= !empty($le['query']) ? ' "' . h($le['query']) . '"' : '' ?> · <?=h(nbAgo(date('Y-m-d H:i:s', (int)$le['at'])))?> <small>(diğer dille tekrar denendi)</small>
+  <?php endif ?>
+</p>
+<?php endif ?>
 <p class="muted">Sorun olunca Telegram'a haber gelir: VDS'ye iki ölçüm üst üste ulaşılamazsa, YouTube Music isteklerinin %30'undan fazlası hata verirse ve kütüphane eksikse.</p>
 <?php cardEnd(); ?>
 

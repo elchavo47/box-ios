@@ -734,6 +734,7 @@ function boxVdsSample(array $health): void {
     $series = json_decode(site('vds_series'), true) ?: [];
     $point = ['at' => date('Y-m-d H:i'), 'ok' => $health['ok'] ? 1 : 0, 'ms' => (int)$health['ms']];
     if ($stats) {
+        saveSite('vds_info', json_encode(['at' => date('Y-m-d H:i:s'), 'ytmusicapi' => (string)($stats['ytmusicapi'] ?? ''), 'last_error' => is_array($stats['last_error'] ?? null) ? $stats['last_error'] : null], JSON_UNESCAPED_UNICODE));
         $restarted = !is_array($last) || (int)($stats['uptime'] ?? 0) < (int)($last['uptime'] ?? 0);
         foreach (['music', 'resolve'] as $k) {
             $now = $stats['stats'][$k] ?? ['n' => 0, 'err' => 0, 'avg_ms' => 0];

@@ -114,7 +114,7 @@ async def health(v: str = ""):
             return {"ok": True, "cached": len(_cache), "resolve_ms": int((time.time() - started) * 1000)}
         except HTTPException as e:
             return {"ok": False, "error": e.detail}
-    return {"ok": True, "cached": len(_cache)}
+    return {"ok": True, "cached": len(_cache), "ytmusicapi": YTMUSIC_VERSION or None}
 
 
 @app.api_route("/stream", methods=["GET", "HEAD"])
@@ -175,6 +175,44 @@ STARTED = time.time()
 STATS: dict[str, dict[str, float]] = {}
 
 
+try:
+    from importlib.metadata import version as _pkg_version
+    YTMUSIC_VERSION = _pkg_version("ytmusicapi") if YTMusic is not None else ""
+except Exception:
+    YTMUSIC_VERSION = ""
+
+LAST_ERROR: dict = {}
+
+
+def note_error(where: str, error: BaseException, query: str = "") -> None:
+    """Son YouTube Music hatası (panelde görünür)."""
+    LAST_ERROR.clear()
+    LAST_ERROR.update({"at": int(time.time()), "where": where, "type": type(error).__name__, "detail": str(error)[:160], "query": query[:80]})
+
+
+def ytm_call(method: str, *args, languages=("en", "tr"), **kwargs):
+    """ytmusicapi çağrısı: bir dilde ayrıştırma patlarsa diğeriyle dene."""
+    last = None
+    for language in languages:
+        try:
+            return getattr(ytm(language), method)(*args, **kwargs)
+        except Exception as e:
+            last = e
+            note_error(method, e, str(args[0]) if args else "")
+            log.warning("ytmusic %s (%s) failed\n%s", method, language, traceback.format_exc(limit=4))
+    raise last
+
+
+def part(where: str, fn, default=None):
+    """Sayfanın bir bölümü bozuksa (YouTube yapıyı değiştirdi) sayfanın tamamı gitmesin."""
+    try:
+        return fn()
+    except Exception as e:
+        note_error(where, e)
+        log.warning("music part %s failed\n%s", where, traceback.format_exc(limit=3))
+        return [] if default is None else default
+
+
 def stat(name: str, ok: bool, ms: float) -> None:
     s = STATS.setdefault(name, {"n": 0, "err": 0, "ms": 0.0})
     s["n"] += 1
@@ -212,7 +250,8 @@ def safe_search(q: str, kind: str, limit: int) -> list:
             items = ytm(language).search(q, filter=kind, limit=limit)
             if items:
                 return items
-        except Exception:
+        except Exception as e:
+            note_error("search/" + kind, e, q)
             log.warning("music search %s/%s failed for %r\n%s", kind, language, q, traceback.format_exc(limit=4))
     try:
         items = ytm("en").search(q, limit=max(limit, 20))
@@ -392,7 +431,7 @@ async def music_radio(v: str = "", limit: int = 30, exp: str = "", sig: str = ""
     limit = max(5, min(50, limit))
 
     def run():
-        data = ytm().get_watch_playlist(videoId=v, limit=limit, radio=True)
+        data = ytm_call("get_watch_playlist", videoId=v, limit=limit, radio=True)
         out = []
         for item in data.get("tracks") or []:
             t = track(item)
@@ -415,7 +454,7 @@ async def music_video(v: str = "", exp: str = "", sig: str = ""):
 
 async def clip_for(v: str):
     def run():
-        tracks = ytm().get_watch_playlist(videoId=v, limit=1).get("tracks") or []
+        tracks = ytm_call("get_watch_playlist", videoId=v, limit=1).get("tracks") or []
         first = tracks[0] if tracks else {}
         if first.get("videoType") == "MUSIC_VIDEO_TYPE_OMV":
             return v
@@ -470,6 +509,12 @@ def _artists_text(item: dict) -> str:
     return ", ".join(a.get("name", "") for a in (item.get("artists") or []) if isinstance(a, dict) and a.get("name"))
 
 
+def _people(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(a.get("name", "") for a in value if isinstance(a, dict) and a.get("name"))
+    return str(value or "")
+
+
 def search_item(item: dict) -> dict | None:
     """Karışık arama sonucu (şarkı, video, albüm, sanatçı, liste) tek biçimde."""
     kind = item.get("resultType")
@@ -510,7 +555,7 @@ def search_item(item: dict) -> dict | None:
         if not pid or not re.match(r"^[A-Za-z0-9_-]{10,80}$", pid):
             return None
         return {"type": "playlist", "id": pid, "title": item.get("title") or "", "thumbnail": square(item.get("thumbnails")),
-                "author": str(item.get("author") or ""), "item_count": str(item.get("itemCount") or "")}
+                "author": _people(item.get("author")), "item_count": str(item.get("itemCount") or "")}
     return None
 
 
@@ -549,14 +594,14 @@ async def music_artist(id: str = "", q: str = "", exp: str = "", sig: str = ""):
         bid = id or find_artist_id(q)
         if not bid:
             return None
-        data = ytm().get_artist(bid)
+        data = ytm_call("get_artist", bid)
         name = data.get("name") or q
-        songs = [t for t in (track(i) for i in ((data.get("songs") or {}).get("results") or [])) if t]
+        songs = part("artist.songs", lambda: [t for t in (track(i) for i in ((data.get("songs") or {}).get("results") or [])) if t])
         # Popüler şarkılar listesinin tamamı (5'ten fazlası) ayrı bir listede.
         songs_list = (data.get("songs") or {}).get("browseId")
         if songs_list and songs_list.startswith("VL"):
             try:
-                more = ytm().get_playlist(songs_list[2:], limit=40).get("tracks") or []
+                more = ytm_call("get_playlist", songs_list[2:], limit=40).get("tracks") or []
                 seen = {t["id"] for t in songs}
                 for i in more:
                     t = track(i)
@@ -574,9 +619,9 @@ async def music_artist(id: str = "", q: str = "", exp: str = "", sig: str = ""):
                 "listeners": data.get("monthlyListeners") or data.get("subscribers") or "",
             },
             "songs": songs[:40],
-            "albums": [c for c in (album_card(i, name) for i in ((data.get("albums") or {}).get("results") or [])) if c],
-            "singles": [c for c in (album_card(i, name) for i in ((data.get("singles") or {}).get("results") or [])) if c],
-            "related": [c for c in ({"id": i.get("browseId"), "name": i.get("title") or "", "thumbnail": square(i.get("thumbnails"))} for i in ((data.get("related") or {}).get("results") or [])) if c["id"]],
+            "albums": part("artist.albums", lambda: [c for c in (album_card(i, name) for i in ((data.get("albums") or {}).get("results") or [])) if c]),
+            "singles": part("artist.singles", lambda: [c for c in (album_card(i, name) for i in ((data.get("singles") or {}).get("results") or [])) if c]),
+            "related": part("artist.related", lambda: [c for c in ({"id": i.get("browseId"), "name": i.get("title") or "", "thumbnail": square(i.get("thumbnails"))} for i in ((data.get("related") or {}).get("results") or [])) if c["id"]]),
         }
 
     value = await cached(f"ar:{id or q.lower()}", 12 * 3600, run)
@@ -602,7 +647,7 @@ async def music_album(id: str = "", q: str = "", exp: str = "", sig: str = ""):
             bid = next((i.get("browseId") for i in found if i.get("browseId")), None)
         if not bid:
             return None
-        data = ytm().get_album(bid)
+        data = ytm_call("get_album", bid)
         cover = square(data.get("thumbnails"))
         artist = ", ".join(a.get("name", "") for a in (data.get("artists") or []) if a.get("name"))
         artist_id = next((a.get("id") for a in (data.get("artists") or []) if a.get("id")), None)
@@ -637,7 +682,7 @@ async def music_playlist(id: str = "", limit: int = 60, exp: str = "", sig: str 
     limit = max(5, min(100, limit))
 
     def run():
-        data = ytm().get_playlist(id, limit=limit)
+        data = ytm_call("get_playlist", id, limit=limit)
         return {"title": data.get("title") or "", "thumbnail": square(data.get("thumbnails")),
                 "tracks": [t for t in (track(i) for i in (data.get("tracks") or [])) if t]}
 
@@ -651,12 +696,12 @@ async def music_charts(country: str = "TR", exp: str = "", sig: str = ""):
     country = country.upper() if re.match(r"^[A-Za-z]{2}$", country or "") else "TR"
 
     def run():
-        data = ytm().get_charts(country)
+        data = ytm_call("get_charts", country)
         lists = data.get("videos") or []
         title, tracks = "", []
         if lists and lists[0].get("playlistId"):
             title = lists[0].get("title") or ""
-            pl = ytm().get_playlist(lists[0]["playlistId"], limit=50)
+            pl = ytm_call("get_playlist", lists[0]["playlistId"], limit=50)
             tracks = [t for t in (track(i) for i in (pl.get("tracks") or [])) if t]
         artists = [c for c in ({"id": i.get("browseId"), "name": i.get("title") or "", "thumbnail": square(i.get("thumbnails"))} for i in (data.get("artists") or [])) if c["id"]][:20]
         return {"title": title, "tracks": tracks, "artists": artists}
@@ -670,7 +715,7 @@ async def music_moods(exp: str = "", sig: str = ""):
     check_music_signature(exp, sig)
 
     def run():
-        sections = ytm("tr").get_mood_categories()
+        sections = ytm_call("get_mood_categories", languages=("tr", "en"))
         out, seen = [], set()
         names = list(sections.keys())
         # İlk bölüm ("Senin için") hesaba özel; ruh hali ve türler sonra gelir.
@@ -694,13 +739,13 @@ async def music_mood(params: str = "", exp: str = "", sig: str = ""):
         raise HTTPException(400, "Geçersiz kategori.")
 
     def run():
-        playlists = ytm("tr").get_mood_playlists(params)[:3]
+        playlists = ytm_call("get_mood_playlists", params, languages=("tr", "en"))[:3]
         tracks, seen = [], set()
         for pl in playlists:
             if not pl.get("playlistId"):
                 continue
             try:
-                items = ytm().get_playlist(pl["playlistId"], limit=30).get("tracks") or []
+                items = ytm_call("get_playlist", pl["playlistId"], limit=30).get("tracks") or []
             except Exception:
                 continue
             for i in items:
@@ -721,4 +766,5 @@ async def stats(exp: str = "", sig: str = ""):
     for name, s in STATS.items():
         out[name] = {"n": int(s["n"]), "err": int(s["err"]), "avg_ms": int(s["ms"] / s["n"]) if s["n"] else 0}
     return {"ok": True, "uptime": int(time.time() - STARTED), "music": YTMusic is not None,
+            "ytmusicapi": YTMUSIC_VERSION or None, "last_error": LAST_ERROR or None,
             "cache": {"links": len(_cache), "music": len(_music_cache)}, "stats": out}
