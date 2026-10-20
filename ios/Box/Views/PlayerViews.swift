@@ -115,6 +115,7 @@ private struct MiniProgress: View {
 struct FullPlayerView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
@@ -302,10 +303,25 @@ struct FullPlayerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 MarqueeText(text: track.title, font: .system(size: 23, weight: .bold))
                     .frame(height: 30)
-                Text(track.displayArtist)
-                    .font(.system(size: 17))
-                    .foregroundColor(.white.opacity(0.66))
-                    .lineLimit(1)
+                // Premium'da sanatçı adına basınca sanatçı sayfası açılır.
+                Button {
+                    guard auth.isPremium else { return }
+                    router.openMusic(.artistPage(for: track), player: player)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(track.displayArtist)
+                            .font(.system(size: 17))
+                            .foregroundColor(.white.opacity(0.66))
+                            .lineLimit(1)
+                        if auth.isPremium {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!auth.isPremium)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

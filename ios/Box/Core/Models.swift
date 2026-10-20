@@ -137,6 +137,10 @@ struct SearchResult: Codable, Identifiable, Hashable {
     let channel: String
     let thumbnail: String?
     let duration: Int
+    /// YouTube Music: sanatçı ve albüm sayfasına gitmek için (eski sonuçlarda yok).
+    var artistId: String? = nil
+    var albumId: String? = nil
+    var album: String? = nil
 
     var thumbnailURL: URL? {
         thumbnail.flatMap(URL.init(string:))
@@ -150,6 +154,73 @@ struct SearchResult: Codable, Identifiable, Hashable {
 
 struct SearchResponse: Decodable {
     let results: [SearchResult]
+    /// Aramayla eşleşen sanatçı (en üstte gösterilir).
+    let artist: ArtistCard?
+}
+
+// MARK: - YouTube Music sayfaları
+
+struct ArtistCard: Codable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let thumbnail: String?
+    var thumbnailURL: URL? { thumbnail.flatMap(URL.init(string:)) }
+}
+
+struct AlbumCard: Codable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let artist: String?
+    let year: String?
+    let type: String?
+    let thumbnail: String?
+    var thumbnailURL: URL? { thumbnail.flatMap(URL.init(string:)) }
+}
+
+struct ArtistPage: Decodable {
+    struct Info: Decodable {
+        let id: String
+        let name: String
+        let thumbnail: String?
+        let description: String?
+        let listeners: String?
+        var thumbnailURL: URL? { thumbnail.flatMap(URL.init(string:)) }
+    }
+    let artist: Info
+    let songs: [SearchResult]
+    let albums: [AlbumCard]
+    let singles: [AlbumCard]
+    let related: [ArtistCard]
+}
+
+struct AlbumPage: Decodable {
+    struct Info: Decodable {
+        let id: String
+        let title: String
+        let artist: String?
+        let artistId: String?
+        let year: String?
+        let type: String?
+        let thumbnail: String?
+        var thumbnailURL: URL? { thumbnail.flatMap(URL.init(string:)) }
+    }
+    let album: Info
+    let tracks: [SearchResult]
+}
+
+/// Uygulamadaki bildirim kutusu.
+struct InboxItem: Decodable, Identifiable, Hashable {
+    let id: Int
+    let title: String
+    let body: String
+    let open: String?
+    let createdAt: String
+
+    var date: Date? { ISO8601DateFormatter().date(from: createdAt) }
+}
+
+struct InboxResponse: Decodable {
+    let items: [InboxItem]
 }
 
 struct DownloadLinkResponse: Decodable {

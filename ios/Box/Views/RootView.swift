@@ -51,6 +51,12 @@ struct RootView: View {
             .sheet(isPresented: $router.showAccount) {
                 AccountView()
             }
+            .sheet(item: $router.musicPage) { page in
+                MusicBrowser(root: page)
+            }
+            .sheet(isPresented: $router.showInbox) {
+                InboxView()
+            }
 
 
             Color.clear

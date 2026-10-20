@@ -15,6 +15,7 @@ struct SearchView: View {
     @State private var query = ""
     @State private var submitted = ""
     @State private var results: [SearchResult] = []
+    @State private var topArtist: ArtistCard?
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var scope: Scope = .online
@@ -338,6 +339,11 @@ struct SearchView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
             }
+            if let topArtist {
+                TopArtistRow(artist: topArtist)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
             HStack(spacing: 10) {
                 Button { playAll(shuffled: false, from: nil) } label: { Label("Hepsini dinle", systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
@@ -398,10 +404,12 @@ struct SearchView: View {
                 let response: SearchResponse = try await APIClient.shared.send("search", query: ["q": trimmed], token: token)
                 guard !Task.isCancelled else { return }
                 results = response.results
+                topArtist = response.artist
                 stream.warm(response.results, limit: 5)
             } catch {
                 guard !Task.isCancelled else { return }
                 results = []
+                topArtist = nil
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama yapılamadı."
                 if (error as? APIError)?.status == 403 { await auth.refresh() }
             }

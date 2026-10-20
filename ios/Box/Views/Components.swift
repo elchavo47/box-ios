@@ -257,12 +257,22 @@ struct TrackMenu: View {
             }
             if auth.isPremium {
                 Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
+                musicLinks
             }
             if let extra {
                 Divider()
                 extra
             }
         } label: { menuIcon }
+    }
+
+    /// Premium: şarkının sanatçı ve albüm sayfası (YouTube Music).
+    @ViewBuilder
+    private var musicLinks: some View {
+        Button { router.openMusic(.artistPage(for: track), player: player) } label: { Label("Sanatçıya git", systemImage: "music.mic") }
+        if let album = MusicPage.albumPage(for: track) {
+            Button { router.openMusic(album, player: player) } label: { Label("Albüme git", systemImage: "square.stack") }
+        }
     }
 
     private var localMenu: some View {
@@ -323,6 +333,7 @@ struct TrackMenu: View {
 
             if auth.isPremium {
                 Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
+                musicLinks
             }
             if let extra {
                 Divider()

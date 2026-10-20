@@ -78,6 +78,11 @@ final class PushManager: ObservableObject {
     }
 }
 
+extension Notification.Name {
+    /// Yeni bildirim geldi: bildirim kutusunu yenile.
+    static let boxInboxRefresh = Notification.Name("box.inboxRefresh")
+}
+
 /// Bildirim kaydı UIKit üzerinden gelir.
 final class BoxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -93,7 +98,8 @@ final class BoxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationC
 
     // Uygulama açıkken de bildirim üstten görünsün.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+        await MainActor.run { NotificationCenter.default.post(name: .boxInboxRefresh, object: nil) }
+        return [.banner, .sound, .list]
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

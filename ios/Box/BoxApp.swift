@@ -150,6 +150,7 @@ struct BoxApp: App {
                 .onChange(of: auth.token) { token in
                     guard token != nil else {
                         // Çıkış yapıldı: hesaba ait her şeyi temizle.
+                        InboxStore.shared.reset()
                         history.clear()
                         feed.reset()
                         downloads.reset()
@@ -161,17 +162,26 @@ struct BoxApp: App {
                     Task {
                         await PushManager.shared.requestIfNeeded()
                         await PushManager.shared.upload()
+                        await InboxStore.shared.load(token: auth.token, userID: auth.user?.id)
                     }
                 }
                 .onChange(of: scenePhase) { phase in
                     if phase == .active {
-                        if auth.token != nil { Task { await PushManager.shared.requestIfNeeded() } }
+                        if auth.token != nil {
+                            Task {
+                                await PushManager.shared.requestIfNeeded()
+                                await InboxStore.shared.load(token: auth.token, userID: auth.user?.id)
+                            }
+                        }
                         Task {
                             await library.refresh()
                             await server.refresh()
                             await auth.refresh()
                         }
                     }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .boxInboxRefresh)) { _ in
+                    Task { await InboxStore.shared.load(token: auth.token, userID: auth.user?.id) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .boxShortcut)) { note in
                     guard let raw = note.object as? String, let action = BoxShortcutAction(rawValue: raw) else { return }
@@ -197,6 +207,19 @@ struct BoxApp: App {
 final class AppRouter: ObservableObject {
     @Published var tab: BoxTab = .home
     @Published var showAccount = false
+    /// Sanatçı / albüm sayfası (her yerden açılır, kendi gezinme yığınıyla).
+    @Published var musicPage: MusicPage?
+    @Published var showInbox = false
+
+    /// Tam ekran oynatıcı açıksa önce kapatıp sonra sayfayı açar (iki sayfa aynı anda açılamaz).
+    func openMusic(_ page: MusicPage, player: PlayerManager? = nil) {
+        if let player, player.showFullPlayer {
+            player.showFullPlayer = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.musicPage = page }
+        } else {
+            musicPage = page
+        }
+    }
     @Published private(set) var toast: Toast?
 
     struct Toast: Identifiable, Equatable {

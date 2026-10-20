@@ -115,6 +115,7 @@ struct HomeView: View {
                 }
                 .accessibilityLabel("Ara")
             }
+            if auth.isLoggedIn { InboxButton() }
             AccountButton()
         }
         .frame(height: 44)
