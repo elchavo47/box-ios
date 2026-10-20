@@ -40,7 +40,18 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+            > build.log 2>&1 || true
+
+          # Box kaynaklarındaki hata ve uyarıları GitHub annotation olarak göster
+          grep -E "/ios/Box/.*: (error|warning): " build.log | sort -u | while IFS= read -r line; do
+            file="$(echo "$line" | sed -E 's#^.*/ios/(Box/[^:]+):([0-9]+):([0-9]+): (error|warning): (.*)$#\1#')"
+            lineno="$(echo "$line" | sed -E 's#^.*/ios/(Box/[^:]+):([0-9]+):([0-9]+): (error|warning): (.*)$#\2#')"
+            kind="$(echo "$line" | sed -E 's#^.*/ios/(Box/[^:]+):([0-9]+):([0-9]+): (error|warning): (.*)$#\4#')"
+            msg="$(echo "$line" | sed -E 's#^.*/ios/(Box/[^:]+):([0-9]+):([0-9]+): (error|warning): (.*)$#\5#')"
+            echo "::${kind} file=ios/${file},line=${lineno}::${msg}"
+          done
+
+          grep -E "BUILD (SUCCEEDED|FAILED)" build.log || tail -40 build.log
           grep -q "BUILD SUCCEEDED" build.log
 
       - name: Upload build log
