@@ -13,31 +13,36 @@ struct RootView: View {
     @EnvironmentObject private var settings: AppSettings
 
     @State private var showSplash = true
+    @State private var visited: Set<BoxTab> = [.home]
+
+    @ViewBuilder
+    private func tabPage<Content: View>(_ tab: BoxTab, @ViewBuilder content: () -> Content) -> some View {
+        if visited.contains(tab) {
+            let active = router.tab == tab
+            content()
+                .opacity(active ? 1 : 0)
+                .allowsHitTesting(active)
+                .accessibilityHidden(!active)
+                .zIndex(active ? 1 : 0)
+        }
+    }
 
     var body: some View {
         ZStack {
-            TabView(selection: $router.tab) {
-                HomeView()
-                    .withMiniPlayer()
-                    .tabItem { Label("Ana Sayfa", systemImage: "house.fill") }
-                    .tag(BoxTab.home)
-
-                SearchView()
-                    .withMiniPlayer()
-                    .tabItem { Label("Ara", systemImage: "magnifyingglass") }
-                    .tag(BoxTab.search)
-                    .badge(downloads.activeCount)
-
-                LibraryView()
-                    .withMiniPlayer()
-                    .tabItem { Label("Kitaplık", systemImage: "square.stack.fill") }
-                    .tag(BoxTab.library)
-
-                FilesView()
-                    .withMiniPlayer()
-                    .tabItem { Label("Dosyalar", systemImage: "folder.fill") }
-                    .tag(BoxTab.files)
+            // Sistem sekme çubuğu yerine Box'un kendi alt paneli (BoxDeck).
+            // Sekmeler bir kez açıldıktan sonra canlı tutulur; gezinme durumu kaybolmaz.
+            ZStack {
+                tabPage(.home) { HomeView() }
+                tabPage(.search) { SearchView() }
+                tabPage(.library) { LibraryView() }
+                tabPage(.files) { FilesView() }
             }
+            .overlay(alignment: .bottom) {
+                BoxDeck()
+                    .ignoresSafeArea(.keyboard)
+            }
+            .onAppear { visited.insert(router.tab) }
+            .onChange(of: router.tab) { tab in visited.insert(tab) }
             .sheet(isPresented: $player.showFullPlayer) {
                 FullPlayerView()
                     .presentationDragIndicator(.hidden)
@@ -120,38 +125,153 @@ struct RootView: View {
     }
 }
 
-extension View {
-    /// Her sekmenin altına, sekme çubuğunun hemen üstüne mini player ekler.
-    func withMiniPlayer() -> some View {
-        modifier(MiniPlayerInset())
+/// Alt panel ölçüleri (ekranların son satırı panelin altında kalmasın diye).
+enum DeckMetrics {
+    static let tabs: CGFloat = 58
+    static let mini: CGFloat = 62
+    static let banner: CGFloat = 38
+}
+
+/// Box'un alt paneli: mini oynatıcı ve sekmeler tek parça, üstü yuvarlak koyu bir kutu.
+/// Seçili sekmenin üstündeki yeşil çizgi logodaki küpün üst yüzünden geliyor ve sekmeler arasında kayar.
+struct BoxDeck: View {
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var server: ServerState
+    @EnvironmentObject private var downloads: DownloadManager
+    @Namespace private var lid
+    @State private var keyboardShown = false
+
+    private struct Item: Identifiable {
+        let tab: BoxTab
+        let title: String
+        let icon: String
+        let selectedIcon: String
+        var id: BoxTab { tab }
+    }
+
+    private let items: [Item] = [
+        Item(tab: .home, title: "Ana Sayfa", icon: "house", selectedIcon: "house.fill"),
+        Item(tab: .search, title: "Ara", icon: "magnifyingglass", selectedIcon: "magnifyingglass"),
+        Item(tab: .library, title: "Kitaplık", icon: "square.stack", selectedIcon: "square.stack.fill"),
+        Item(tab: .files, title: "Dosyalar", icon: "folder", selectedIcon: "folder.fill"),
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let message = server.maintenanceMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                    Text(message).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .font(.footnote.weight(.medium))
+                .foregroundColor(.black)
+                .padding(.horizontal, 16)
+                .frame(height: DeckMetrics.banner)
+                .background(Color(red: 0.96, green: 0.71, blue: 0.28))
+            }
+
+            if player.current != nil {
+                MiniPlayerBar()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 0.5)
+            }
+
+            HStack(spacing: 0) {
+                ForEach(items) { item in
+                    tabButton(item)
+                }
+            }
+            .frame(height: DeckMetrics.tabs)
+            .padding(.horizontal, 8)
+        }
+        .clipShape(TopRounded(radius: 22))
+        .background(
+            // Panel ana ekranın alt çizgisine kadar iner; köşeler yalnızca üstte yuvarlak.
+            TopRounded(radius: 22)
+                .fill(Color(red: 0.035, green: 0.037, blue: 0.045))
+                .overlay(TopRounded(radius: 22).stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+                .shadow(color: .black.opacity(0.55), radius: 18, y: -4)
+                .ignoresSafeArea(edges: .bottom)
+        )
+        // Klavye açıkken panel gizlenir (klavyenin üstüne çıkmasın).
+        .opacity(keyboardShown ? 0 : 1)
+        .allowsHitTesting(!keyboardShown)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.15)) { keyboardShown = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.2)) { keyboardShown = false }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.current != nil)
+        .animation(.easeOut(duration: 0.25), value: server.maintenanceMessage)
+    }
+
+    private func tabButton(_ item: Item) -> some View {
+        let selected = router.tab == item.tab
+        return Button {
+            guard router.tab != item.tab else { return }
+            Haptics.tap()
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { router.tab = item.tab }
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    if selected {
+                        Capsule()
+                            .fill(Color.accent)
+                            .frame(width: 22, height: 3)
+                            .matchedGeometryEffect(id: "lid", in: lid)
+                    } else {
+                        Color.clear.frame(width: 22, height: 3)
+                    }
+                }
+                .padding(.bottom, 3)
+
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: selected ? item.selectedIcon : item.icon)
+                        .font(.system(size: 20, weight: selected ? .semibold : .regular))
+                        .foregroundColor(selected ? .accent : Color(white: 0.6))
+                        .scaleEffect(selected ? 1.06 : 1)
+                        .frame(height: 22)
+                    if item.tab == .search && downloads.activeCount > 0 {
+                        Text("\(downloads.activeCount)")
+                            .font(.system(size: 10, weight: .bold).monospacedDigit())
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(Capsule().fill(Color.accent))
+                            .offset(x: 12, y: -6)
+                    }
+                }
+
+                Text(item.title)
+                    .font(.system(size: 10.5, weight: selected ? .semibold : .medium))
+                    .foregroundColor(selected ? .white : Color(white: 0.55))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle(scale: 0.92))
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-private struct MiniPlayerInset: ViewModifier {
-    @EnvironmentObject private var player: PlayerManager
-    @EnvironmentObject private var server: ServerState
+/// Yalnızca üst köşeleri yuvarlatılmış dikdörtgen (iOS 16 uyumlu).
+struct TopRounded: Shape {
+    var radius: CGFloat
 
-    func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                if let message = server.maintenanceMessage {
-                    HStack(spacing: 8) {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                        Text(message).lineLimit(2)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.footnote.weight(.medium))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Color(red: 0.96, green: 0.71, blue: 0.28))
-                }
-                if player.current != nil {
-                    MiniPlayerBar()
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-        }
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: radius))
+        path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: .zero)
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: radius), control: CGPoint(x: rect.maxX, y: 0))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

@@ -17,19 +17,6 @@ struct BoxApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = UIColor(red: 0.04, green: 0.04, blue: 0.05, alpha: 1)
-        tab.shadowColor = UIColor.white.withAlphaComponent(0.06)
-        let item = UITabBarItemAppearance()
-        item.normal.iconColor = UIColor(white: 0.62, alpha: 1)
-        item.normal.titleTextAttributes = [.foregroundColor: UIColor(white: 0.62, alpha: 1), .font: UIFont.systemFont(ofSize: 10, weight: .medium)]
-        item.selected.iconColor = .white
-        item.selected.titleTextAttributes = [.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 10, weight: .semibold)]
-        tab.stackedLayoutAppearance = item
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = UIColor(red: 0.012, green: 0.012, blue: 0.016, alpha: 0.96)

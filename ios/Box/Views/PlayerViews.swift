@@ -65,16 +65,12 @@ struct MiniPlayerBar: View {
             }
             .background(
                 ZStack {
-                    Color.boxSurface
                     if let color = player.artworkColor {
-                        Color(color).opacity(0.35)
+                        LinearGradient(colors: [Color(color).opacity(0.45), Color(color).opacity(0.12)], startPoint: .leading, endPoint: .trailing)
                     }
                 }
                 .animation(.easeOut(duration: 0.4), value: player.artworkColor)
             )
-            .overlay(alignment: .top) {
-                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 0.5)
-            }
             .contentShape(Rectangle())
             .onTapGesture {
                 player.showFullPlayer = true

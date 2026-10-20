@@ -32,16 +32,20 @@ extension View {
 
 private struct ScreenBackground: ViewModifier {
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var server: ServerState
+
+    /// Alt panelin (mini oynatıcı + sekmeler) kapladığı yükseklik: son satır panelin altında kalmasın.
+    private var deckHeight: CGFloat {
+        DeckMetrics.tabs
+            + (player.current == nil ? 0 : DeckMetrics.mini)
+            + (server.maintenanceMessage == nil ? 0 : DeckMetrics.banner)
+            + 12
+    }
 
     func body(content: Content) -> some View {
-        let clearance: CGFloat = player.current == nil ? 16 : 96
-        if #available(iOS 17.0, *) {
-            content
-                .contentMargins(.bottom, clearance, for: .scrollContent)
-                .background(Color.boxBackground.ignoresSafeArea())
-        } else {
-            content.background(Color.boxBackground.ignoresSafeArea())
-        }
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: deckHeight) }
+            .background(Color.boxBackground.ignoresSafeArea())
     }
 }
 
