@@ -398,6 +398,67 @@ function boxMusicRadio(string $videoId, int $limit = 30): array {
     return boxMusicResults($data['results'] ?? [], true);
 }
 
+/** Karışık arama öğesi (şarkı, video, albüm, sanatçı, liste); uygulamanın beklediği biçimde. */
+function boxMusicItem($r): ?array {
+    if (!is_array($r)) return null;
+    $type = (string)($r['type'] ?? '');
+    $text = fn($v, int $max = 200): string => mb_substr(boxCleanText(is_scalar($v) ? (string)$v : ''), 0, $max);
+    if ($type === 'song' || $type === 'video') {
+        $rows = boxMusicResults([$r + ['kind' => $type]], false);
+        if (!$rows) return null;
+        $item = ['type' => $type] + $rows[0];
+        foreach (['views' => 40, 'year' => 8] as $k => $max) if (!empty($r[$k])) $item[$k] = $text($r[$k], $max);
+        return $item;
+    }
+    $id = (string)($r['id'] ?? '');
+    if (!preg_match('/^[A-Za-z0-9_-]{6,80}$/', $id)) return null;
+    $thumb = is_string($r['thumbnail'] ?? null) && str_starts_with($r['thumbnail'], 'https://') ? $r['thumbnail'] : null;
+    $item = ['type' => $type, 'id' => $id, 'title' => $text($r['title'] ?? '', 300), 'thumbnail' => $thumb];
+    switch ($type) {
+        case 'album':
+            $item += ['channel' => $text($r['channel'] ?? ''), 'year' => $text($r['year'] ?? '', 8), 'album_type' => $text($r['album_type'] ?? 'Album', 30)];
+            if (!empty($r['artist_id'])) $item['artist_id'] = $text($r['artist_id'], 80);
+            break;
+        case 'artist':
+            $item['subscribers'] = $text($r['subscribers'] ?? '', 30);
+            break;
+        case 'playlist':
+            $item += ['author' => $text($r['author'] ?? ''), 'item_count' => $text($r['item_count'] ?? '', 20)];
+            break;
+        default:
+            return null;
+    }
+    return $item['title'] !== '' ? $item : null;
+}
+
+/** YouTube Music'teki gibi karışık arama: en iyi sonuç (+ kartındaki şarkılar) ve diğer sonuçlar. */
+function boxSearchAll(string $query): ?array {
+    if (!boxMusicEnabled()) return null;
+    $ttl = max(60, (int)site('search_cache_seconds', '21600'));
+    try { $data = boxMusic('/stream/music/searchall', ['q' => $query], $ttl); }
+    catch (RuntimeException $e) { return null; }
+    $top = boxMusicItem($data['top'] ?? null);
+    if ($top) {
+        $top['children'] = array_values(array_filter(array_map('boxMusicItem', is_array($data['top']['children'] ?? null) ? $data['top']['children'] : [])));
+    }
+    $items = array_values(array_filter(array_map('boxMusicItem', is_array($data['items'] ?? null) ? $data['items'] : [])));
+    if (!$top && !$items) return null;
+    return ['top' => $top, 'items' => $items];
+}
+
+/** Tek türde arama (Şarkılar dışındaki filtre çipleri). */
+function boxSearchKind(string $query, string $kind): array {
+    $ttl = max(60, (int)site('search_cache_seconds', '21600'));
+    $data = boxMusic('/stream/music/search', ['q' => $query, 'limit' => 30, 'filter' => $kind], $ttl);
+    $type = ['videos' => 'video', 'albums' => 'album', 'artists' => 'artist', 'playlists' => 'playlist'][$kind];
+    $out = [];
+    foreach ($data['results'] ?? [] as $r) {
+        if (is_array($r) && !isset($r['type'])) $r['type'] = $type;
+        if ($item = boxMusicItem($r)) $out[] = $item;
+    }
+    return $out;
+}
+
 function boxSearch(string $query, bool $music = false, int $max = 25, ?int $ttl = null): array {
     if (boxMusicEnabled()) {
         try {

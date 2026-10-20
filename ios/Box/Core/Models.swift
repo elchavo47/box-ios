@@ -181,8 +181,76 @@ struct SearchResult: Codable, Identifiable, Hashable {
 
 struct SearchResponse: Decodable {
     let results: [SearchResult]
-    /// Aramayla eşleşen sanatçı (en üstte gösterilir).
+    /// Aramayla eşleşen sanatçı (en üstte gösterilir; eski düzen).
     let artist: ArtistCard?
+    /// YouTube Music düzeni: en iyi sonuç ve karışık sonuçlar (şarkı, video, albüm, sanatçı, liste).
+    var top: MusicItem? = nil
+    var items: [MusicItem]? = nil
+}
+
+/// Karışık arama sonucu.
+struct MusicItem: Decodable, Hashable, Identifiable {
+    enum Kind: String, Decodable {
+        case song, video, album, artist, playlist, other
+
+        init(from decoder: Decoder) throws {
+            self = Kind(rawValue: (try? decoder.singleValueContainer().decode(String.self)) ?? "") ?? .other
+        }
+    }
+
+    let type: Kind
+    let itemID: String
+    let title: String
+    var channel: String? = nil
+    var thumbnail: String? = nil
+    var duration: Int? = nil
+    var artistId: String? = nil
+    var albumId: String? = nil
+    var album: String? = nil
+    var views: String? = nil
+    var year: String? = nil
+    var albumType: String? = nil
+    var subscribers: String? = nil
+    var author: String? = nil
+    var itemCount: String? = nil
+    var children: [MusicItem]? = nil
+
+    var id: String { type.rawValue + ":" + itemID }
+
+    enum CodingKeys: String, CodingKey {
+        case type, title, channel, thumbnail, duration, artistId, albumId, album, views, year, albumType, subscribers, author, itemCount, children
+        case itemID = "id"
+    }
+
+    var isPlayable: Bool { type == .song || type == .video }
+
+    /// Eski biçimdeki şarkı sonucunu karışık sonuca çevirir.
+    static func song(_ result: SearchResult) -> MusicItem {
+        MusicItem(type: .song, itemID: result.id, title: result.title, channel: result.channel, thumbnail: result.thumbnail, duration: result.duration, artistId: result.artistId, albumId: result.albumId, album: result.album)
+    }
+
+    /// Şarkı / video ise çalınabilir sonuç.
+    var result: SearchResult? {
+        guard isPlayable else { return nil }
+        return SearchResult(id: itemID, title: title, channel: channel ?? "", thumbnail: thumbnail, duration: duration ?? 0, artistId: artistId, albumId: albumId, album: album)
+    }
+
+    var thumbnailURL: URL? {
+        // Videolarda bantsız 16:9 küçük resim (kare kırpılınca siyah şerit kalmasın).
+        if isPlayable, type == .video || !(thumbnail ?? "").contains("googleusercontent.com") {
+            return URL(string: "https://i.ytimg.com/vi/\(itemID)/mqdefault.jpg")
+        }
+        if let thumbnail, let url = URL(string: thumbnail) {
+            // YouTube Music kare kapakları: yüksek çözünürlüklü iste.
+            if thumbnail.contains("googleusercontent.com") || thumbnail.contains("ggpht.com") {
+                let resized = thumbnail.replacingOccurrences(of: #"=w\d+-h\d+[^/]*$"#, with: "=w240-h240-l90-rj", options: .regularExpression)
+                return URL(string: resized) ?? url
+            }
+            return url
+        }
+        if isPlayable { return URL(string: "https://i.ytimg.com/vi/\(itemID)/hqdefault.jpg") }
+        return nil
+    }
 }
 
 // MARK: - YouTube Music sayfaları

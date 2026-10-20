@@ -224,10 +224,56 @@ struct TrackMenu: View {
     @State private var newPlaylistName = ""
 
     var body: some View {
-        if let remote = track.remote {
-            remoteMenu(remote)
-        } else {
-            localMenu
+        Group {
+            if let remote = track.remote {
+                remoteMenu(remote)
+            } else {
+                localMenu
+            }
+        }
+        .sheet(isPresented: $showTagEditor) { TagEditorView(track: track) }
+        .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
+            TextField("Liste adı", text: $newPlaylistName)
+            Button("Oluştur") {
+                let playlist = library.createPlaylist(name: newPlaylistName.trimmingCharacters(in: .whitespaces))
+                library.add([track], to: playlist.id)
+                newPlaylistName = ""
+                Haptics.success()
+                router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
+            }
+            Button("Vazgeç", role: .cancel) { newPlaylistName = "" }
+        }
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            library.toggleFavorite(track)
+            Haptics.tap()
+        } label: {
+            Label(
+                library.isFavorite(track) ? "Beğenilenlerden çıkar" : "Beğen",
+                systemImage: library.isFavorite(track) ? "heart.slash" : "heart"
+            )
+        }
+    }
+
+    private var addToPlaylistMenu: some View {
+        Menu {
+            Button {
+                showNewPlaylist = true
+            } label: {
+                Label("Yeni liste…", systemImage: "plus")
+            }
+            if !library.playlists.isEmpty { Divider() }
+            ForEach(library.playlists) { playlist in
+                Button(playlist.name) {
+                    library.add([track], to: playlist.id)
+                    Haptics.success()
+                    router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
+                }
+            }
+        } label: {
+            Label("Listeye ekle", systemImage: "text.badge.plus")
         }
     }
 
@@ -245,6 +291,8 @@ struct TrackMenu: View {
             Button { player.playNext(track); router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Button { player.addToQueue(track); router.show("Sıraya eklendi", icon: "text.append", track: track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
             Divider()
+            favoriteButton
+            addToPlaylistMenu
             if auth.isPremium && library.localTrack(for: remote) == nil {
                 Button {
                     downloads.download(remote)
@@ -293,33 +341,8 @@ struct TrackMenu: View {
 
             Divider()
 
-            Button {
-                library.toggleFavorite(track)
-                Haptics.tap()
-            } label: {
-                Label(
-                    library.isFavorite(track) ? "Beğenilenlerden çıkar" : "Beğen",
-                    systemImage: library.isFavorite(track) ? "heart.slash" : "heart"
-                )
-            }
-
-            Menu {
-                Button {
-                    showNewPlaylist = true
-                } label: {
-                    Label("Yeni liste…", systemImage: "plus")
-                }
-                if !library.playlists.isEmpty { Divider() }
-                ForEach(library.playlists) { playlist in
-                    Button(playlist.name) {
-                        library.add([track], to: playlist.id)
-                        Haptics.success()
-                        router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
-                    }
-                }
-            } label: {
-                Label("Listeye ekle", systemImage: "text.badge.plus")
-            }
+            favoriteButton
+            addToPlaylistMenu
 
             Button {
                 showTagEditor = true
@@ -340,17 +363,6 @@ struct TrackMenu: View {
                 extra
             }
         } label: { menuIcon }
-        .sheet(isPresented: $showTagEditor) { TagEditorView(track: track) }
-        .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
-            TextField("Liste adı", text: $newPlaylistName)
-            Button("Oluştur") {
-                let playlist = library.createPlaylist(name: newPlaylistName.trimmingCharacters(in: .whitespaces))
-                library.add([track], to: playlist.id)
-                newPlaylistName = ""
-                Haptics.success()
-            }
-            Button("Vazgeç", role: .cancel) { newPlaylistName = "" }
-        }
     }
 }
 

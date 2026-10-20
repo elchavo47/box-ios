@@ -308,6 +308,14 @@ switch ($route) {
         throttle('search:' . $u['id'], 30, 60);
         $q = isset($_GET['q']) && is_string($_GET['q']) ? trim($_GET['q']) : '';
         if ($q === '' || mb_strlen($q) > 200) jsonOut(['ok' => false, 'error' => 'Arama metni gerekli.'], 400);
+        // Filtre çipleri (Videolar, Albümler, Sanatçılar, Listeler): aynı aramanın parçası, hak düşmez.
+        $kind = (string)($_GET['filter'] ?? '');
+        if (in_array($kind, ['videos', 'albums', 'artists', 'playlists'], true)) {
+            if (!boxMusicEnabled()) jsonOut(['ok' => true, 'results' => [], 'items' => []]);
+            try { $items = boxSearchKind($q, $kind); }
+            catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => 'Sonuçlar alınamadı, birazdan tekrar dene.'], 502); }
+            jsonOut(['ok' => true, 'results' => array_values(array_filter($items, fn($i) => in_array($i['type'], ['song', 'video'], true))), 'items' => $items]);
+        }
         $limit = (int)configValue('premium_daily_searches', 400);
         if ($limit > 0 && boxTodaySearches((int)$u['id']) >= $limit) jsonOut(['ok' => false, 'error' => 'Bugünlük arama hakkın doldu, yarın tekrar dene.'], 429);
         try { $results = boxSearch($q); }
@@ -316,7 +324,13 @@ switch ($route) {
         $term = mb_substr(mb_strtolower(preg_replace('/\s+/u', ' ', $q)), 0, 120);
         if ($term !== '') q('INSERT INTO search_terms(day,term,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$term]);
         $out = ['ok' => true, 'results' => $results];
-        if ($top = boxTopArtist($q)) $out['artist'] = $top;
+        // Uygulama 3.0+: YouTube Music düzeni (en iyi sonuç + karışık sonuçlar)
+        if (($_GET['mode'] ?? '') === 'all' && ($all = boxSearchAll($q))) {
+            $out['top'] = $all['top'];
+            $out['items'] = $all['items'];
+        } elseif ($top = boxTopArtist($q)) {
+            $out['artist'] = $top;
+        }
         jsonOut($out);
 
     case 'match':

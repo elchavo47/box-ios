@@ -316,18 +316,72 @@ async def music_search(q: str = "", limit: int = 20, filter: str = "songs", exp:
     if not q:
         raise HTTPException(400, "Arama metni gerekli.")
     limit = max(1, min(40, limit))
-    kind = filter if filter in ("songs", "videos") else "songs"
+    kind = filter if filter in ("songs", "videos", "albums", "artists", "playlists") else "songs"
 
     def run():
         out, seen = [], set()
         for item in safe_search(q, kind, limit):
-            t = track(item)
+            t = track(item) if kind in ("songs", "videos") else search_item(item)
             if t and t["id"] not in seen:
                 seen.add(t["id"])
                 out.append(t)
         return out[:limit]
 
     return {"ok": True, "results": await cached(f"s:{kind}:{limit}:{q.lower()}", 6 * 3600, run)}
+
+
+@app.get("/stream/music/searchall")
+async def music_search_all(q: str = "", exp: str = "", sig: str = ""):
+    """YouTube Music'teki gibi karışık arama: en iyi sonuç ve şarkı, video, albüm, sanatçı, liste."""
+    check_music_signature(exp, sig)
+    q = q.strip()[:200]
+    if not q:
+        raise HTTPException(400, "Arama metni gerekli.")
+
+    def run():
+        items = []
+        try:
+            items = ytm("en").search(q, limit=20)
+        except Exception:
+            log.warning("music searchall failed for %r\n%s", q, traceback.format_exc(limit=4))
+            try:
+                items = ytm("tr").search(q, limit=20)
+            except Exception:
+                log.warning("music searchall (tr) failed for %r\n%s", q, traceback.format_exc(limit=4))
+                raise
+        top, out, seen = None, [], set()
+        in_card = False
+        for item in items:
+            category = item.get("category")
+            parsed = search_item(item)
+            if not parsed:
+                continue
+            key = parsed["type"] + ":" + parsed["id"]
+            if key in seen:
+                continue
+            seen.add(key)
+            if top is None and (category or "").lower() in ("top result", "en iyi sonuç"):
+                top = parsed
+                top["children"] = []
+                in_card = True
+                continue
+            # En iyi sonuç kartının içindeki şarkılar kategorisiz gelir (YouTube Music'te kartın altındaki 3 şarkı).
+            if in_card and not category and parsed["type"] in ("song", "video") and len(top["children"]) < 4:
+                top["children"].append(parsed)
+                continue
+            in_card = False
+            out.append(parsed)
+        # Sonuçta şarkı yoksa (nadir) şarkı filtresiyle tamamla.
+        if not any(i["type"] == "song" for i in out):
+            for item in safe_search(q, "songs", 10):
+                t = track(item)
+                if t and "song:" + t["id"] not in seen:
+                    t["type"] = "song"
+                    seen.add("song:" + t["id"])
+                    out.append(t)
+        return {"top": top, "items": out}
+
+    return {"ok": True, **(await cached(f"sa:{q.lower()}", 6 * 3600, run))}
 
 
 @app.get("/stream/music/radio")
@@ -410,6 +464,54 @@ def album_card(item: dict, artist: str = "") -> dict | None:
         "type": item.get("type") or "",
         "thumbnail": square(item.get("thumbnails")),
     }
+
+
+def _artists_text(item: dict) -> str:
+    return ", ".join(a.get("name", "") for a in (item.get("artists") or []) if isinstance(a, dict) and a.get("name"))
+
+
+def search_item(item: dict) -> dict | None:
+    """Karışık arama sonucu (şarkı, video, albüm, sanatçı, liste) tek biçimde."""
+    kind = item.get("resultType")
+    if kind in ("song", "video"):
+        t = track(item)
+        if not t:
+            return None
+        t["type"] = kind
+        if item.get("views"):
+            t["views"] = str(item.get("views"))
+        if item.get("year"):
+            t["year"] = str(item.get("year"))
+        return t
+    if kind == "album":
+        bid = item.get("browseId")
+        if not bid or not BROWSE_ID.match(bid):
+            return None
+        return {
+            "type": "album", "id": bid, "title": item.get("title") or "",
+            "channel": _artists_text(item), "artist_id": next((a.get("id") for a in (item.get("artists") or []) if isinstance(a, dict) and a.get("id")), None),
+            "thumbnail": square(item.get("thumbnails")), "year": str(item.get("year") or ""),
+            "album_type": item.get("type") or "Album",
+        }
+    if kind == "artist":
+        bid = item.get("browseId")
+        name = item.get("artist") or item.get("title") or ""
+        if not bid:
+            first = next((a for a in (item.get("artists") or []) if isinstance(a, dict) and a.get("id")), None)
+            if first:
+                bid, name = first.get("id"), name or first.get("name") or ""
+        if not bid or not BROWSE_ID.match(bid):
+            return None
+        return {"type": "artist", "id": bid, "title": name, "thumbnail": square(item.get("thumbnails")),
+                "subscribers": str(item.get("subscribers") or "")}
+    if kind == "playlist":
+        bid = item.get("browseId") or ""
+        pid = bid[2:] if bid.startswith("VL") else bid
+        if not pid or not re.match(r"^[A-Za-z0-9_-]{10,80}$", pid):
+            return None
+        return {"type": "playlist", "id": pid, "title": item.get("title") or "", "thumbnail": square(item.get("thumbnails")),
+                "author": str(item.get("author") or ""), "item_count": str(item.get("itemCount") or "")}
+    return None
 
 
 def find_artist_id(q: str) -> str | None:

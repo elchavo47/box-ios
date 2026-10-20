@@ -16,21 +16,21 @@ struct SearchView: View {
     @State private var submitted = ""
     @State private var results: [SearchResult] = []
     @State private var topArtist: ArtistCard?
+    @State private var top: MusicItem?
+    @State private var items: [MusicItem] = []
+    @State private var kindItems: [SearchFilter: [MusicItem]] = [:]
+    @State private var kindLoading: SearchFilter?
+    @State private var kindError: String?
     @State private var isSearching = false
     @State private var errorMessage: String?
-    @State private var scope: Scope = .online
+    @State private var filter: SearchFilter = .all
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var focused: Bool
     @State private var showImport = false
     @State private var suggestions: [String] = []
     @State private var importLink = ""
 
-    enum Scope: String, CaseIterable, Hashable {
-        case online = "YouTube"
-        case local = "Kitaplığım"
-    }
-
-    private var activeScope: Scope { auth.isPremium ? scope : .local }
+    private var activeFilter: SearchFilter { auth.isPremium ? filter : .library }
 
     private var localResults: [Track] {
         let text = (submitted.isEmpty ? query : submitted).trimmingCharacters(in: .whitespaces)
@@ -52,14 +52,19 @@ struct SearchView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if submitted.isEmpty && !(activeScope == .local && !query.isEmpty) {
+                        if submitted.isEmpty && !(activeFilter == .library && !query.isEmpty) {
                             idleContent
                         } else {
                             if auth.isPremium {
-                                ChipBar(items: Scope.allCases, selection: $scope) { $0.rawValue }
+                                ChipBar(items: SearchFilter.allCases, selection: $filter) { $0.title }
                                     .padding(.bottom, 12)
                             }
-                            if activeScope == .online { onlineResults } else { localList }
+                            switch activeFilter {
+                            case .library: localList
+                            case .all: onlineResults
+                            case .songs: songResults
+                            default: kindResults(activeFilter)
+                            }
                         }
                     }
                     .padding(.bottom, 24)
@@ -81,6 +86,7 @@ struct SearchView: View {
             .sheet(isPresented: $showImport) {
                 PlaylistImportView(initialLink: importLink)
             }
+            .onChange(of: filter) { value in loadKind(value) }
         }
     }
 
@@ -94,6 +100,9 @@ struct SearchView: View {
                         query = ""
                         submitted = ""
                         results = []
+                        top = nil
+                        items = []
+                        kindItems = [:]
                         errorMessage = nil
                         focused = false
                     } label: {
@@ -321,6 +330,27 @@ struct SearchView: View {
 
     // MARK: Sonuçlar
 
+    /// Şarkılar (oynatma sırası için): en iyi sonuç kartındakiler ve diğer sonuçlardaki şarkılar.
+    private var songItems: [MusicItem] {
+        var list: [MusicItem] = []
+        var seen = Set<String>()
+        for item in (top.map { [$0] + ($0.children ?? []) } ?? []) + items where item.type == .song {
+            if seen.insert(item.itemID).inserted { list.append(item) }
+        }
+        return list
+    }
+
+    @ViewBuilder
+    private var quotaLine: some View {
+        if let quota = auth.quota, let left = quota.downloadsLeft {
+            Text("Bugün \(left) indirme hakkın kaldı")
+                .font(.footnote)
+                .foregroundColor(.boxSecondaryText)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+        }
+    }
+
     @ViewBuilder
     private var onlineResults: some View {
         if isSearching {
@@ -329,38 +359,84 @@ struct SearchView: View {
             EmptyStateView(icon: "exclamationmark.triangle", title: "Bir sorun oldu", message: errorMessage, actionTitle: "Tekrar dene") {
                 submit(submitted)
             }
-        } else if results.isEmpty {
+        } else if top == nil && items.isEmpty && results.isEmpty {
             EmptyStateView(icon: "magnifyingglass", title: "Sonuç yok", message: "Başka bir şey aramayı dene.")
-        } else {
-            if let quota = auth.quota, let left = quota.downloadsLeft {
-                Text("Bugün \(left) indirme hakkın kaldı")
-                    .font(.footnote)
-                    .foregroundColor(.boxSecondaryText)
+        } else if top != nil || !items.isEmpty {
+            quotaLine
+            if let top {
+                TopResultCard(item: top, songs: songItems, open: open, play: play)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 18)
+            }
+            let others = items.filter { item in !(top?.children ?? []).contains(where: { $0.id == item.id }) }
+            if !others.isEmpty {
+                Text(top == nil ? "Sonuçlar" : "Diğer sonuçlar")
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
+                ForEach(others) { item in
+                    MusicResultRow(item: item) { open(item) }
+                        .padding(.leading, 16)
+                        .padding(.trailing, 6)
+                        .padding(.vertical, 6)
+                }
             }
+        } else {
+            // Eski sunucu: yalnızca şarkılar (+ sanatçı).
+            quotaLine
             if let topArtist {
                 TopArtistRow(artist: topArtist)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
             }
+            songResults
+        }
+    }
+
+    @ViewBuilder
+    private var songResults: some View {
+        if isSearching {
+            ForEach(0..<6, id: \.self) { _ in SkeletonRow().padding(.horizontal, 16).padding(.vertical, 6) }
+        } else if results.isEmpty {
+            EmptyStateView(icon: "music.note", title: "Şarkı bulunamadı", message: errorMessage ?? "Başka bir şey aramayı dene.")
+        } else {
+            let songs = results.map(MusicItem.song)
             HStack(spacing: 10) {
-                Button { playAll(shuffled: false, from: nil) } label: { Label("Hepsini dinle", systemImage: "play.fill") }
+                Button { play(songs, nil, false) } label: { Label("Hepsini dinle", systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
-                Button { playAll(shuffled: true, from: nil) } label: { Label("Karıştır", systemImage: "shuffle") }
-                    .buttonStyle(PrimaryButtonStyle(filled: false))
+                Button { play(songs, nil, true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                    .buttonStyle(OutlineButtonStyle())
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-
-            ForEach(results) { result in
-                OnlineResultRow(result: result) {
-                    history.add(result: result)
-                    playAll(shuffled: false, from: result)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
+            .padding(.bottom, 10)
+            ForEach(songs) { item in
+                MusicResultRow(item: item) { play(songs, item, false) }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 6)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func kindResults(_ kind: SearchFilter) -> some View {
+        if kindLoading == kind {
+            ForEach(0..<6, id: \.self) { _ in SkeletonRow().padding(.horizontal, 16).padding(.vertical, 6) }
+        } else if let list = kindItems[kind], !list.isEmpty {
+            ForEach(list) { item in
+                MusicResultRow(item: item) { open(item, in: list) }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 6)
+            }
+        } else if let kindError {
+            EmptyStateView(icon: "exclamationmark.triangle", title: "Yüklenemedi", message: kindError, actionTitle: "Tekrar dene") {
+                kindItems[kind] = nil
+                loadKind(kind)
+            }
+        } else if kindItems[kind] != nil {
+            EmptyStateView(icon: "magnifyingglass", title: "Sonuç yok", message: "Bu türde sonuç bulunamadı.")
         }
     }
 
@@ -401,15 +477,23 @@ struct SearchView: View {
         searchTask = Task { @MainActor in
             defer { if !Task.isCancelled { isSearching = false } }
             do {
-                let response: SearchResponse = try await APIClient.shared.send("search", query: ["q": trimmed], token: token)
+                let response: SearchResponse = try await APIClient.shared.send("search", query: ["q": trimmed, "mode": "all"], token: token)
                 guard !Task.isCancelled else { return }
                 results = response.results
                 topArtist = response.artist
-                stream.warm(response.results, limit: 5)
+                top = response.top
+                items = response.items ?? []
+                kindItems = [:]
+                kindError = nil
+                let first = ([response.top].compactMap { $0 } + (response.top?.children ?? []) + (response.items ?? [])).compactMap(\.result)
+                stream.warm(first.isEmpty ? response.results : first, limit: 5)
+                loadKind(filter)
             } catch {
                 guard !Task.isCancelled else { return }
                 results = []
                 topArtist = nil
+                top = nil
+                items = []
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama yapılamadı."
                 if (error as? APIError)?.status == 403 { await auth.refresh() }
             }
@@ -426,10 +510,56 @@ struct SearchView: View {
         library.localTrack(for: result) != nil
     }
 
-    private func playAll(shuffled: Bool, from start: SearchResult?) {
-        let tracks = results.map { library.localTrack(for: $0) ?? .remote($0) }
-        let index = start.flatMap { s in results.firstIndex { $0.id == s.id } } ?? 0
+    /// Şarkıları çalar (indirilmiş olanlar yerelden).
+    private func play(_ list: [MusicItem], _ start: MusicItem?, _ shuffled: Bool) {
+        let playable = list.filter(\.isPlayable)
+        let tracks = playable.compactMap(\.result).map { library.localTrack(for: $0) ?? .remote($0) }
+        guard !tracks.isEmpty else { return }
+        let index = start.flatMap { s in playable.firstIndex { $0.itemID == s.itemID } } ?? 0
+        if let result = start?.result { history.add(result: result) }
         player.play(tracks, startAt: index, shuffled: shuffled)
+    }
+
+    /// Satıra dokununca: şarkı/video çalar, albüm ve sanatçı sayfasını, listeyi açar.
+    private func open(_ item: MusicItem) {
+        open(item, in: songItems.isEmpty ? [item] : songItems)
+    }
+
+    private func open(_ item: MusicItem, in list: [MusicItem]) {
+        switch item.type {
+        case .song:
+            play(list.contains(where: { $0.itemID == item.itemID }) ? list : [item] + list, item, false)
+        case .video:
+            play([item], item, false)
+        case .artist:
+            router.openMusic(.artist(id: item.itemID, name: item.title))
+        case .album:
+            router.openMusic(.album(id: item.itemID, name: item.title, artist: item.channel ?? ""))
+        case .playlist:
+            importLink = "https://music.youtube.com/playlist?list=" + item.itemID
+            showImport = true
+        case .other:
+            break
+        }
+    }
+
+    /// Filtre çipi seçilince o türün sonuçlarını getirir (bir kez; aynı aramada önbellekte kalır).
+    private func loadKind(_ kind: SearchFilter) {
+        guard let server = kind.serverFilter, !submitted.isEmpty, kindItems[kind] == nil, let token = auth.token else { return }
+        let text = submitted
+        kindLoading = kind
+        kindError = nil
+        Task { @MainActor in
+            defer { if kindLoading == kind { kindLoading = nil } }
+            do {
+                let response: SearchResponse = try await APIClient.shared.send("search", query: ["q": text, "filter": server], token: token)
+                guard text == submitted else { return }
+                kindItems[kind] = response.items ?? response.results.map(MusicItem.song)
+            } catch {
+                guard text == submitted else { return }
+                kindError = (error as? LocalizedError)?.errorDescription ?? "Sonuçlar alınamadı."
+            }
+        }
     }
 
     private func playDownloaded(_ item: DownloadItem) {
