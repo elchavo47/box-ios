@@ -47,7 +47,7 @@ function send_security_headers(): void
     header("Content-Security-Policy: default-src 'none'; script-src 'self' 'nonce-{$nonce}' https://cdnjs.cloudflare.com; style-src 'self' 'nonce-{$nonce}'; img-src 'self' data: https://i.ytimg.com; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
-    header('Referrer-Policy: no-referrer');
+    header('Referrer-Policy: same-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()');
     header('Cross-Origin-Opener-Policy: same-origin');
     header('Cache-Control: no-store, max-age=0');
@@ -171,9 +171,13 @@ function verify_post(): void
     }
 
     // Aynı köken kontrolü (Origin/Referer)
-    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '');
-    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
-    if ($origin !== '' && parse_url($origin, PHP_URL_HOST) !== parse_url('//' . $host, PHP_URL_HOST)) {
+    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($origin === '' || $origin === 'null') {
+        $origin = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+    }
+    $host = strtolower((string) parse_url('//' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST));
+    $originHost = strtolower((string) parse_url($origin, PHP_URL_HOST));
+    if ($origin !== '' && $originHost !== '' && $originHost !== $host) {
         http_response_code(403);
         exit('Geçersiz istek kaynağı.');
     }
