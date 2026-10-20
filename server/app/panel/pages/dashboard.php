@@ -82,7 +82,7 @@ $quick = array_values(array_filter($quick, fn($x) => canSee($admin, $x[2]))); ?>
 
 <div class="cols-2 wide-left">
   <?php
-  $recent = q('SELECT d.*,u.display_name,u.email FROM downloads d JOIN users u ON u.id=d.user_id ORDER BY d.id DESC LIMIT 8')->fetchAll();
+  $recent = q('SELECT d.*,u.display_name,u.email,u.avatar_file FROM downloads d JOIN users u ON u.id=d.user_id ORDER BY d.id DESC LIMIT 8')->fetchAll();
   card('Son indirilenler', '', '', canSee($admin, 'downloads') ? '<a class="btn small ghost" href="/admin?p=downloads">Tümü</a>' : '');
   tableView(['Şarkı', 'Kullanıcı', 'Zaman'], $recent, function ($r) {
       echo '<td><span class="track"><img src="https://i.ytimg.com/vi/' . h($r['video_id']) . '/default.jpg" alt="" loading="lazy"><b>' . h($r['title'] !== '' ? $r['title'] : $r['video_id']) . '</b></span></td><td>' . userCell($r, (int)$r['user_id']) . '</td><td class="nowrap">' . h(nbAgo($r['created_at'])) . '</td>';

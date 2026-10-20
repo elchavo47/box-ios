@@ -159,7 +159,7 @@ if ($isAjax && isset($_GET['search'])) {
     $like = '%' . addcslashes($term, '%_\\') . '%';
     $where = ['display_name LIKE ?', 'email LIKE ?']; $args = [$like, $like];
     if (ctype_digit($term)) { $where[] = 'id=?'; $args[] = (int)$term; }
-    $rows = q('SELECT id,display_name,email,is_banned,is_premium,premium_until FROM users WHERE ' . implode(' OR ', $where) . ' ORDER BY (id=' . (ctype_digit($term) ? (int)$term : 0) . ') DESC,last_seen_at DESC LIMIT 8', $args)->fetchAll();
+    $rows = q('SELECT id,display_name,email,avatar_file,is_banned,is_premium,premium_until FROM users WHERE ' . implode(' OR ', $where) . ' ORDER BY (id=' . (ctype_digit($term) ? (int)$term : 0) . ') DESC,last_seen_at DESC LIMIT 8', $args)->fetchAll();
     $out = [];
     foreach ($rows as $r) $out[] = ['id' => (int)$r['id'], 'username' => (string)$r['display_name'], 'status' => (int)$r['is_banned'] ? 'suspended' : 'active', 'level' => boxIsPremium($r) ? 'Premium' : 'Ücretsiz', 'email' => (string)$r['email']];
     panelJson(['ok' => true, 'players' => $out]);

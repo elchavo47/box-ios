@@ -18,7 +18,7 @@ $k = [
     'se30' => $one('SELECT COALESCE(SUM(n),0) FROM search_log WHERE day>=DATE_SUB(CURDATE(),INTERVAL 30 DAY)'),
 ];
 $terms = q('SELECT term,SUM(n) c FROM search_terms WHERE day>=DATE_SUB(CURDATE(),INTERVAL 30 DAY) GROUP BY term ORDER BY c DESC LIMIT 15')->fetchAll();
-$topUsers = q('SELECT u.id,u.display_name,u.email,COUNT(*) c FROM downloads d JOIN users u ON u.id=d.user_id WHERE d.created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) GROUP BY u.id ORDER BY c DESC LIMIT 10')->fetchAll();
+$topUsers = q('SELECT u.id,u.display_name,u.email,u.avatar_file,COUNT(*) c FROM downloads d JOIN users u ON u.id=d.user_id WHERE d.created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) GROUP BY u.id ORDER BY c DESC LIMIT 10')->fetchAll();
 $versions = q("SELECT COALESCE(NULLIF(app_version,''),'?') v,COUNT(*) c FROM users WHERE last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) GROUP BY v ORDER BY c DESC LIMIT 8")->fetchAll();
 ?>
 <section class="kpis">

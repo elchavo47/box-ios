@@ -16,7 +16,7 @@ $orders = ['new' => 'id DESC', 'seen' => 'last_seen_at IS NULL, last_seen_at DES
 $sql = ' WHERE ' . implode(' AND ', $where);
 $total = (int)q('SELECT COUNT(*) FROM users' . $sql, $args)->fetchColumn();
 $per = 30; $pn = max(1, (int)($_GET['n'] ?? 1)); $offset = ($pn - 1) * $per;
-$rows = q('SELECT id,display_name,email,is_premium,premium_until,is_banned,ban_reason,app_version,created_at,last_seen_at,(SELECT COUNT(*) FROM downloads d WHERE d.user_id=users.id) dl FROM users' . $sql . ' ORDER BY ' . ($orders[$sort] ?? $orders['new']) . " LIMIT $per OFFSET $offset", $args)->fetchAll();
+$rows = q('SELECT id,display_name,email,avatar_file,is_premium,premium_until,is_banned,ban_reason,app_version,created_at,last_seen_at,(SELECT COUNT(*) FROM downloads d WHERE d.user_id=users.id) dl FROM users' . $sql . ' ORDER BY ' . ($orders[$sort] ?? $orders['new']) . " LIMIT $per OFFSET $offset", $args)->fetchAll();
 $counts = [];
 foreach ($filters as $k => $w) $counts[$k] = (int)q("SELECT COUNT(*) FROM users WHERE $w")->fetchColumn();
 $qs = fn(array $over) => h(http_build_query(array_filter(array_merge(['p' => 'users', 'q' => $search, 'status' => $status, 'sort' => $sort, 'n' => $pn], $over), fn($v) => $v !== '' && $v !== null)));
