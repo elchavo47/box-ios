@@ -2,6 +2,10 @@
 require __DIR__ . '/app/bootstrap.php';
 $path = routePath();
 
+// Apache ErrorDocument ile gelen hatalar (ör. kapalı klasörler için 403).
+$redirectStatus = (int)($_SERVER['REDIRECT_STATUS'] ?? 200);
+if ($redirectStatus >= 400 && $redirectStatus < 600) webError($redirectStatus);
+
 if (str_starts_with($path, '/install')) { require ROOT . '/app/installer.php'; exit; }
 
 if ($path === '/admin/manifest.json') {
@@ -13,14 +17,12 @@ if ($path === '/admin/manifest.json') {
 }
 if ($path === '/robots.txt') {
     header('Content-Type: text/plain; charset=utf-8');
-    echo "User-agent: *\nDisallow: /\n";
+    echo "User-agent: *\nAllow: /\$\nDisallow: /admin\nDisallow: /api/\nDisallow: /install\nDisallow: /approve\n";
     exit;
 }
 if ($path === '/approve') { require ROOT . '/app/panel/approve.php'; exit; }
-if ($path === '/' || $path === '/index.php') { header('Location: /admin', true, 302); exit; }
+if ($path === '/' || $path === '/index.php') webLanding();
 if ($path === '/admin' || str_starts_with($path, '/admin/')) { require ROOT . '/app/admin.php'; exit; }
 if (str_starts_with($path, '/api/') || str_starts_with($path, '/box-api') || in_array($path, ['/health', '/cron'], true)) { require ROOT . '/app/api.php'; exit; }
 
-http_response_code(404);
-header('Content-Type: text/plain; charset=utf-8');
-echo 'Bulunamadı.';
+webError(404);

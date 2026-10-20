@@ -51,13 +51,14 @@ $CONFIG = file_exists($configFile) ? require $configFile : [];
 if (!is_array($CONFIG)) $CONFIG = [];
 date_default_timezone_set('Europe/Istanbul');
 
+require_once ROOT . '/app/web.php';
+
 set_exception_handler(function (Throwable $e): void {
     nbReport($e);
     if (str_starts_with(routePath(), '/api/') || str_starts_with(routePath(), '/box-api')) {
         jsonOut(['ok' => false, 'error' => 'Sunucu hatası, daha sonra tekrar dene.'], 500);
     }
-    http_response_code(500);
-    echo 'İşlem tamamlanamadı. Sunucu günlüklerini kontrol edin.';
+    webError(500);
 });
 
 require_once ROOT . '/app/errors.php';
@@ -225,8 +226,7 @@ function csrf(): string {
 
 function checkCsrf(): void {
     if (empty($_SESSION['csrf']) || !is_string($_POST['csrf'] ?? null) || !hash_equals((string)$_SESSION['csrf'], (string)$_POST['csrf'])) {
-        http_response_code(403);
-        exit('CSRF doğrulaması başarısız.');
+        webError(419);
     }
 }
 
@@ -320,4 +320,14 @@ if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE && (str_starts
 }
 if ($CONFIG && setupState() === 'ready' && strlen((string)cfg('security.master_key', '')) < 32) {
     throw new RuntimeException('config/config.php içinde güvenli bir master_key tanımlayın.');
+}
+
+function b64url(string $value): string {
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function b64urlDecode(string $value): string|false {
+    $padding = strlen($value) % 4;
+    if ($padding) $value .= str_repeat('=', 4 - $padding);
+    return base64_decode(strtr($value, '-_', '+/'), true);
 }

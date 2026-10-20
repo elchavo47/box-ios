@@ -1,7 +1,7 @@
 <?php
 if (!defined('ROOT')) { http_response_code(404); exit; }
 
-if (!adminIpAllowed()) { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo 'Bu adresten panele erişim kapalı.'; exit; }
+if (!adminIpAllowed()) webError(403, 'Bu adresten panele erişim kapalı.');
 require ROOT . '/app/panel/core.php';
 require ROOT . '/app/panel/ui.php';
 require ROOT . '/app/panel/actions.php';
@@ -128,7 +128,7 @@ if (preg_match('#^/admin/static/(deck|qrcode)\.js$#', routePath(), $m)) {
     
     $file = ROOT . '/app/panel/static/' . $m[1] . '.php';
     $code = is_file($file) ? (string)(require $file) : (is_file($dev = ROOT . '/app/panel/static/' . $m[1] . '.js') ? (string)file_get_contents($dev) : '');
-    if ($code === '') { http_response_code(404); exit; }
+    if ($code === '') webError(404);
     header('Content-Type: application/javascript; charset=utf-8');
     header('Cache-Control: private, max-age=86400');
     header('X-Content-Type-Options: nosniff');
@@ -145,7 +145,7 @@ $force2fa = staffTwoFactorRequired() && empty($admin['totp_enabled_at']);
 if ($force2fa && $page !== 'profile') $page = 'profile';
 if ($force2fa && $method === 'POST' && !in_array((string)($_POST['action'] ?? ''), ['totp_begin', 'totp_enable', 'logout'], true)) {
     if ($isAjax) panelJson(['ok' => false, 'message' => 'Önce iki adımlı girişi açman gerekiyor (Profil sayfası).'], 403);
-    http_response_code(403); exit;
+    webError(403, 'Önce Profil sayfasından iki adımlı girişi açman gerekiyor.');
 }
 if (!canSee($admin, $page)) {
     if ($isAjax && $method !== 'POST') panelJson(['ok' => false, 'message' => 'Bu sayfaya erişiminiz yok.'], 403);
@@ -185,7 +185,7 @@ if ($method === 'POST') {
     $notice = ''; $error = ''; $data = null; $silent = false;
     if (!csrfValid()) {
         if ($isAjax) panelJson(['ok' => false, 'message' => 'Güvenlik doğrulaması başarısız. Sayfayı yenileyip tekrar deneyin.'], 403);
-        http_response_code(403); exit('Güvenlik doğrulaması başarısız.');
+        webError(419);
     }
     
     $stepAction = (string)($_POST['action'] ?? '');

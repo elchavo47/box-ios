@@ -2,6 +2,11 @@
 # Not: Aynı alan adındaki eski YouTube API'si (api.php) çalışmaya devam eder.
 Options -Indexes -MultiViews
 DirectoryIndex index.php
+ErrorDocument 400 /index.php
+ErrorDocument 401 /index.php
+ErrorDocument 403 /index.php
+ErrorDocument 404 /index.php
+ErrorDocument 405 /index.php
 
 <IfModule mod_headers.c>
   Header always unset X-Powered-By
