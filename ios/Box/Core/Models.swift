@@ -49,6 +49,8 @@ struct Playlist: Identifiable, Codable, Hashable {
     /// YouTube'dan içe aktarılan, henüz indirilmemiş olabilecek şarkılar.
     var remote: [SearchResult]?
     var sourceID: String?
+    /// Kullanıcının seçtiği kapak (Application Support/Box/covers içindeki dosya adı).
+    var coverFile: String?
 
     init(id: UUID = UUID(), name: String, paths: [String] = [], createdAt: Date = Date(), remote: [SearchResult]? = nil, sourceID: String? = nil) {
         self.id = id
@@ -142,6 +144,8 @@ struct SearchResponse: Decodable {
 struct DownloadLinkResponse: Decodable {
     let url: String
     let expiresAt: Int
+    /// Yalnızca dinleme bağlantısında: tam dosyanın adresi (önbellek için).
+    let fileUrl: String?
 }
 
 struct FeedSection: Decodable, Identifiable, Hashable {

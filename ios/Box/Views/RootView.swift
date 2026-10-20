@@ -37,8 +37,10 @@ struct RootView: View {
                     .tabItem { Label("Dosyalar", systemImage: "folder.fill") }
                     .tag(BoxTab.files)
             }
-            .fullScreenCover(isPresented: $player.showFullPlayer) {
+            .sheet(isPresented: $player.showFullPlayer) {
                 FullPlayerView()
+                    .presentationDragIndicator(.hidden)
+                    .interactiveDismissDisabled(false)
             }
             .sheet(isPresented: $router.showAccount) {
                 AccountView()

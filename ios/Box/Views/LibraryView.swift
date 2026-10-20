@@ -176,7 +176,7 @@ struct LibraryView: View {
         ForEach(library.playlists) { playlist in
             let tracks = library.tracks(for: playlist)
             playlistRow(title: playlist.name, subtitle: (playlist.sourceID != nil ? "YouTube listesi" : "Liste") + " • \(tracks.count) şarkı", route: .playlist(playlist.id)) {
-                PlaylistCover(tracks: tracks, icon: "music.note.list", size: 56, cornerRadius: 0)
+                PlaylistArtwork(playlist: playlist, tracks: tracks, size: 56, cornerRadius: 0)
             }
             .swipeActions {
                 Button(role: .destructive) {

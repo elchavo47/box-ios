@@ -182,6 +182,21 @@ function boxIsoSeconds(string $duration): int {
 
 function boxCleanText(string $t): string { return trim(html_entity_decode($t, ENT_QUOTES | ENT_HTML5, 'UTF-8')); }
 
+/** "Sanatçı - Şarkı (Official Video)" biçimindeki başlıkları ayırır, " - Topic" gibi kanal eklerini temizler. */
+function boxSplitTitle(string $title, string $channel): array {
+    $channel = trim(preg_replace('/\s*(-\s*Topic|VEVO|Official|Resmi|TV)$/iu', '', $channel));
+    $clean = preg_replace('/\s*[\(\[](official|resmi|lyric|lyrics|audio|video|klip|music video|official video|official audio|şarkı sözleri|sözleri|hd|4k)[^\)\]]*[\)\]]/iu', '', $title);
+    $clean = trim(preg_replace('/\s*(\||#).*$/u', '', (string)$clean));
+    if (preg_match('/^(.{2,60}?)\s+[-–—]\s+(.{2,})$/u', $clean, $m)) {
+        return [trim($m[2]), trim($m[1])];
+    }
+    return [$clean !== '' ? $clean : $title, $channel];
+}
+
+function boxNorm(string $s): string {
+    return mb_strtolower(preg_replace('/[^\p{L}\p{N}]+/u', '', $s));
+}
+
 /** Video kimliklerinden süreli sonuç listesi üretir. $snippets: id => snippet */
 function boxVideoResults(array $ids, array $snippets, ?int $ttl = null): array {
     $ids = array_values(array_unique(array_filter($ids, fn($id) => is_string($id) && preg_match(BOX_VIDEO_ID, $id))));
@@ -197,10 +212,11 @@ function boxVideoResults(array $ids, array $snippets, ?int $ttl = null): array {
     foreach ($ids as $id) {
         if (!isset($durations[$id]) || !empty($live[$id])) continue; // silinmiş, gizli ya da canlı yayın
         $sn = $snippets[$id] ?? []; $th = $sn['thumbnails'] ?? [];
+        [$title, $artist] = boxSplitTitle(boxCleanText((string)($sn['title'] ?? '')), boxCleanText((string)($sn['videoOwnerChannelTitle'] ?? $sn['channelTitle'] ?? '')));
         $out[] = [
             'id' => $id,
-            'title' => boxCleanText((string)($sn['title'] ?? '')),
-            'channel' => boxCleanText((string)($sn['videoOwnerChannelTitle'] ?? $sn['channelTitle'] ?? '')),
+            'title' => $title,
+            'channel' => $artist,
             'thumbnail' => $th['high']['url'] ?? $th['medium']['url'] ?? $th['default']['url'] ?? ('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg'),
             'duration' => $durations[$id],
         ];
@@ -242,22 +258,67 @@ function boxGenres(): array {
     ];
 }
 
-/** Dinleme geçmişindeki sanatçılara ve günün türlerine göre öneri bölümleri. */
+/** Dinleme geçmişine göre karışık öneriler: tek sanatçının şarkıları yerine benzer sanatçılardan. */
 function boxFeed(array $artists): array {
-    $sections = [];
-    foreach (array_slice($artists, 0, 3) as $artist) {
-        $artist = mb_substr(trim((string)$artist), 0, 60);
-        if ($artist === '' || mb_strtolower($artist) === 'bilinmeyen sanatçı') continue;
-        $items = boxSearch($artist . ' şarkıları', true, 15, 43200);
-        if (count($items) >= 4) $sections[] = ['id' => 'artist-' . substr(sha1($artist), 0, 8), 'title' => $artist . ' tarzında', 'subtitle' => 'Dinlediklerine göre', 'items' => $items];
+    $seeds = [];
+    foreach (array_slice($artists, 0, 5) as $artist) {
+        $artist = trim(preg_replace('/\s*-\s*Topic$/iu', '', mb_substr(trim((string)$artist), 0, 60)));
+        if ($artist !== '' && mb_strtolower($artist) !== 'bilinmeyen sanatçı') $seeds[boxNorm($artist)] = $artist;
     }
-    $genres = boxGenres();
-    $keys = array_keys($genres);
-    $day = (int)date('z');
-    foreach ([$keys[$day % count($keys)], $keys[($day + 5) % count($keys)]] as $key) {
-        [$title, $query] = $genres[$key];
-        $items = boxSearch($query, true, 15, 43200);
-        if ($items) $sections[] = ['id' => 'genre-' . $key, 'title' => $title, 'subtitle' => 'Bugünün seçkisi', 'items' => $items];
+    $isSeed = function (array $r) use ($seeds): bool {
+        $hay = boxNorm($r['channel'] . ' ' . $r['title']);
+        foreach (array_keys($seeds) as $k) if ($k !== '' && str_contains($hay, $k)) return true;
+        return false;
+    };
+    $pick = function (array $pool, int $limit, ?callable $filter = null): array {
+        $seen = []; $out = [];
+        foreach ($pool as $r) {
+            if ($filter && !$filter($r)) continue;
+            $key = boxNorm($r['title']);
+            $artistKey = boxNorm($r['channel']);
+            if (isset($seen['t' . $key]) || ($seen['a' . $artistKey] ?? 0) >= 2) continue; // aynı sanatçıdan en fazla 2
+            $seen['t' . $key] = 1; $seen['a' . $artistKey] = ($seen['a' . $artistKey] ?? 0) + 1;
+            $out[] = $r;
+            if (count($out) >= $limit) break;
+        }
+        return $out;
+    };
+    $daySeed = (int)date('Ymd');
+    $sections = [];
+
+    // 1) Benzer sanatçılar: tohum sanatçıların tarzındaki listelerden, tohumun kendisi hariç.
+    $similar = [];
+    foreach (array_values($seeds) as $artist) {
+        foreach ([$artist . ' tarzı şarkılar', $artist . ' benzeri şarkılar'] as $query) {
+            try { $similar = array_merge($similar, boxSearch($query, true, 25, 43200)); } catch (RuntimeException $e) {}
+        }
+    }
+    mt_srand($daySeed); shuffle($similar); mt_srand();
+    $items = $pick($similar, 18, fn($r) => !$isSeed($r));
+    if (count($items) >= 4) $sections[] = ['id' => 'similar', 'title' => 'Benzer sanatçılardan', 'subtitle' => 'Dinlediklerine göre', 'items' => $items];
+
+    // 2) Karışık: sevdiğin sanatçılardan birkaç şarkı + benzerleri + günün türleri.
+    $mix = [];
+    foreach (array_values($seeds) as $artist) {
+        try { $mix = array_merge($mix, array_slice(boxSearch($artist, true, 10, 43200), 0, 3)); } catch (RuntimeException $e) {}
+    }
+    $genres = boxGenres(); $keys = array_keys($genres); $day = (int)date('z');
+    $todays = [$keys[$day % count($keys)], $keys[($day + 5) % count($keys)]];
+    $genrePools = [];
+    foreach ($todays as $key) {
+        try { $genrePools[$key] = boxSearch($genres[$key][1], true, 25, 43200); } catch (RuntimeException $e) { $genrePools[$key] = []; }
+    }
+    $mix = array_merge($mix, array_slice($similar, 0, 12), array_slice($genrePools[$todays[0]], 0, 8));
+    mt_srand($daySeed + 1); shuffle($mix); mt_srand();
+    $items = $pick($mix, 20);
+    if ($items) $sections[] = ['id' => 'mix', 'title' => 'Sana özel karışık', 'subtitle' => $seeds ? 'Her gün yenilenir' : 'Bugünün seçkisi', 'items' => $items];
+
+    // 3) Günün türleri
+    foreach ($todays as $key) {
+        $pool = $genrePools[$key];
+        mt_srand($daySeed + crc32($key)); shuffle($pool); mt_srand();
+        $items = $pick($pool, 15);
+        if ($items) $sections[] = ['id' => 'genre-' . $key, 'title' => $genres[$key][0], 'subtitle' => 'Bugünün seçkisi', 'items' => $items];
     }
     return $sections;
 }
@@ -305,12 +366,12 @@ function boxYoutubeUnitsToday(): int {
 function boxVdsUrl(): string { return rtrim(site('vds_url', 'https://yt2.aydworks.com.tr'), '/'); }
 function boxVdsKey(): string { return secretSetting('vds_signing_key'); }
 
-function boxSignedDownload(string $videoId): array {
+function boxSignedDownload(string $videoId, string $path = '/get', ?int $ttl = null): array {
     $key = boxVdsKey();
     if ($key === '') throw new RuntimeException('İndirme servisi yapılandırılmamış.');
-    $ttl = max(60, min(3600, (int)site('download_link_ttl', '300')));
+    $ttl ??= max(60, min(3600, (int)site('download_link_ttl', '300')));
     $exp = time() + $ttl;
-    return ['url' => boxVdsUrl() . '/get?' . http_build_query(['v' => $videoId, 'exp' => $exp, 'sig' => hash_hmac('sha256', $videoId . ':' . $exp, $key)]), 'expires_at' => $exp];
+    return ['url' => boxVdsUrl() . $path . '?' . http_build_query(['v' => $videoId, 'exp' => $exp, 'sig' => hash_hmac('sha256', $videoId . ':' . $exp, $key)]), 'expires_at' => $exp];
 }
 
 /** VDS sağlık kontrolü: /health yanıtı ve süresi. */

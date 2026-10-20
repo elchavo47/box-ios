@@ -164,6 +164,12 @@ struct SearchView: View {
                 Text("İndirmeler")
                     .font(.system(size: 20, weight: .bold))
                 Spacer()
+                if downloads.failedCount > 0 {
+                    Button("Tekrar dene (\(downloads.failedCount))") { downloads.retryFailed() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.orange)
+                        .padding(.trailing, 10)
+                }
                 if downloads.sortedItems.contains(where: { !$0.state.isActive }) {
                     Button("Temizle") { downloads.clearFinished() }
                         .font(.system(size: 14, weight: .semibold))
@@ -179,7 +185,13 @@ struct SearchView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
-                    .onTapGesture { playDownloaded(item) }
+                    .onTapGesture {
+                        if case .failed = item.state {
+                            downloads.download(SearchResult(id: item.id, title: item.title, channel: item.channel, thumbnail: item.thumbnail?.absoluteString, duration: 0))
+                        } else {
+                            playDownloaded(item)
+                        }
+                    }
             }
             Spacer().frame(height: 18)
         }
@@ -476,7 +488,7 @@ private struct DownloadRow: View {
         case .downloading: return "İndiriliyor"
         case .processing: return "Kitaplığa ekleniyor"
         case .done: return "Kitaplıkta • çalmak için dokun"
-        case .failed(let message): return message
+        case .failed(let message): return message + " • tekrar denemek için dokun"
         }
     }
 

@@ -123,7 +123,6 @@ struct FullPlayerView: View {
 
     @State private var showQueue = false
     @State private var showSleep = false
-    @State private var dragY: CGFloat = 0
     @State private var swipeX: CGFloat = 0
 
     var body: some View {
@@ -138,8 +137,6 @@ struct FullPlayerView: View {
                     VStack(spacing: 0) {
                         header(track)
                             .frame(width: width)
-                            .contentShape(Rectangle())
-                            .gesture(dismissDrag)
 
                         Spacer(minLength: 8)
 
@@ -167,8 +164,7 @@ struct FullPlayerView: View {
             }
             .frame(width: width, height: proxy.size.height)
         }
-        .offset(y: dragY)
-        .background(Color.boxBackground.opacity(dragY > 0 ? 0 : 1).ignoresSafeArea())
+        .background(Color.boxBackground.ignoresSafeArea())
         .sheet(isPresented: $showQueue) {
             QueueView()
                 .presentationDetents([.medium, .large])
@@ -208,20 +204,6 @@ struct FullPlayerView: View {
             .animation(.easeInOut(duration: 0.6), value: player.artworkColor)
         }
         .ignoresSafeArea()
-    }
-
-    private var dismissDrag: some Gesture {
-        DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                dragY = max(0, value.translation.height)
-            }
-            .onEnded { value in
-                if value.translation.height > 140 || value.predictedEndTranslation.height > 320 {
-                    dismiss()
-                } else {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragY = 0 }
-                }
-            }
     }
 
     private func header(_ track: Track) -> some View {
@@ -269,26 +251,19 @@ struct FullPlayerView: View {
             .id(track.id)
             .transition(.opacity)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 12)
+            // Yatay kaydırma: sonraki / önceki. Dikey çekişi sistemin kapatma hareketine bırakır.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
                     .onChanged { value in
-                        if abs(value.translation.width) > abs(value.translation.height) {
-                            swipeX = value.translation.width
-                        } else {
-                            dragY = max(0, value.translation.height)
-                        }
+                        guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                        swipeX = value.translation.width
                     }
                     .onEnded { value in
-                        let horizontal = abs(value.translation.width) > abs(value.translation.height)
-                        if horizontal {
+                        if abs(value.translation.width) > abs(value.translation.height) * 1.4 {
                             if value.translation.width < -90 { player.next(); Haptics.tap() }
                             else if value.translation.width > 90 { player.previous(); Haptics.tap() }
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 }
-                        } else if value.translation.height > 140 || value.predictedEndTranslation.height > 320 {
-                            dismiss()
-                        } else {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragY = 0 }
                         }
+                        if swipeX != 0 { withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 } }
                     }
             )
             .onTapGesture(count: 2) {
@@ -429,7 +404,15 @@ private struct SleepBadge: View {
     @EnvironmentObject private var player: PlayerManager
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        if player.sleepTimer.isActive {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in content }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
+        Group {
             HStack(spacing: 6) {
                 Image(systemName: player.sleepTimer.isActive ? "moon.zzz.fill" : "moon.zzz")
                     .font(.system(size: 18, weight: .semibold))

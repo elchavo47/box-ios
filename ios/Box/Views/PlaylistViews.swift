@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 enum PlaylistSource: Hashable {
@@ -23,6 +24,8 @@ struct PlaylistDetailView: View {
     @State private var showRename = false
     @State private var showDeleteConfirm = false
     @State private var renameText = ""
+    @State private var showPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
 
     private var playlist: Playlist? {
         if case .playlist(let id) = source { return library.playlist(id) }
@@ -95,6 +98,17 @@ struct PlaylistDetailView: View {
         .boxScreenBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { item in
+            guard let item, case .playlist(let id) = source else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                    library.setCover(image, for: id)
+                    Haptics.success()
+                }
+                photoItem = nil
+            }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if case .playlist = source {
@@ -118,6 +132,18 @@ struct PlaylistDetailView: View {
                             showRename = true
                         } label: {
                             Label("Yeniden adlandır", systemImage: "pencil")
+                        }
+                        Button {
+                            showPhotoPicker = true
+                        } label: {
+                            Label("Kapak resmini değiştir", systemImage: "photo")
+                        }
+                        if playlist?.coverFile != nil, case .playlist(let id) = source {
+                            Button {
+                                library.removeCover(for: id)
+                            } label: {
+                                Label("Kapak resmini kaldır", systemImage: "photo.badge.minus")
+                            }
                         }
                         Button(role: .destructive) {
                             showDeleteConfirm = true
@@ -158,8 +184,28 @@ struct PlaylistDetailView: View {
 
     private var header: some View {
         VStack(spacing: 16) {
-            PlaylistCover(tracks: tracks, icon: icon, size: 210, cornerRadius: 10)
-                .shadow(color: .black.opacity(0.5), radius: 22, y: 12)
+            Group {
+                if let playlist {
+                    Button {
+                        showPhotoPicker = true
+                    } label: {
+                        PlaylistArtwork(playlist: playlist, tracks: tracks, size: 210, cornerRadius: 10)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.black)
+                                    .frame(width: 38, height: 38)
+                                    .background(Circle().fill(Color.white))
+                                    .padding(10)
+                            }
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("Kapak resmini değiştir")
+                } else {
+                    PlaylistCover(tracks: tracks, icon: icon, size: 210, cornerRadius: 10)
+                }
+            }
+            .shadow(color: .black.opacity(0.5), radius: 22, y: 12)
 
             VStack(spacing: 5) {
                 Text(title)

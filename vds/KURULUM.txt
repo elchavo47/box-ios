@@ -1,0 +1,40 @@
+Box anında dinleme servisi - VDS kurulumu (Ubuntu, root)
+
+1) Dosyayı koy:
+   nano /opt/yt_stream.py      (yt_stream.py içeriğini yapıştır, kaydet)
+
+2) Gerekli paketi kur (FastAPI ve uvicorn zaten kurulu):
+   pip3 install --break-system-packages httpx || pip3 install httpx
+   (yt-api servisi bir sanal ortamda çalışıyorsa o ortamın pip'ini kullan)
+
+3) Servisi oluştur:
+   cat > /etc/systemd/system/yt-stream.service <<'UNIT'
+   [Unit]
+   Description=Box yt-stream
+   After=network.target
+
+   [Service]
+   EnvironmentFile=/etc/yt-api.env
+   WorkingDirectory=/opt
+   ExecStart=/usr/bin/env python3 -m uvicorn yt_stream:app --host 127.0.0.1 --port 8011 --workers 2
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   UNIT
+   (Not: "systemctl cat yt-api" çıktısındaki ExecStart bir venv yolu kullanıyorsa, aynı python yolunu burada da kullan.)
+   systemctl daemon-reload && systemctl enable --now yt-stream && systemctl status yt-stream --no-pager
+
+4) nginx: yt2.aydworks.com.tr site dosyasında "location = /get" bloğunun yanına ekle:
+   location /stream {
+       proxy_pass http://127.0.0.1:8011;
+       proxy_buffering off;
+       proxy_request_buffering off;
+       proxy_read_timeout 120s;
+       proxy_set_header Range $http_range;
+       proxy_set_header If-Range $http_if_range;
+   }
+   nginx -t && systemctl reload nginx
+
+5) Dene:
+   curl https://yt2.aydworks.com.tr/stream/health      ->  {"ok":true,...}

@@ -109,8 +109,52 @@ struct TrackRow: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var stream: StreamCache
+    @EnvironmentObject private var downloads: DownloadManager
 
     private var isCurrent: Bool { player.current?.id == track.id }
+
+    private var downloadState: DownloadState? {
+        track.remote.flatMap { downloads.state(for: $0.id) }
+    }
+
+    private var downloadProgress: Double? {
+        switch downloadState {
+        case .downloading(let p): return p
+        case .preparing, .processing: return 0.02
+        default: return nil
+        }
+    }
+
+    private var subtitle: String {
+        if case .failed = downloadState { return "İndirilemedi • tekrar denemek için menüyü aç" }
+        if case .downloading(let p) = downloadState { return "İndiriliyor %\(Int(p * 100))" }
+        if case .preparing = downloadState { return "İndirme sırada…" }
+        return track.displayArtist + (track.duration > 0 ? " • " + Formatters.time(track.duration) : "")
+    }
+
+    private var isDownloadedLocal: Bool {
+        !track.isRemote && (track.relativePath.hasPrefix(AppConfig.downloadsFolderName + "/") || library.videoPaths.values.contains(track.relativePath))
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if let state = downloadState, state.isActive {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.accent)
+        } else if case .failed = downloadState {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.orange)
+        } else if isDownloadedLocal {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.accent)
+        } else if track.isRemote {
+            Image(systemName: stream.isCached(track.remote?.id ?? "") ? "checkmark.icloud" : "icloud")
+                .font(.system(size: 11, weight: .semibold))
+        }
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -133,20 +177,24 @@ struct TrackRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    if track.isRemote {
-                        Image(systemName: stream.isCached(track.remote?.id ?? "") ? "checkmark.icloud" : "icloud")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
+                    statusIcon
                     if library.isFavorite(track) {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.accent)
                     }
-                    Text(track.displayArtist + (track.duration > 0 ? " • " + Formatters.time(track.duration) : ""))
+                    Text(subtitle)
                         .lineLimit(1)
                 }
                 .font(.system(size: 14))
                 .foregroundColor(.boxSecondaryText)
+
+                if let progress = downloadProgress {
+                    ProgressView(value: progress)
+                        .tint(.accent)
+                        .frame(height: 3)
+                        .padding(.top, 2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -426,6 +474,28 @@ struct ChipBar<Item: Hashable>: View {
                 }
             }
             .padding(.horizontal, 16)
+        }
+    }
+}
+
+/// Liste kapağı: kullanıcının seçtiği fotoğraf, yoksa şarkı kapaklarından mozaik.
+struct PlaylistArtwork: View {
+    let playlist: Playlist
+    let tracks: [Track]
+    let size: CGFloat
+    var cornerRadius: CGFloat = 8
+
+    @EnvironmentObject private var library: LibraryStore
+
+    var body: some View {
+        if let image = library.coverImage(for: playlist) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            PlaylistCover(tracks: tracks, icon: "music.note.list", size: size, cornerRadius: cornerRadius)
         }
     }
 }

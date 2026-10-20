@@ -124,10 +124,41 @@ final class DownloadManager: ObservableObject {
         items[id]?.state = state
     }
 
+    /// Başarısız olursa bekleyip yeniden dener (ağ kopması, yoğunluk, sunucu hatası).
     private func run(_ result: SearchResult) async {
+        let delays: [UInt64] = [3, 10, 25]
+        for attempt in 0...delays.count {
+            if await attemptDownload(result) { return }
+            guard attempt < delays.count, case .failed(let message)? = items[result.id]?.state,
+                  retryable[result.id] == true else { return }
+            update(result.id, .preparing)
+            let lower = message.lowercased()
+            let wait = lower.contains("çok fazla") || lower.contains("yoğun") ? max(delays[attempt], 30) : delays[attempt]
+            try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
+        }
+    }
+
+    private var retryable: [String: Bool] = [:]
+
+    /// Başarısız olanların hepsini yeniden kuyruğa al.
+    func retryFailed() {
+        let failed = items.values.filter { if case .failed = $0.state { return true } else { return false } }
+        for item in failed {
+            let result = SearchResult(id: item.id, title: item.title, channel: item.channel, thumbnail: item.thumbnail?.absoluteString, duration: 0)
+            items[item.id] = nil
+            download(result)
+        }
+    }
+
+    var failedCount: Int {
+        items.values.filter { if case .failed = $0.state { return true } else { return false } }.count
+    }
+
+    private func attemptDownload(_ result: SearchResult) async -> Bool {
         guard let token = auth?.token, let library else {
+            retryable[result.id] = false
             update(result.id, .failed("Oturum bulunamadı."))
-            return
+            return false
         }
 
         do {
@@ -177,9 +208,14 @@ final class DownloadManager: ObservableObject {
             library.setDownloadedPath(path, for: id)
             update(id, .done(path))
             onFinished?(result, path)
+            return true
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? "İndirme başarısız oldu."
+            let status = (error as? APIError)?.status ?? 0
+            // Kota bitti / yetki yok / geçersiz video: tekrar denemenin anlamı yok.
+            retryable[result.id] = !(status == 400 || status == 401 || status == 403 || status == 404 || message.contains("Bugünlük"))
             update(result.id, .failed(message))
+            return false
         }
     }
 

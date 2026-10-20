@@ -191,6 +191,45 @@ final class LibraryStore: ObservableObject {
         return result
     }
 
+    // MARK: - Liste kapakları
+
+    private var coversDirectory: URL { supportDirectory.appendingPathComponent("covers", isDirectory: true) }
+    private let coverCache = NSCache<NSString, UIImage>()
+
+    func coverImage(for playlist: Playlist) -> UIImage? {
+        guard let file = playlist.coverFile else { return nil }
+        if let cached = coverCache.object(forKey: file as NSString) { return cached }
+        guard let image = UIImage(contentsOfFile: coversDirectory.appendingPathComponent(file).path) else { return nil }
+        coverCache.setObject(image, forKey: file as NSString)
+        return image
+    }
+
+    /// Seçilen fotoğrafı kare kırpıp kapak olarak kaydeder (yalnızca bu cihazda).
+    func setCover(_ image: UIImage, for id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        try? FileManager.default.createDirectory(at: coversDirectory, withIntermediateDirectories: true)
+        let prepared = ArtworkCache.downscale(ArtworkCache.squareCrop(image.normalizedOrientation()), maxSide: 900)
+        guard let data = prepared.jpegData(compressionQuality: 0.88) else { return }
+        if let old = playlists[index].coverFile {
+            try? FileManager.default.removeItem(at: coversDirectory.appendingPathComponent(old))
+            coverCache.removeObject(forKey: old as NSString)
+        }
+        let name = "\(id.uuidString)-\(Int(Date().timeIntervalSince1970)).jpg"
+        do {
+            try data.write(to: coversDirectory.appendingPathComponent(name), options: .atomic)
+            playlists[index].coverFile = name
+            savePlaylists()
+        } catch {}
+    }
+
+    func removeCover(for id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }), let old = playlists[index].coverFile else { return }
+        try? FileManager.default.removeItem(at: coversDirectory.appendingPathComponent(old))
+        coverCache.removeObject(forKey: old as NSString)
+        playlists[index].coverFile = nil
+        savePlaylists()
+    }
+
     // MARK: - YouTube eşleştirme
 
     /// Bu video daha önce indirildiyse kitaplıktaki yolu.
@@ -331,6 +370,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func deletePlaylist(_ id: UUID) {
+        removeCover(for: id)
         playlists.removeAll { $0.id == id }
         savePlaylists()
     }
@@ -475,5 +515,15 @@ final class LibraryStore: ObservableObject {
     private static func save<T: Encodable>(_ value: T, to url: URL) {
         guard let data = try? JSONEncoder().encode(value) else { return }
         try? data.write(to: url, options: .atomic)
+    }
+}
+
+extension UIImage {
+    /// Kamera fotoğraflarının yönünü düzeltir (kırpmadan önce).
+    func normalizedOrientation() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in draw(in: CGRect(origin: .zero, size: size)) }
     }
 }

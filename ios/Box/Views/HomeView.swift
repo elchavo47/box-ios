@@ -355,7 +355,7 @@ struct HomeView: View {
                         let tracks = library.tracks(for: playlist)
                         NavigationLink(value: HomeRoute.playlist(playlist.id)) {
                             CoverCard(title: playlist.name, subtitle: "\(tracks.count) şarkı") {
-                                PlaylistCover(tracks: tracks, icon: "music.note.list", size: 150)
+                                PlaylistArtwork(playlist: playlist, tracks: tracks, size: 150)
                             }
                         }
                         .buttonStyle(PressableStyle())

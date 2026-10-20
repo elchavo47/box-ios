@@ -42,7 +42,7 @@ final class StreamCache: ObservableObject {
                 throw APIError(message: "Dinlemek için giriş yap.", status: 401)
             }
             let link: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": result.id], token: token)
-            guard let url = URL(string: link.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
+            guard let url = URL(string: link.fileUrl ?? link.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
             let temp = try await FileDownloader.download(from: url) { _ in }
             try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
             let artwork = await DownloadManager.fetchArtwork(result)
@@ -70,6 +70,24 @@ final class StreamCache: ObservableObject {
         let url = try await task.value
         trim()
         return url
+    }
+
+    private var links: [String: (url: URL, expires: Date)] = [:]
+
+    /// Anında çalma bağlantısı (VDS /stream). Şarkı inerken çalmaya başlar.
+    func liveURL(_ result: SearchResult) async throws -> URL {
+        if let cached = links[result.id], cached.expires > Date() { return cached.url }
+        guard let token = auth?.token else { throw APIError(message: "Dinlemek için giriş yap.", status: 401) }
+        let link: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": result.id], token: token)
+        guard let url = URL(string: link.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
+        links[result.id] = (url, Date(timeIntervalSince1970: TimeInterval(link.expiresAt - 300)))
+        return url
+    }
+
+    /// Sıradaki şarkının bağlantısını önceden al (anında başlasın).
+    func prepareLink(_ result: SearchResult) {
+        guard !isCached(result.id) else { return }
+        Task { _ = try? await liveURL(result) }
     }
 
     /// Sıradaki şarkıyı arka planda hazırlar.

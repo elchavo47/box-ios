@@ -65,7 +65,11 @@ struct BoxApp: App {
                         guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
                         return try await stream.resolve(result)
                     }
-                    player.prefetchRemote = { [weak stream] result in stream?.prefetch(result) }
+                    player.liveRemote = { [weak stream] result in
+                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        return try await stream.liveURL(result)
+                    }
+                    player.prefetchRemote = { [weak stream] result in stream?.prepareLink(result) }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()

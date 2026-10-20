@@ -61,7 +61,10 @@ final class PlayerManager: ObservableObject {
     var onTrackStart: ((Track) -> Void)?
     /// İndirilmemiş şarkının dosyasını hazırlar.
     var resolveRemote: ((SearchResult) async throws -> URL)?
+    /// Anında çalma bağlantısı (parça parça iner).
+    var liveRemote: ((SearchResult) async throws -> URL)?
     var prefetchRemote: ((SearchResult) -> Void)?
+    private var itemObservers: Set<AnyCancellable> = []
     private var loadToken = 0
 
     private let player = AVPlayer()
@@ -176,7 +179,7 @@ final class PlayerManager: ObservableObject {
 
     func resume() {
         guard current != nil else { return }
-        if isBuffering { isPlaying = true; return }
+        if isBuffering && player.currentItem == nil { isPlaying = true; return }
         if player.currentItem == nil {
             loadCurrent(autoplay: true)
             return
@@ -189,7 +192,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func pause() {
-        if isBuffering { isPlaying = false; return }
+        if isBuffering && player.currentItem == nil { isPlaying = false; return }
         player.pause()
         isPlaying = false
         updateNowPlaying()
@@ -440,26 +443,20 @@ final class PlayerManager: ObservableObject {
         currentArtwork = nil
 
         if let remote = track.remote, !FileManager.default.fileExists(atPath: track.url.path) {
-            // İndirilmemiş şarkı: önce hazırla, sonra çal.
+            // İndirilmemiş şarkı: akış bağlantısıyla hemen çal, olmazsa dosyayı indirip çal.
             player.pause()
             player.replaceCurrentItem(with: nil)
             isBuffering = true
             isPlaying = autoplay
             updateNowPlaying()
             Task { @MainActor [weak self] in
-                guard let self, let resolve = self.resolveRemote else { return }
-                do {
-                    let url = try await resolve(remote)
-                    guard token == self.loadToken else { return }
-                    self.isBuffering = false
-                    self.startItem(track: track, url: url, autoplay: self.isPlaying, startAt: startAt, record: record)
-                } catch {
-                    guard token == self.loadToken else { return }
-                    self.isBuffering = false
-                    self.isPlaying = false
-                    self.errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şarkı açılamadı."
-                    self.updateNowPlaying()
+                guard let self else { return }
+                if let live = self.liveRemote, let url = try? await live(remote), token == self.loadToken {
+                    self.startItem(track: track, url: url, autoplay: self.isPlaying, startAt: startAt, record: record, streaming: true)
+                    return
                 }
+                guard token == self.loadToken else { return }
+                await self.fallbackToFile(track: track, remote: remote, token: token, startAt: startAt, record: record)
             }
             return
         }
@@ -468,10 +465,57 @@ final class PlayerManager: ObservableObject {
         startItem(track: track, url: track.url, autoplay: autoplay, startAt: startAt, record: record)
     }
 
-    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool) {
+    /// Akış başarısız olursa şarkıyı tam indirip çalar.
+    private func fallbackToFile(track: Track, remote: SearchResult, token: Int, startAt: Double, record: Bool) async {
+        guard let resolve = resolveRemote else { return }
+        isBuffering = true
+        do {
+            let url = try await resolve(remote)
+            guard token == loadToken else { return }
+            startItem(track: track, url: url, autoplay: isPlaying, startAt: startAt, record: record)
+        } catch {
+            guard token == loadToken else { return }
+            isBuffering = false
+            isPlaying = false
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şarkı açılamadı."
+            updateNowPlaying()
+        }
+    }
+
+    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool, streaming: Bool = false) {
         let item = AVPlayerItem(url: url)
         item.audioTimePitchAlgorithm = .timeDomain
+        item.preferredForwardBufferDuration = streaming ? 8 : 0
         player.replaceCurrentItem(with: item)
+        isBuffering = streaming
+
+        itemObservers.removeAll()
+        let token = loadToken
+        item.publisher(for: \.status)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self, token == self.loadToken else { return }
+                if status == .failed {
+                    if streaming, let remote = track.remote {
+                        self.itemObservers.removeAll()
+                        Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: self.clock.currentTime, record: false) }
+                    } else {
+                        self.isBuffering = false
+                        self.isPlaying = false
+                        self.errorMessage = "Bu dosya çalınamıyor."
+                    }
+                }
+            }
+            .store(in: &itemObservers)
+        player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self, token == self.loadToken else { return }
+                if status == .playing { self.isBuffering = false }
+                else if status == .waitingToPlayAtSpecifiedRate, streaming { self.isBuffering = true }
+                else if status == .paused { self.isBuffering = false }
+            }
+            .store(in: &itemObservers)
 
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -503,6 +547,7 @@ final class PlayerManager: ObservableObject {
         if let index = currentIndex, queue.indices.contains(index + 1), let next = queue[index + 1].remote {
             prefetchRemote?(next)
         }
+        if !autoplay { isBuffering = false }
 
         Task { @MainActor [weak self] in
             let image = await ArtworkCache.shared.image(for: url)

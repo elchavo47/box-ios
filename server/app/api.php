@@ -207,14 +207,17 @@ switch ($route) {
         throttle('stream-day:' . $u['id'], 800, 86400);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
-        try { $link = boxSignedDownload($videoId); }
-        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }
-        jsonOut(['ok' => true, 'url' => $link['url'], 'expires_at' => $link['expires_at']]);
+        try {
+            $file = boxSignedDownload($videoId);
+            $live = boxSignedDownload($videoId, '/stream', 6 * 3600);
+        } catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }
+        // url: anında çalma (VDS /stream, parça parça), file_url: tam dosya (önbellek için)
+        jsonOut(['ok' => true, 'url' => $live['url'], 'file_url' => $file['url'], 'expires_at' => $live['expires_at']]);
 
     case 'download':
         $u = boxApiUser();
         if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
-        throttle('download:' . $u['id'], 20, 60);
+        throttle('download:' . $u['id'], 90, 60);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
         $limit = (int)configValue('premium_daily_downloads', 150);
