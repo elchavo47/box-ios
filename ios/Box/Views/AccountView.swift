@@ -1,0 +1,335 @@
+import SwiftUI
+
+struct AccountView: View {
+    @EnvironmentObject private var auth: AuthStore
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if auth.isLoggedIn, let user = auth.user {
+                    ProfileView(user: user)
+                } else {
+                    AuthFormView()
+                }
+            }
+            .boxScreenBackground()
+            .navigationTitle("Hesap")
+        }
+    }
+}
+
+// MARK: - Giriş / kayıt
+
+private struct AuthFormView: View {
+    @EnvironmentObject private var auth: AuthStore
+
+    @State private var isRegister = false
+    @State private var name = ""
+    @State private var email = ""
+    @State private var password = ""
+    @State private var errorMessage: String?
+    @FocusState private var focused: Field?
+
+    enum Field { case name, email, password }
+
+    private var canSubmit: Bool {
+        email.contains("@") && password.count >= (isRegister ? 8 : 1) && !auth.isWorking
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                Image("BoxLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 110, height: 110)
+                    .blendMode(.screen)
+                    .shadow(color: .neon.opacity(0.7), radius: 18)
+                    .padding(.top, 20)
+
+                VStack(spacing: 6) {
+                    Text(isRegister ? "Box'a katıl" : "Tekrar hoş geldin")
+                        .font(.system(.title, design: .rounded).weight(.bold))
+                    Text("Listelerin ve ayrıcalıkların hesabına bağlı kalsın.")
+                        .font(.subheadline)
+                        .foregroundColor(.boxSecondaryText)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 8) {
+                    Button("Giriş yap") { withAnimation { isRegister = false } }
+                        .buttonStyle(ChipButtonStyle(selected: !isRegister))
+                    Button("Kayıt ol") { withAnimation { isRegister = true } }
+                        .buttonStyle(ChipButtonStyle(selected: isRegister))
+                }
+
+                VStack(spacing: 12) {
+                    if isRegister {
+                        field("İsim", text: $name, icon: "person")
+                            .textContentType(.name)
+                            .focused($focused, equals: .name)
+                            .submitLabel(.next)
+                            .onSubmit { focused = .email }
+                    }
+
+                    field("E-posta", text: $email, icon: "envelope")
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focused, equals: .email)
+                        .submitLabel(.next)
+                        .onSubmit { focused = .password }
+
+                    secureField("Şifre" + (isRegister ? " (en az 8 karakter)" : ""), text: $password)
+                        .textContentType(isRegister ? .newPassword : .password)
+                        .focused($focused, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { if canSubmit { submit() } }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    submit()
+                } label: {
+                    if auth.isWorking {
+                        ProgressView().tint(.black)
+                    } else {
+                        Text(isRegister ? "Hesap oluştur" : "Giriş yap")
+                    }
+                }
+                .buttonStyle(NeonButtonStyle())
+                .disabled(!canSubmit)
+                .opacity(canSubmit ? 1 : 0.5)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 40)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func field(_ placeholder: String, text: Binding<String>, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(.boxSecondaryText)
+                .frame(width: 20)
+            TextField(placeholder, text: text)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxCard))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.06)))
+    }
+
+    private func secureField(_ placeholder: String, text: Binding<String>) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock")
+                .foregroundColor(.boxSecondaryText)
+                .frame(width: 20)
+            SecureField(placeholder, text: text)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxCard))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.06)))
+    }
+
+    private func submit() {
+        errorMessage = nil
+        focused = nil
+
+        Task {
+            do {
+                if isRegister {
+                    try await auth.register(name: name, email: email, password: password)
+                } else {
+                    try await auth.login(email: email, password: password)
+                }
+                password = ""
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bir hata oluştu."
+            }
+        }
+    }
+}
+
+// MARK: - Profil
+
+private struct ProfileView: View {
+    let user: BoxUser
+
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var library: LibraryStore
+
+    @State private var showRename = false
+    @State private var newName = ""
+    @State private var showLogoutConfirm = false
+    @State private var showDelete = false
+    @State private var deletePassword = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.neonDim)
+                            .frame(width: 64, height: 64)
+                            .overlay(Circle().stroke(Color.neon, lineWidth: 1.5))
+                            .shadow(color: .neon.opacity(0.5), radius: 10)
+                        Text(String(user.name.prefix(1)).uppercased())
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(.neon)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(user.name)
+                            .font(.system(.title3, design: .rounded).weight(.bold))
+                        Text(user.email)
+                            .font(.subheadline)
+                            .foregroundColor(.boxSecondaryText)
+                        planBadge
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(Color.boxCard)
+
+            Section("Kitaplığın") {
+                stat("Şarkı", "\(library.tracks.count)", icon: "music.note")
+                stat("Çalma listesi", "\(library.playlists.count)", icon: "music.note.list")
+                stat("Beğenilen", "\(library.favorites.count)", icon: "heart.fill")
+                stat("Kullanılan alan", Formatters.bytes(library.totalSize), icon: "internaldrive")
+            }
+            .listRowBackground(Color.boxCard)
+
+            Section("Hesap") {
+                Button {
+                    newName = user.name
+                    showRename = true
+                } label: {
+                    Label("İsmi değiştir", systemImage: "pencil")
+                }
+
+                Button {
+                    showLogoutConfirm = true
+                } label: {
+                    Label("Çıkış yap", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+
+                Button(role: .destructive) {
+                    deletePassword = ""
+                    showDelete = true
+                } label: {
+                    Label("Hesabı sil", systemImage: "trash")
+                }
+            }
+            .listRowBackground(Color.boxCard)
+
+            Section {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 4) {
+                        Text("Box")
+                            .font(.system(.footnote, design: .rounded).weight(.bold))
+                            .foregroundColor(.neon)
+                        Text("Sürüm \(AppConfig.appVersion) • AYD Works")
+                            .font(.caption2)
+                            .foregroundColor(.boxSecondaryText)
+                    }
+                    Spacer()
+                }
+            }
+            .listRowBackground(Color.clear)
+        }
+        .scrollContentBackground(.hidden)
+        .refreshable { await auth.refresh() }
+        .alert("İsmini değiştir", isPresented: $showRename) {
+            TextField("İsim", text: $newName)
+            Button("Kaydet") {
+                Task {
+                    do {
+                        try await auth.updateName(newName.trimmingCharacters(in: .whitespaces))
+                    } catch {
+                        errorMessage = (error as? LocalizedError)?.errorDescription
+                    }
+                }
+            }
+            Button("Vazgeç", role: .cancel) {}
+        }
+        .confirmationDialog("Çıkış yapılsın mı?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button("Çıkış yap", role: .destructive) {
+                Task { await auth.logout() }
+            }
+        }
+        .alert("Hesabı sil", isPresented: $showDelete) {
+            SecureField("Şifren", text: $deletePassword)
+            Button("Kalıcı olarak sil", role: .destructive) {
+                Task {
+                    do {
+                        try await auth.deleteAccount(password: deletePassword)
+                    } catch {
+                        errorMessage = (error as? LocalizedError)?.errorDescription
+                    }
+                }
+            }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text("Hesabın ve sunucudaki bilgilerin silinir. Cihazındaki müzik dosyaları silinmez.")
+        }
+        .alert("Hata", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var planBadge: some View {
+        if user.premium {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill")
+                Text(premiumText)
+            }
+            .font(.system(.caption, design: .rounded).weight(.bold))
+            .foregroundColor(.black)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.neon))
+            .shadow(color: .neon.opacity(0.6), radius: 6)
+        } else {
+            Text("Ücretsiz plan")
+                .font(.system(.caption, design: .rounded).weight(.semibold))
+                .foregroundColor(.boxSecondaryText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.boxCardHighlight))
+        }
+    }
+
+    private var premiumText: String {
+        guard let until = user.premiumUntilDate else { return "PREMIUM" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "tr_TR")
+        formatter.dateFormat = "d MMM yyyy"
+        return "PREMIUM • \(formatter.string(from: until))"
+    }
+
+    private func stat(_ title: String, _ value: String, icon: String) -> some View {
+        HStack {
+            Label(title, systemImage: icon)
+            Spacer()
+            Text(value)
+                .foregroundColor(.boxSecondaryText)
+                .font(.system(.body, design: .rounded))
+        }
+    }
+}

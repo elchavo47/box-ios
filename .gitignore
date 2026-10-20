@@ -1,0 +1,13 @@
+# Xcode (proje XcodeGen ile üretilir)
+ios/Box.xcodeproj/
+ios/build.log
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Backend gizli ayarlar ve önbellek
+backend/api/config.php
+backend/api/cache/
+
+.DS_Store

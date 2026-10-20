@@ -1,0 +1,337 @@
+import AVFoundation
+import Foundation
+import UIKit
+
+@MainActor
+final class LibraryStore: ObservableObject {
+    @Published private(set) var tracks: [Track] = []
+    @Published private(set) var playlists: [Playlist] = []
+    @Published private(set) var favorites: Set<String> = []
+    @Published private(set) var isScanning = false
+
+    let documents: URL
+    private let supportDirectory: URL
+    private var metadataCache: [String: CachedMetadata] = [:]
+    private var rescanRequested = false
+
+    private var playlistsFile: URL { supportDirectory.appendingPathComponent("playlists.json") }
+    private var favoritesFile: URL { supportDirectory.appendingPathComponent("favorites.json") }
+    private var metadataFile: URL { supportDirectory.appendingPathComponent("metadata-cache.json") }
+
+    init() {
+        let fm = FileManager.default
+        documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        supportDirectory = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Box", isDirectory: true)
+
+        try? fm.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        try? fm.createDirectory(
+            at: documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        playlists = Self.load([Playlist].self, from: playlistsFile) ?? []
+        favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
+        metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
+    }
+
+    // MARK: - Tarama
+
+    func refresh() async {
+        if isScanning {
+            rescanRequested = true
+            return
+        }
+
+        isScanning = true
+        defer { isScanning = false }
+
+        repeat {
+            rescanRequested = false
+            await scan()
+        } while rescanRequested
+    }
+
+    private nonisolated static func collectAudioFiles(in root: URL, keys: [URLResourceKey]) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+
+        var urls: [URL] = []
+        for case let url as URL in enumerator where AppConfig.audioExtensions.contains(url.pathExtension.lowercased()) {
+            urls.append(url)
+        }
+        return urls
+    }
+
+    private func scan() async {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey, .creationDateKey, .fileSizeKey]
+
+        var found: [Track] = []
+        var seenPaths = Set<String>()
+
+        let urls = Self.collectAudioFiles(in: documents, keys: keys)
+
+        for url in urls {
+            guard AppConfig.audioExtensions.contains(url.pathExtension.lowercased()),
+                  let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+
+            let path = relativePath(for: url)
+            let modified = values.contentModificationDate ?? Date.distantPast
+            let size = Int64(values.fileSize ?? 0)
+            seenPaths.insert(path)
+
+            var meta = metadataCache[path]
+            if meta == nil || meta?.modified != modified || meta?.size != size {
+                meta = await Self.readMetadata(url: url, modified: modified, size: size)
+                metadataCache[path] = meta
+            }
+
+            guard let meta else { continue }
+
+            found.append(Track(
+                relativePath: path,
+                url: url,
+                title: meta.title,
+                artist: meta.artist,
+                album: meta.album,
+                duration: meta.duration,
+                addedAt: values.creationDate ?? modified,
+                fileSize: size
+            ))
+        }
+
+        metadataCache = metadataCache.filter { seenPaths.contains($0.key) }
+        Self.save(metadataCache, to: metadataFile)
+
+        tracks = found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private static func readMetadata(url: URL, modified: Date, size: Int64) async -> CachedMetadata {
+        let asset = AVURLAsset(url: url)
+        var title = ""
+        var artist = ""
+        var album = ""
+        var duration = 0.0
+
+        if let time = try? await asset.load(.duration), time.isNumeric {
+            duration = time.seconds
+        }
+
+        if let items = try? await asset.load(.commonMetadata) {
+            for item in items {
+                guard let key = item.commonKey else { continue }
+                let value = (try? await item.load(.stringValue)) ?? nil
+
+                switch key {
+                case .commonKeyTitle: title = value ?? title
+                case .commonKeyArtist: artist = value ?? artist
+                case .commonKeyAlbumName: album = value ?? album
+                default: break
+                }
+            }
+        }
+
+        if title.trimmingCharacters(in: .whitespaces).isEmpty {
+            title = url.deletingPathExtension().lastPathComponent
+        }
+
+        return CachedMetadata(title: title, artist: artist, album: album, duration: duration, modified: modified, size: size)
+    }
+
+    func relativePath(for url: URL) -> String {
+        let base = documents.standardizedFileURL.resolvingSymlinksInPath().path
+        let full = url.standardizedFileURL.resolvingSymlinksInPath().path
+
+        if full.hasPrefix(base) {
+            return String(full.dropFirst(base.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+
+        return url.lastPathComponent
+    }
+
+    func track(forPath path: String) -> Track? {
+        tracks.first { $0.relativePath == path }
+    }
+
+    func tracks(for playlist: Playlist) -> [Track] {
+        let index = Dictionary(uniqueKeysWithValues: tracks.map { ($0.relativePath, $0) })
+        return playlist.paths.compactMap { index[$0] }
+    }
+
+    var favoriteTracks: [Track] {
+        tracks.filter { favorites.contains($0.relativePath) }
+    }
+
+    var recentlyAdded: [Track] {
+        Array(tracks.sorted { $0.addedAt > $1.addedAt }.prefix(12))
+    }
+
+    var totalSize: Int64 {
+        tracks.reduce(0) { $0 + $1.fileSize }
+    }
+
+    // MARK: - Favoriler
+
+    func isFavorite(_ track: Track) -> Bool {
+        favorites.contains(track.relativePath)
+    }
+
+    func toggleFavorite(_ track: Track) {
+        if favorites.contains(track.relativePath) {
+            favorites.remove(track.relativePath)
+        } else {
+            favorites.insert(track.relativePath)
+        }
+        Self.save(Array(favorites), to: favoritesFile)
+    }
+
+    // MARK: - Çalma listeleri
+
+    @discardableResult
+    func createPlaylist(name: String, paths: [String] = []) -> Playlist {
+        let playlist = Playlist(name: name.isEmpty ? "Yeni liste" : name, paths: paths)
+        playlists.append(playlist)
+        savePlaylists()
+        return playlist
+    }
+
+    func renamePlaylist(_ id: UUID, to name: String) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }), !name.isEmpty else { return }
+        playlists[index].name = name
+        savePlaylists()
+    }
+
+    func deletePlaylist(_ id: UUID) {
+        playlists.removeAll { $0.id == id }
+        savePlaylists()
+    }
+
+    func add(_ tracks: [Track], to id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        for track in tracks where !playlists[index].paths.contains(track.relativePath) {
+            playlists[index].paths.append(track.relativePath)
+        }
+        savePlaylists()
+    }
+
+    func removeTracks(at offsets: IndexSet, from id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        let visible = tracks(for: playlists[index]).map(\.relativePath)
+        let toRemove = Set(offsets.compactMap { visible.indices.contains($0) ? visible[$0] : nil })
+        playlists[index].paths.removeAll { toRemove.contains($0) }
+        savePlaylists()
+    }
+
+    func moveTracks(from source: IndexSet, to destination: Int, in id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        var visible = tracks(for: playlists[index]).map(\.relativePath)
+        visible.move(fromOffsets: source, toOffset: destination)
+        let missing = playlists[index].paths.filter { !visible.contains($0) }
+        playlists[index].paths = visible + missing
+        savePlaylists()
+    }
+
+    func playlist(_ id: UUID) -> Playlist? {
+        playlists.first { $0.id == id }
+    }
+
+    private func savePlaylists() {
+        Self.save(playlists, to: playlistsFile)
+    }
+
+    // MARK: - Dosya işlemleri sonrası güncelleme
+
+    /// Dosya ya da klasör taşındığında / yeniden adlandırıldığında listeleri ve favorileri günceller.
+    func pathMoved(from oldURL: URL, to newURL: URL) {
+        let oldPath = relativePath(for: oldURL)
+        let newPath = relativePath(for: newURL)
+
+        func remap(_ path: String) -> String {
+            if path == oldPath { return newPath }
+            if path.hasPrefix(oldPath + "/") { return newPath + path.dropFirst(oldPath.count) }
+            return path
+        }
+
+        playlists = playlists.map { playlist in
+            var copy = playlist
+            copy.paths = playlist.paths.map(remap)
+            return copy
+        }
+        favorites = Set(favorites.map(remap))
+
+        var newCache: [String: CachedMetadata] = [:]
+        for (key, value) in metadataCache {
+            newCache[remap(key)] = value
+        }
+        metadataCache = newCache
+
+        savePlaylists()
+        Self.save(Array(favorites), to: favoritesFile)
+        Self.save(metadataCache, to: metadataFile)
+    }
+
+    func pathDeleted(_ url: URL) {
+        let path = relativePath(for: url)
+
+        func keep(_ candidate: String) -> Bool {
+            candidate != path && !candidate.hasPrefix(path + "/")
+        }
+
+        playlists = playlists.map { playlist in
+            var copy = playlist
+            copy.paths = playlist.paths.filter(keep)
+            return copy
+        }
+        favorites = favorites.filter(keep)
+
+        savePlaylists()
+        Self.save(Array(favorites), to: favoritesFile)
+    }
+
+    // MARK: - İçe aktarma
+
+    /// Başka uygulamalardan ya da dosya seçiciden gelen dosyaları kopyalar.
+    @discardableResult
+    func importFiles(_ urls: [URL], into folder: URL) async -> Int {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        var count = 0
+
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+            // Zaten Belgeler içindeyse kopyalamaya gerek yok.
+            if url.standardizedFileURL.path.hasPrefix(documents.standardizedFileURL.path) {
+                continue
+            }
+
+            let destination = FileService.uniqueURL(for: url.lastPathComponent, in: folder)
+            do {
+                try fm.copyItem(at: url, to: destination)
+                count += 1
+            } catch {
+                continue
+            }
+        }
+
+        await refresh()
+        return count
+    }
+
+    // MARK: - JSON yardımcıları
+
+    private static func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func save<T: Encodable>(_ value: T, to url: URL) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}

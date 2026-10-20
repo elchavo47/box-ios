@@ -1,0 +1,12 @@
+# config, lib ve önbellek dosyalarına dışarıdan erişimi kapat
+<FilesMatch "^(config|config\.sample|lib)\.php$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^cache/ - [F,L]
+    # Bazı hostinglerde Authorization başlığının PHP'ye ulaşması için
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
