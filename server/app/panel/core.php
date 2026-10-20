@@ -74,7 +74,7 @@ function actionAllowed(string $role, string $action): bool {
     if ($role === 'admin') return true;
     $everyone = ['logout', 'profile', 'session_revoke', 'sessions_revoke', 'totp_begin', 'totp_enable', 'totp_disable', 'totp_regen', 'migration_ack', 'device_remove'];
     $map = [
-        'support' => ['premium_grant', 'premium_revoke', 'user_note', 'user_ban', 'user_unban', 'user_logout_all', 'user_rename', 'user_quota'],
+        'support' => ['premium_grant', 'premium_revoke', 'user_note', 'user_ban', 'user_unban', 'user_logout_all', 'user_logout_device', 'user_rename', 'user_quota'],
         'viewer' => [],
     ];
     return in_array($action, $everyone, true) || in_array($action, $map[$role] ?? [], true);

@@ -72,12 +72,6 @@ function boxDeleteAvatarFile(?string $file): void {
     if ($file && preg_match('/^[a-f0-9]{32}\.(jpg|png)$/', $file)) @unlink(boxAvatarDir() . '/' . $file);
 }
 
-function boxIssueToken(int $userId, string $device = ''): string {
-    $token = bin2hex(random_bytes(32));
-    $days = max(1, (int)site('token_ttl_days', '180'));
-    q('INSERT INTO tokens(user_id,token_hash,device,expires_at) VALUES(?,?,?,DATE_ADD(NOW(),INTERVAL ? DAY))', [$userId, hash('sha256', $token), $device !== '' ? mb_substr($device, 0, 120) : null, $days]);
-    return $token;
-}
 
 function boxBearer(): ?string {
     $candidates = [$_SERVER['HTTP_AUTHORIZATION'] ?? null, $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null];
@@ -97,6 +91,7 @@ function boxApiUser(): array {
     $last = $u['token_last_used'] ? strtotime((string)$u['token_last_used']) : 0;
     if (time() - (int)$last > 600) {
         q('UPDATE tokens SET last_used_at=NOW() WHERE id=?', [(int)$u['token_id']]);
+        boxTouchDevice((int)$u['token_id']);
         $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
         q('UPDATE users SET last_seen_at=NOW(), app_version=COALESCE(NULLIF(?,\'\'),app_version) WHERE id=?', [$ver, (int)$u['id']]);
     }

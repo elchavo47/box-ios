@@ -268,6 +268,7 @@ require_once ROOT . '/app/guard.php';
 require_once ROOT . '/app/box.php';
 require_once ROOT . '/app/apple.php';
 require_once ROOT . '/app/library.php';
+require_once ROOT . '/app/devices.php';
 
 if (PHP_SAPI !== 'cli') {
     $setup = setupState();

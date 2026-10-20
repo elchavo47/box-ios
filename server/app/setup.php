@@ -110,6 +110,13 @@ function ensureSchema(bool $force = false): void {
         // 3.0: hesaba bağlı kitaplık (listeler ve beğeniler tabloları şemadan oluşur)
         $add('users', 'library_order_at', 'library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER expiry_notified_for');
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');
+        // 3.0: cihaz bilgisi
+        $add('tokens', 'device_id', 'device_id VARCHAR(64) NULL DEFAULT NULL AFTER device');
+        $add('tokens', 'model', 'model VARCHAR(40) NULL DEFAULT NULL AFTER device_id');
+        $add('tokens', 'os', 'os VARCHAR(30) NULL DEFAULT NULL AFTER model');
+        $add('tokens', 'app_version', 'app_version VARCHAR(20) NULL DEFAULT NULL AFTER os');
+        if ($tableExists('tokens') && !$hasIndex('tokens', 'idx_tokens_device')) { q('ALTER TABLE tokens ADD INDEX idx_tokens_device(user_id,device_id)'); $note('Dizin eklendi', 'tokens.idx_tokens_device'); }
+        if ($tableExists('push_devices')) $add('push_devices', 'device_id', 'device_id VARCHAR(64) NULL DEFAULT NULL AFTER app_version');
 
         // Eski admin tablosu: password_hash -> password, rol/durum/2FA alanları
         if ($has('admins', 'password_hash') && !$has('admins', 'password')) { q('ALTER TABLE admins CHANGE password_hash password VARCHAR(255) NOT NULL'); $note('Sütun yeniden adlandırıldı', 'admins.password'); }

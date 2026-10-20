@@ -6,7 +6,12 @@ if (!$u) { card(); echo emptyState('Kullanıcı bulunamadı', 'Numara yanlış o
 $isPrem = boxIsPremium($u);
 $u['avatar_url'] = boxAvatarUrl($u);
 $q = boxQuota($u);
-$devices = q('SELECT device,created_at,last_used_at,expires_at FROM tokens WHERE user_id=? AND expires_at>NOW() ORDER BY COALESCE(last_used_at,created_at) DESC', [$uid])->fetchAll();
+$devices = boxUserDevices($uid);
+$latestApp = '';
+foreach (q("SELECT app_version FROM tokens WHERE app_version IS NOT NULL AND last_used_at > DATE_SUB(NOW(), INTERVAL 14 DAY)")->fetchAll(PDO::FETCH_COLUMN) as $v) {
+    $v = preg_replace('/\s.*$/', '', (string)$v);
+    if ($v !== '' && ($latestApp === '' || boxVersionLess($latestApp, $v))) $latestApp = $v;
+}
 $dls = q('SELECT * FROM downloads WHERE user_id=? ORDER BY id DESC LIMIT 50', [$uid])->fetchAll();
 $lib = boxLibSummary($uid);
 $plog = q('SELECT p.*,a.username admin_name FROM premium_log p LEFT JOIN admins a ON a.id=p.admin_id WHERE p.user_id=? ORDER BY p.id DESC LIMIT 20', [$uid])->fetchAll();
@@ -54,6 +59,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 </div>
 
 <div class="cols-2 wide-left">
+  <div class="stack">
   <?php card('İndirdikleri', 'Son 50');
   tableView(['Şarkı', 'Zaman'], $dls, function ($r) {
       echo '<td><a class="track" href="https://www.youtube.com/watch?v=' . h($r['video_id']) . '" target="_blank" rel="noopener noreferrer"><img src="https://i.ytimg.com/vi/' . h($r['video_id']) . '/default.jpg" alt="" loading="lazy"><b>' . h($r['title'] !== '' ? $r['title'] : $r['video_id']) . '</b></a></td><td class="nowrap">' . h(nbDate($r['created_at'])) . '</td>';
@@ -65,9 +71,18 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
       echo '<td><span class="track">' . $cover . '<b>' . h($p['name']) . '</b></span></td><td class="nowrap">' . nbNum($p['count']) . ($p['remote'] ? ' <small class="muted">' . nbNum($p['remote']) . ' internetten</small>' : '') . '</td><td class="nowrap">' . h($p['updated_at'] ? nbAgo(date('Y-m-d H:i:s', (int)floor($p['updated_at'] / 1000))) : '—') . '</td>';
   }, 'Hesaba kayıtlı liste yok. Uygulama güncellenince listeler otomatik yüklenir.');
   cardEnd(); ?>
+  </div>
   <div class="stack">
     <?php card('Cihazlar', count($devices) . ' açık oturum');
-    tableView(['Cihaz', 'Son kullanım'], $devices, function ($d) { echo '<td>' . h(mb_strimwidth((string)($d['device'] ?: 'Bilinmeyen cihaz'), 0, 48, '…')) . '</td><td class="nowrap">' . h(nbAgo($d['last_used_at'] ?? $d['created_at'])) . '</td>'; }, 'Açık oturum yok.');
+    tableView(['Cihaz', 'Son kullanım', ''], $devices, function ($d) use ($uid, $latestApp) {
+        $ver = $d['app'] ? preg_replace('/\s.*$/', '', (string)$d['app']) : '';
+        $old = $d['legacy'] || ($ver !== '' && $latestApp !== '' && boxVersionLess($ver, $latestApp));
+        $meta = array_filter([$d['os'], $d['app'] ? 'Box ' . $d['app'] : null]);
+        echo '<td><span class="track"><span class="track-ph">' . icon('phone') . '</span><span><b>' . h($d['name']) . '</b>' . ($old ? ' ' . pill('Eski sürüm', 'warn') : '') . '<br><small class="muted">' . h($meta ? implode(' · ', $meta) : 'Sürüm bilgisi yok') . '</small></span></span></td>';
+        echo '<td class="nowrap">' . h(nbAgo($d['last_used_at'])) . '</td><td class="nowrap">';
+        if (can('user_logout_device')) { formStart('user_logout_device'); hidden('user_id', $uid); hidden('token_id', $d['id']); echo button('Çıkış yaptır', 'ghost small', ['confirm' => $d['name'] . ' cihazındaki oturum kapanacak.']); formEnd(); }
+        echo '</td>';
+    }, 'Açık oturum yok.');
     if ($devices && can('user_logout_all')) { formStart('user_logout_all'); hidden('user_id', $uid); echo button('Bütün cihazlardan çıkar', 'ghost', ['confirm' => 'Kullanıcı tekrar giriş yapmak zorunda kalacak.']); formEnd(); }
     cardEnd(); ?>
     <?php card('Premium geçmişi');

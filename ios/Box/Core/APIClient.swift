@@ -57,6 +57,11 @@ final class APIClient {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(AppConfig.shortVersion, forHTTPHeaderField: "X-Box-Version")
+        // Panelde ve "Cihazlarım"da cihazı tanımak için (ad, iOS ve uygulama sürümü).
+        request.setValue(AppConfig.buildNumber, forHTTPHeaderField: "X-Box-Build")
+        request.setValue(DeviceInfo.identifier, forHTTPHeaderField: "X-Box-Device-ID")
+        request.setValue(DeviceInfo.model, forHTTPHeaderField: "X-Box-Device")
+        request.setValue(DeviceInfo.system, forHTTPHeaderField: "X-Box-OS")
 
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -282,6 +282,16 @@ private struct ProfileView: View {
         }
     }
 
+    private var syncFooter: String {
+        if case .failed(let message) = library.syncStatus { return message + " Değişikliklerin bu cihazda saklanıyor, bağlantı gelince gönderilir." }
+        if let date = library.syncState.lastSync {
+            let f = RelativeDateTimeFormatter()
+            f.unitsStyle = .full
+            return "Listelerin ve beğenilerin hesabına kayıtlı; çıkış yapıp başka cihazdan girince de gelir. Son eşitleme: \(f.localizedString(for: date, relativeTo: Date()))."
+        }
+        return "Listelerin ve beğenilerin hesabına kaydedilir; çıkış yapıp başka cihazdan girince de gelir."
+    }
+
     var body: some View {
         List {
             Section {
@@ -378,11 +388,28 @@ private struct ProfileView: View {
                 .listRowBackground(Color.boxSurface2)
             }
 
-            Section("Kitaplığın") {
+            Section {
                 stat("Şarkı", "\(library.tracks.count)", icon: "music.note")
                 stat("Çalma listesi", "\(library.playlists.count)", icon: "music.note.list")
                 stat("Beğenilen", "\(library.favorites.count)", icon: "heart.fill")
                 stat("Kullanılan alan", Formatters.bytes(library.totalSize), icon: "internaldrive")
+                Button {
+                    library.requestSync(immediately: true)
+                } label: {
+                    HStack {
+                        Label("Hesaba kaydet", systemImage: "arrow.triangle.2.circlepath.icloud")
+                        Spacer()
+                        switch library.syncStatus {
+                        case .syncing: ProgressView().tint(.white)
+                        case .failed: Image(systemName: "exclamationmark.icloud").foregroundColor(.orange)
+                        case .idle: Image(systemName: "checkmark.icloud").foregroundColor(.accent)
+                        }
+                    }
+                }
+            } header: {
+                Text("Kitaplığın")
+            } footer: {
+                Text(syncFooter)
             }
             .listRowBackground(Color.boxSurface2)
 
@@ -418,6 +445,12 @@ private struct ProfileView: View {
                     showRename = true
                 } label: {
                     Label("İsmi değiştir", systemImage: "pencil")
+                }
+
+                NavigationLink {
+                    DevicesView()
+                } label: {
+                    Label("Cihazlarım", systemImage: "iphone.gen3")
                 }
 
                 Button {

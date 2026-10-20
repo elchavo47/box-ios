@@ -42,12 +42,17 @@ CREATE TABLE tokens (
   user_id INT UNSIGNED NOT NULL,
   token_hash CHAR(64) NOT NULL,
   device VARCHAR(120) NULL DEFAULT NULL,
+  device_id VARCHAR(64) NULL DEFAULT NULL,
+  model VARCHAR(40) NULL DEFAULT NULL,
+  os VARCHAR(30) NULL DEFAULT NULL,
+  app_version VARCHAR(20) NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_used_at DATETIME NULL DEFAULT NULL,
   expires_at DATETIME NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_tokens_hash (token_hash),
   KEY idx_tokens_user (user_id),
+  KEY idx_tokens_device (user_id, device_id),
   CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -77,6 +82,7 @@ CREATE TABLE push_devices (
   token VARCHAR(200) NOT NULL,
   environment VARCHAR(12) NOT NULL DEFAULT 'production',
   app_version VARCHAR(20) NULL DEFAULT NULL,
+  device_id VARCHAR(64) NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen_at DATETIME NULL DEFAULT NULL,
   PRIMARY KEY (id),

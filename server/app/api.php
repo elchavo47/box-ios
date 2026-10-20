@@ -250,8 +250,24 @@ switch ($route) {
         }
         $env = (body()['environment'] ?? '') === 'sandbox' ? 'sandbox' : 'production';
         $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
-        q('INSERT INTO push_devices(user_id,token,environment,app_version,last_seen_at) VALUES(?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), environment=VALUES(environment), app_version=VALUES(app_version), last_seen_at=NOW()', [$u['id'], $token, $env, $ver]);
+        q('INSERT INTO push_devices(user_id,token,environment,app_version,device_id,last_seen_at) VALUES(?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), environment=VALUES(environment), app_version=VALUES(app_version), device_id=COALESCE(VALUES(device_id),device_id), last_seen_at=NOW()', [$u['id'], $token, $env, $ver, boxClientDevice()['device_id']]);
         jsonOut(['ok' => true]);
+
+    case 'me/devices':
+        // Oturum açık cihazlar; POST {id} o cihazdan, {others:true} bu cihaz dışındakilerden çıkış.
+        $u = boxApiUser();
+        if ($method === 'POST') {
+            throttle('devices:' . $u['id'], 30, 600);
+            if ((body()['others'] ?? false) === true) {
+                foreach (q('SELECT id FROM tokens WHERE user_id=? AND id<>?', [$u['id'], $u['token_id']])->fetchAll(PDO::FETCH_COLUMN) as $tid) boxLogoutDevice((int)$u['id'], (int)$tid);
+            } else {
+                $tid = (int)(body()['id'] ?? 0);
+                if ($tid === (int)$u['token_id']) jsonOut(['ok' => false, 'error' => 'Bu cihazdan çıkmak için Hesap sayfasındaki Çıkış yap düğmesini kullan.'], 400);
+                if (!boxLogoutDevice((int)$u['id'], $tid)) jsonOut(['ok' => false, 'error' => 'Cihaz bulunamadı.'], 404);
+            }
+        }
+        $devices = array_map(fn($d) => array_merge($d, ['current' => $d['id'] === (int)$u['token_id'], 'last_used_at' => date(DATE_ATOM, (int)strtotime((string)$d['last_used_at'])), 'created_at' => date(DATE_ATOM, (int)strtotime((string)$d['created_at']))]), boxUserDevices((int)$u['id']));
+        jsonOut(['ok' => true, 'devices' => $devices]);
 
     case 'me/library':
         // Hesaba bağlı kitaplık: GET güncel hali, POST değişiklikleri uygula ve güncel hali dön.

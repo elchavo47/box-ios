@@ -250,7 +250,7 @@ function panelAction(array $admin): string|array {
 
     /* ================= Box: kullanıcılar ve premium ================= */
 
-    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_delete', 'user_quota'], true)) {
+    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_logout_device', 'user_delete', 'user_quota'], true)) {
         $uid = (int)($_POST['user_id'] ?? 0);
         $u = boxFindUser($uid);
         if (!$u) throw new RuntimeException('Kullanıcı bulunamadı.');
@@ -304,7 +304,14 @@ function panelAction(array $admin): string|array {
                 q('UPDATE users SET daily_downloads=? WHERE id=?', [$value, $uid]);
                 logAdmin((int)$admin['id'], 'user_quota', ['user_id' => $uid, 'daily_downloads' => $value]);
                 return $value === null ? 'Genel ayar kullanılacak (' . (int)configValue('premium_daily_downloads', 150) . ').' : ($value === 0 ? 'Bu kullanıcı için sınır kaldırıldı.' : "Günlük indirme hakkı $value olarak ayarlandı.");
+            case 'user_logout_device':
+                $tid = (int)($_POST['token_id'] ?? 0);
+                $row = q('SELECT model, device FROM tokens WHERE id=? AND user_id=?', [$tid, $uid])->fetch();
+                if (!$row || !boxLogoutDevice($uid, $tid)) throw new RuntimeException('Bu oturum zaten kapanmış.');
+                logAdmin((int)$admin['id'], 'user_logout_device', ['user_id' => $uid, 'token_id' => $tid]);
+                return (boxModelName($row['model']) ?? 'Cihaz') . ' oturumu kapatıldı.';
             case 'user_logout_all':
+                q('DELETE FROM push_devices WHERE user_id=? AND device_id IS NOT NULL', [$uid]);
                 $n = q('DELETE FROM tokens WHERE user_id=?', [$uid])->rowCount();
                 logAdmin((int)$admin['id'], 'user_logout_all', ['user_id' => $uid, 'count' => $n]);
                 return $n . ' cihazdaki oturum kapatıldı.';
