@@ -6,6 +6,7 @@ enum HomeRoute: Hashable {
     case downloads
     case recent
     case group(kind: GroupKind, name: String)
+    case genre(FeedGenre)
 }
 
 enum GroupKind: String, Hashable {
@@ -17,6 +18,7 @@ struct HomeView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var feed: FeedStore
 
     @State private var path = NavigationPath()
     @State private var filter: HomeFilter = .all
@@ -32,11 +34,16 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    header
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                        .padding(.bottom, 14)
+
                     ChipBar(items: HomeFilter.allCases, selection: $filter) { $0.rawValue }
                         .padding(.top, 4)
                         .padding(.bottom, 18)
 
-                    if library.tracks.isEmpty {
+                    if library.tracks.isEmpty && !(auth.isPremium && filter == .all) {
                         if library.hasScanned { emptyLibrary } else { loading }
                     } else {
                         switch filter {
@@ -50,33 +57,53 @@ struct HomeView: View {
                 .padding(.bottom, 24)
             }
             .boxScreenBackground()
-            .refreshable { await library.refresh() }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    BoxWordmark(markSize: 24)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    AccountButton()
-                }
+            .refreshable {
+                await library.refresh()
+                if auth.isPremium { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
             }
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .task(id: auth.isPremium) {
+                if auth.isPremium { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library)) }
+            }
             .navigationDestination(for: HomeRoute.self) { route in
                 HomeRouteView(route: route)
             }
         }
     }
 
+    private var header: some View {
+        HStack(spacing: 12) {
+            BoxWordmark(markSize: 26)
+            Spacer()
+            if auth.isPremium {
+                Button {
+                    router.tab = .search
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                }
+                .accessibilityLabel("Ara")
+            }
+            AccountButton()
+        }
+        .frame(height: 44)
+    }
+
     // MARK: Genel bakış
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 30) {
-            greeting
+            if !library.tracks.isEmpty { greeting }
+
+            if auth.isPremium { forYou }
 
             if !library.recentlyPlayed.isEmpty {
                 recentGrid
             }
 
-            quickPicks
+            if !library.tracks.isEmpty { quickPicks }
 
             if !library.recentlyAdded.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -100,7 +127,7 @@ struct HomeView: View {
                 }
             }
 
-            playlistsRow
+            if !library.tracks.isEmpty || !library.playlists.isEmpty { playlistsRow }
 
             if library.artists.count > 1 {
                 VStack(alignment: .leading, spacing: 12) {
@@ -130,6 +157,80 @@ struct HomeView: View {
             }
         }
     }
+
+    /// Premium: dinleme geçmişine göre öneriler ve türler.
+    @ViewBuilder
+    private var forYou: some View {
+        if !feed.genres.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Ruh haline göre", subtitle: "Keşfet")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHGrid(rows: [GridItem(.fixed(44), spacing: 10), GridItem(.fixed(44), spacing: 10)], spacing: 10) {
+                        ForEach(Array(feed.genres.enumerated()), id: \.element.id) { index, genre in
+                            NavigationLink(value: HomeRoute.genre(genre)) {
+                                HStack(spacing: 0) {
+                                    Rectangle()
+                                        .fill(Self.genreColors[index % Self.genreColors.count])
+                                        .frame(width: 5)
+                                    Text(genre.title)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 14)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(width: 168, height: 44)
+                                .background(Color.boxSurface2)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .buttonStyle(PressableStyle())
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .frame(height: 98)
+            }
+        }
+
+        if feed.sections.isEmpty && feed.isLoading {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Sana özel", subtitle: "Hazırlanıyor")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.white.opacity(0.06))
+                                .frame(width: 150, height: 150)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+
+        ForEach(feed.sections) { section in
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: section.title, subtitle: section.subtitle, action: {
+                    player.play(library.playable(section.items), startAt: 0)
+                }, actionTitle: "Dinle")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 14) {
+                        ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                            RemoteCard(result: item) {
+                                player.play(library.playable(section.items), startAt: index)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private static let genreColors: [Color] = [
+        Color(red: 0.24, green: 0.89, blue: 0.60), Color(red: 0.98, green: 0.45, blue: 0.40), Color(red: 0.55, green: 0.51, blue: 1.0),
+        Color(red: 0.98, green: 0.74, blue: 0.27), Color(red: 0.31, green: 0.76, blue: 0.97), Color(red: 0.95, green: 0.42, blue: 0.72),
+    ]
 
     private var greeting: some View {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -353,6 +454,8 @@ struct HomeRouteView: View {
             PlaylistDetailView(source: .tracks(title: "İndirilenler", icon: "arrow.down", tracks: library.downloadedTracks))
         case .recent:
             PlaylistDetailView(source: .tracks(title: "Son çalınanlar", icon: "clock", tracks: library.recentlyPlayed))
+        case .genre(let genre):
+            GenreView(genre: genre)
         case .group(let kind, let name):
             let groups = kind == .artist ? library.artists : library.albums
             PlaylistDetailView(source: .tracks(

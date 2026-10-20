@@ -169,8 +169,10 @@ private struct ProfileView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var stream: StreamCache
 
     @State private var showRename = false
+    @State private var cacheSize: Int64 = 0
     @State private var newName = ""
     @State private var showLogoutConfirm = false
     @State private var showDelete = false
@@ -216,6 +218,26 @@ private struct ProfileView: View {
             }
             .listRowBackground(Color.boxSurface2)
 
+            if user.premium {
+                Section {
+                    HStack {
+                        Label("Dinleme önbelleği", systemImage: "icloud.and.arrow.down")
+                        Spacer()
+                        Text(Formatters.bytes(cacheSize)).foregroundColor(.boxSecondaryText)
+                    }
+                    Button {
+                        stream.clear()
+                        cacheSize = 0
+                    } label: {
+                        Label("Önbelleği temizle", systemImage: "trash")
+                    }
+                    .disabled(cacheSize == 0)
+                } footer: {
+                    Text("İndirmeden dinlediğin şarkılar tekrar beklememen için burada tutulur, kitaplıkta görünmez. Yer azalınca en eskileri kendiliğinden silinir.")
+                }
+                .listRowBackground(Color.boxSurface2)
+            }
+
             Section("Hesap") {
                 Button {
                     newName = user.name
@@ -255,6 +277,7 @@ private struct ProfileView: View {
         }
         .scrollContentBackground(.hidden)
         .refreshable { await auth.refresh() }
+        .task { cacheSize = stream.totalSize }
         .alert("İsmini değiştir", isPresented: $showRename) {
             TextField("İsim", text: $newName)
             Button("Kaydet") {

@@ -52,6 +52,18 @@ struct RootView: View {
                 Text(server.announcement?.body ?? "")
             }
 
+            Color.clear
+                .alert("Şarkı açılamadı", isPresented: Binding(
+                    get: { player.errorMessage != nil && !player.showFullPlayer },
+                    set: { if !$0 { player.errorMessage = nil } }
+                )) {
+                    Button("Sonrakine geç") { player.errorMessage = nil; player.next() }
+                    Button("Tamam", role: .cancel) { player.errorMessage = nil }
+                } message: {
+                    Text(player.errorMessage ?? "")
+                }
+                .allowsHitTesting(false)
+
             if server.updateRequired {
                 UpdateRequiredView()
                     .transition(.opacity)

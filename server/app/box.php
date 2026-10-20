@@ -143,11 +143,11 @@ function boxCachePut(string $key, array $data): void {
     if ($json !== false) @file_put_contents(nbPrivateDir('cache') . '/' . hash('sha256', $key) . '.json', $json, LOCK_EX);
 }
 
-function boxYoutube(string $resource, array $params): array {
+function boxYoutube(string $resource, array $params, ?int $ttlOverride = null): array {
     $key = boxYoutubeKey();
     if ($key === '') throw new RuntimeException('Arama servisi yapılandırılmamış.');
     $cacheKey = $resource . '?' . http_build_query($params);
-    $ttl = max(60, (int)site('search_cache_seconds', '3600'));
+    $ttl = $ttlOverride ?? max(60, (int)site('search_cache_seconds', '3600'));
     if ($cached = boxCacheGet($cacheKey, $ttl)) return $cached;
 
     $params['key'] = $key;
@@ -182,32 +182,118 @@ function boxIsoSeconds(string $duration): int {
 
 function boxCleanText(string $t): string { return trim(html_entity_decode($t, ENT_QUOTES | ENT_HTML5, 'UTF-8')); }
 
-function boxSearch(string $query): array {
-    $search = boxYoutube('search', ['part' => 'snippet', 'q' => $query, 'type' => 'video', 'maxResults' => 25, 'regionCode' => 'TR', 'safeSearch' => 'none']);
-    $ids = [];
-    foreach (($search['items'] ?? []) as $item) {
-        $id = $item['id']['videoId'] ?? null;
-        if (is_string($id) && preg_match(BOX_VIDEO_ID, $id)) $ids[] = $id;
-    }
-    $durations = [];
-    if ($ids) {
-        $details = boxYoutube('videos', ['part' => 'contentDetails', 'id' => implode(',', $ids)]);
-        foreach (($details['items'] ?? []) as $item) $durations[(string)$item['id']] = boxIsoSeconds((string)($item['contentDetails']['duration'] ?? ''));
+/** Video kimliklerinden süreli sonuç listesi üretir. $snippets: id => snippet */
+function boxVideoResults(array $ids, array $snippets, ?int $ttl = null): array {
+    $ids = array_values(array_unique(array_filter($ids, fn($id) => is_string($id) && preg_match(BOX_VIDEO_ID, $id))));
+    $durations = []; $live = [];
+    foreach (array_chunk($ids, 50) as $chunk) {
+        $details = boxYoutube('videos', ['part' => 'contentDetails,snippet', 'id' => implode(',', $chunk)], $ttl);
+        foreach (($details['items'] ?? []) as $item) {
+            $durations[(string)$item['id']] = boxIsoSeconds((string)($item['contentDetails']['duration'] ?? ''));
+            $live[(string)$item['id']] = ($item['snippet']['liveBroadcastContent'] ?? 'none') !== 'none';
+        }
     }
     $out = [];
-    foreach (($search['items'] ?? []) as $item) {
-        $id = $item['id']['videoId'] ?? null;
-        if (!is_string($id) || !in_array($id, $ids, true)) continue;
-        $sn = $item['snippet'] ?? []; $th = $sn['thumbnails'] ?? [];
+    foreach ($ids as $id) {
+        if (!isset($durations[$id]) || !empty($live[$id])) continue; // silinmiş, gizli ya da canlı yayın
+        $sn = $snippets[$id] ?? []; $th = $sn['thumbnails'] ?? [];
         $out[] = [
             'id' => $id,
             'title' => boxCleanText((string)($sn['title'] ?? '')),
-            'channel' => boxCleanText((string)($sn['channelTitle'] ?? '')),
-            'thumbnail' => $th['high']['url'] ?? $th['medium']['url'] ?? $th['default']['url'] ?? null,
-            'duration' => $durations[$id] ?? 0,
+            'channel' => boxCleanText((string)($sn['videoOwnerChannelTitle'] ?? $sn['channelTitle'] ?? '')),
+            'thumbnail' => $th['high']['url'] ?? $th['medium']['url'] ?? $th['default']['url'] ?? ('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg'),
+            'duration' => $durations[$id],
         ];
     }
     return $out;
+}
+
+function boxSearch(string $query, bool $music = false, int $max = 25, ?int $ttl = null): array {
+    $params = ['part' => 'snippet', 'q' => $query, 'type' => 'video', 'maxResults' => max(1, min(50, $max)), 'regionCode' => 'TR', 'safeSearch' => 'none'];
+    if ($music) $params['videoCategoryId'] = '10';
+    $search = boxYoutube('search', $params, $ttl);
+    $ids = []; $snippets = [];
+    foreach (($search['items'] ?? []) as $item) {
+        $id = $item['id']['videoId'] ?? null;
+        if (!is_string($id)) continue;
+        $ids[] = $id; $snippets[$id] = $item['snippet'] ?? [];
+    }
+    // Çok kısa (intro) ve çok uzun (saatlik derleme) videoları öneri listelerinden ayıkla.
+    $results = boxVideoResults($ids, $snippets, $ttl);
+    if ($music) $results = array_values(array_filter($results, fn($r) => $r['duration'] >= 60 && $r['duration'] <= 900));
+    return $results;
+}
+
+/** Ana sayfadaki tür / ruh hali kategorileri. */
+function boxGenres(): array {
+    return [
+        'turkce-pop' => ['Türkçe Pop', 'türkçe pop şarkılar yeni'],
+        'rap' => ['Türkçe Rap', 'türkçe rap yeni şarkılar'],
+        'arabesk' => ['Arabesk', 'arabesk şarkılar'],
+        'rock' => ['Rock', 'türkçe rock şarkılar'],
+        'enerjik' => ['Enerjik', 'enerjik hareketli şarkılar'],
+        'keyifli' => ['Keyifli', 'keyifli neşeli şarkılar'],
+        'rahatlama' => ['Rahatlama', 'sakin rahatlatıcı şarkılar'],
+        'odaklanma' => ['Odaklanma', 'lofi odaklanma müzik'],
+        'romantik' => ['Romantik', 'romantik aşk şarkıları'],
+        'remix' => ['Remix', 'türkçe remix şarkılar'],
+        'yabanci' => ['Yabancı Hit', 'top hits songs 2026'],
+        'akustik' => ['Akustik', 'akustik cover şarkılar'],
+    ];
+}
+
+/** Dinleme geçmişindeki sanatçılara ve günün türlerine göre öneri bölümleri. */
+function boxFeed(array $artists): array {
+    $sections = [];
+    foreach (array_slice($artists, 0, 3) as $artist) {
+        $artist = mb_substr(trim((string)$artist), 0, 60);
+        if ($artist === '' || mb_strtolower($artist) === 'bilinmeyen sanatçı') continue;
+        $items = boxSearch($artist . ' şarkıları', true, 15, 43200);
+        if (count($items) >= 4) $sections[] = ['id' => 'artist-' . substr(sha1($artist), 0, 8), 'title' => $artist . ' tarzında', 'subtitle' => 'Dinlediklerine göre', 'items' => $items];
+    }
+    $genres = boxGenres();
+    $keys = array_keys($genres);
+    $day = (int)date('z');
+    foreach ([$keys[$day % count($keys)], $keys[($day + 5) % count($keys)]] as $key) {
+        [$title, $query] = $genres[$key];
+        $items = boxSearch($query, true, 15, 43200);
+        if ($items) $sections[] = ['id' => 'genre-' . $key, 'title' => $title, 'subtitle' => 'Bugünün seçkisi', 'items' => $items];
+    }
+    return $sections;
+}
+
+/** YouTube çalma listesi bağlantısı ya da kimliğinden liste kimliği. */
+function boxPlaylistId(string $input): ?string {
+    $input = trim($input);
+    if (preg_match('/[?&]list=([A-Za-z0-9_-]{10,64})/', $input, $m)) return $m[1];
+    if (preg_match('/^[A-Za-z0-9_-]{10,64}$/', $input)) return $input;
+    return null;
+}
+
+function boxPlaylist(string $listId, int $limit = 200): array {
+    if (str_starts_with($listId, 'RD')) throw new RuntimeException('YouTube\'un otomatik "Mix" listeleri içe aktarılamıyor. Normal bir çalma listesi bağlantısı dene.');
+    $meta = boxYoutube('playlists', ['part' => 'snippet,contentDetails', 'id' => $listId], 1800);
+    $info = $meta['items'][0] ?? null;
+    if (!$info) throw new RuntimeException('Liste bulunamadı. Listenin "Herkese açık" ya da "Liste dışı" olduğundan emin ol.');
+    $ids = []; $snippets = []; $page = null;
+    do {
+        $params = ['part' => 'snippet,contentDetails', 'playlistId' => $listId, 'maxResults' => 50];
+        if ($page) $params['pageToken'] = $page;
+        $data = boxYoutube('playlistItems', $params, 1800);
+        foreach (($data['items'] ?? []) as $item) {
+            $id = $item['contentDetails']['videoId'] ?? null;
+            if (is_string($id)) { $ids[] = $id; $snippets[$id] = $item['snippet'] ?? []; }
+        }
+        $page = $data['nextPageToken'] ?? null;
+    } while ($page && count($ids) < $limit);
+    $sn = $info['snippet'] ?? [];
+    return [
+        'id' => $listId,
+        'title' => boxCleanText((string)($sn['title'] ?? 'YouTube listesi')),
+        'channel' => boxCleanText((string)($sn['channelTitle'] ?? '')),
+        'thumbnail' => $sn['thumbnails']['high']['url'] ?? $sn['thumbnails']['medium']['url'] ?? null,
+        'items' => boxVideoResults(array_slice($ids, 0, $limit), $snippets, 1800),
+    ];
 }
 
 function boxYoutubeUnitsToday(): int {

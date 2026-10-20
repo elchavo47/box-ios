@@ -53,8 +53,15 @@ final class DownloadManager: ObservableObject {
         items = items.filter { $0.value.state.isActive }
     }
 
+    private var pending: [SearchResult] = []
+    private var running = 0
+    private let maxConcurrent = 2
+    /// İndirme bitince çağrılır (ör. içe aktarılan listeye eklemek için).
+    var onFinished: ((SearchResult, String) -> Void)?
+
     func download(_ result: SearchResult) {
         if let existing = items[result.id], existing.state.isActive { return }
+        if library?.downloadedPath(for: result.id) != nil { return }
 
         items[result.id] = DownloadItem(
             id: result.id,
@@ -64,8 +71,53 @@ final class DownloadManager: ObservableObject {
             state: .preparing,
             startedAt: Date()
         )
+        pending.append(result)
+        pump()
+    }
 
-        Task { await run(result) }
+    func download(all results: [SearchResult]) {
+        for result in results { download(result) }
+    }
+
+    private func pump() {
+        while running < maxConcurrent, !pending.isEmpty {
+            let next = pending.removeFirst()
+            running += 1
+            Task {
+                // Dinlemek için önbelleğe alınmışsa sunucuya gitmeden kopyala.
+                if !(await copyFromStreamCache(next)) {
+                    await run(next)
+                }
+                running -= 1
+                pump()
+            }
+        }
+    }
+
+    /// Önbellekteki (dinlenmiş) şarkıyı kitaplığa kaydeder.
+    @discardableResult
+    func copyFromStreamCache(_ result: SearchResult) async -> Bool {
+        guard let library else { return false }
+        let cached = StreamCache.fileURL(for: result.id)
+        guard FileManager.default.fileExists(atPath: cached.path) else { return false }
+        if items[result.id] == nil {
+            items[result.id] = DownloadItem(id: result.id, title: result.title, channel: result.channel, thumbnail: result.thumbnailURL, state: .processing, startedAt: Date())
+        }
+        update(result.id, .processing)
+        let folder = library.documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = FileService.uniqueURL(for: FileService.sanitize(result.title) + ".m4a", in: folder)
+        do {
+            try FileManager.default.copyItem(at: cached, to: destination)
+        } catch {
+            return false
+        }
+        await library.refresh()
+        let path = library.relativePath(for: destination)
+        library.setDownloadedPath(path, for: result.id)
+        update(result.id, .done(path))
+        onFinished?(result, path)
+        return true
     }
 
     private func update(_ id: String, _ state: DownloadState) {
@@ -121,7 +173,10 @@ final class DownloadManager: ObservableObject {
             }
 
             await library.refresh()
-            update(id, .done(library.relativePath(for: destination)))
+            let path = library.relativePath(for: destination)
+            library.setDownloadedPath(path, for: id)
+            update(id, .done(path))
+            onFinished?(result, path)
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? "İndirme başarısız oldu."
             update(result.id, .failed(message))
@@ -130,7 +185,7 @@ final class DownloadManager: ObservableObject {
 
     // MARK: - Kapak ve etiket
 
-    private static func fetchArtwork(_ result: SearchResult) async -> Data? {
+    static func fetchArtwork(_ result: SearchResult) async -> Data? {
         // Önce bantsız yüksek çözünürlüklü kapak, olmazsa arama küçük resmi.
         for url in [result.maxResURL, result.thumbnailURL].compactMap({ $0 }) {
             guard let (data, response) = try? await URLSession.shared.data(from: url),
@@ -142,7 +197,7 @@ final class DownloadManager: ObservableObject {
     }
 
     /// İndirilen m4a dosyasına başlık, sanatçı ve kapak yazar (yeniden kodlama yapmadan).
-    private static func writeMetadata(source: URL, destination: URL, title: String, artist: String, artwork: Data?) async -> Bool {
+    static func writeMetadata(source: URL, destination: URL, title: String, artist: String, artwork: Data?) async -> Bool {
         let asset = AVURLAsset(url: source)
         guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
             return false

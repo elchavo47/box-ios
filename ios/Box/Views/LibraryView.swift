@@ -12,8 +12,10 @@ enum TrackSort: String, CaseIterable, Identifiable {
 struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var auth: AuthStore
 
     @State private var path = NavigationPath()
+    @State private var showImport = false
     @State private var section: LibSection = .playlists
     @State private var searchText = ""
     @State private var showNewPlaylist = false
@@ -92,6 +94,9 @@ struct LibraryView: View {
             .navigationDestination(for: HomeRoute.self) { route in
                 HomeRouteView(route: route)
             }
+            .sheet(isPresented: $showImport) {
+                PlaylistImportView()
+            }
             .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
                 TextField("Liste adı", text: $newPlaylistName)
                 Button("Oluştur") {
@@ -125,6 +130,30 @@ struct LibraryView: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
 
+        if auth.isPremium {
+            Button {
+                showImport = true
+            } label: {
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.accent)
+                        .frame(width: 56, height: 56)
+                        .overlay(Image(systemName: "square.and.arrow.down.on.square").font(.system(size: 20, weight: .semibold)).foregroundColor(.black))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("YouTube listesini içe aktar")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                        Text("Bağlantıyı yapıştır")
+                            .font(.system(size: 13))
+                            .foregroundColor(.boxSecondaryText)
+                    }
+                    Spacer()
+                }
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+
         playlistRow(title: "Beğenilenler", subtitle: "Otomatik liste • \(library.favoriteTracks.count) şarkı", route: .favorites) {
             ZStack {
                 LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -146,7 +175,7 @@ struct LibraryView: View {
 
         ForEach(library.playlists) { playlist in
             let tracks = library.tracks(for: playlist)
-            playlistRow(title: playlist.name, subtitle: "Liste • \(tracks.count) şarkı", route: .playlist(playlist.id)) {
+            playlistRow(title: playlist.name, subtitle: (playlist.sourceID != nil ? "YouTube listesi" : "Liste") + " • \(tracks.count) şarkı", route: .playlist(playlist.id)) {
                 PlaylistCover(tracks: tracks, icon: "music.note.list", size: 56, cornerRadius: 0)
             }
             .swipeActions {

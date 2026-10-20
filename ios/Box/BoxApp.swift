@@ -9,6 +9,8 @@ struct BoxApp: App {
     @StateObject private var history = SearchHistory()
     @StateObject private var server = ServerState()
     @StateObject private var router = AppRouter()
+    @StateObject private var stream = StreamCache()
+    @StateObject private var feed = FeedStore()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -51,11 +53,19 @@ struct BoxApp: App {
                 .environmentObject(history)
                 .environmentObject(server)
                 .environmentObject(router)
+                .environmentObject(stream)
+                .environmentObject(feed)
                 .preferredColorScheme(.dark)
                 .tint(.accent)
                 .task {
                     downloads.attach(library: library, auth: auth)
+                    stream.attach(auth: auth)
                     player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
+                    player.resolveRemote = { [weak stream] result in
+                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        return try await stream.resolve(result)
+                    }
+                    player.prefetchRemote = { [weak stream] result in stream?.prefetch(result) }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()

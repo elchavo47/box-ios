@@ -12,14 +12,14 @@ struct MiniPlayerBar: View {
         if let track = player.current {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    ArtworkView(url: track.url, size: 44, cornerRadius: 5)
+                    ArtworkView(url: track.url, size: 44, cornerRadius: 5, fallback: track.artworkFallback)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
-                        Text(track.displayArtist)
+                        Text(player.isBuffering ? "Hazırlanıyor…" : track.displayArtist)
                             .font(.system(size: 13))
                             .foregroundColor(.boxSecondaryText)
                             .lineLimit(1)
@@ -32,11 +32,17 @@ struct MiniPlayerBar: View {
                         player.togglePlayPause()
                         Haptics.tap()
                     } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        ZStack {
+                            if player.isBuffering {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 24, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                     }
                     .accessibilityLabel(player.isPlaying ? "Duraklat" : "Çal")
 
@@ -176,6 +182,12 @@ struct FullPlayerView: View {
         .onChange(of: player.current) { newValue in
             if newValue == nil { dismiss() }
         }
+        .alert("Şarkı açılamadı", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
+            Button("Sonrakine geç") { player.errorMessage = nil; player.next() }
+            Button("Tamam", role: .cancel) { player.errorMessage = nil }
+        } message: {
+            Text(player.errorMessage ?? "")
+        }
         .statusBarHidden(false)
     }
 
@@ -231,7 +243,7 @@ struct FullPlayerView: View {
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.4)
                     .foregroundColor(.white.opacity(0.6))
-                Text(track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album)
+                Text(track.isRemote ? "İnternetten dinleniyor" : (track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
             }
@@ -248,7 +260,7 @@ struct FullPlayerView: View {
     }
 
     private func artwork(_ track: Track, side: CGFloat) -> some View {
-        ArtworkView(url: track.url, size: side, cornerRadius: 10)
+        ArtworkView(url: track.url, size: side, cornerRadius: 10, fallback: track.artworkFallback)
             .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
             .scaleEffect(player.isPlaying ? 1 : 0.9)
             .animation(.spring(response: 0.45, dampingFraction: 0.78), value: player.isPlaying)
@@ -324,10 +336,14 @@ struct FullPlayerView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.white).frame(width: 74, height: 74)
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.black)
-                        .offset(x: player.isPlaying ? 0 : 2)
+                    if player.isBuffering {
+                        ProgressView().tint(.black).scaleEffect(1.3)
+                    } else {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundColor(.black)
+                            .offset(x: player.isPlaying ? 0 : 2)
+                    }
                 }
             }
             .buttonStyle(PressableStyle(scale: 0.92))

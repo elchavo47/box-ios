@@ -5,9 +5,10 @@ struct ArtworkView: View {
     let url: URL?
     var size: CGFloat
     var cornerRadius: CGFloat = 6
+    var fallback: URL? = nil
 
     var body: some View {
-        ArtworkFill(url: url, maxSide: size * UIScreen.main.scale)
+        ArtworkFill(url: url, maxSide: size * UIScreen.main.scale, fallback: fallback)
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
@@ -17,9 +18,12 @@ struct ArtworkView: View {
 struct ArtworkFill: View {
     let url: URL?
     var maxSide: CGFloat = 900
+    /// Dosyada kapak yoksa (ör. henüz indirilmemiş şarkı) gösterilecek uzak görsel.
+    var fallback: URL? = nil
 
     @State private var image: UIImage?
     @State private var loadedURL: URL?
+    @State private var reload = 0
 
     var body: some View {
         ZStack {
@@ -29,12 +33,14 @@ struct ArtworkFill: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .transition(.opacity)
+            } else if let fallback {
+                RemoteThumb(url: fallback)
             } else {
                 ArtworkPlaceholder()
             }
         }
         .clipped()
-        .task(id: url) {
+        .task(id: "\(url?.path ?? "")#\(reload)") {
             guard let url else {
                 image = nil
                 return
@@ -44,6 +50,9 @@ struct ArtworkFill: View {
                 image = loaded
                 loadedURL = url
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boxArtworkReady)) { note in
+            if let ready = note.object as? URL, ready == url { reload += 1 }
         }
     }
 }
@@ -99,6 +108,7 @@ struct TrackRow: View {
 
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var stream: StreamCache
 
     private var isCurrent: Bool { player.current?.id == track.id }
 
@@ -106,7 +116,7 @@ struct TrackRow: View {
         HStack(spacing: 14) {
             if showArtwork {
                 ZStack {
-                    ArtworkView(url: track.url, size: 52, cornerRadius: 5)
+                    ArtworkView(url: track.url, size: 52, cornerRadius: 5, fallback: track.artworkFallback)
                     if isCurrent {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(Color.black.opacity(0.5))
@@ -123,6 +133,10 @@ struct TrackRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
+                    if track.isRemote {
+                        Image(systemName: stream.isCached(track.remote?.id ?? "") ? "checkmark.icloud" : "icloud")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
                     if library.isFavorite(track) {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 10))
@@ -151,10 +165,49 @@ struct TrackMenu: View {
 
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
 
     var body: some View {
+        if let remote = track.remote {
+            remoteMenu(remote)
+        } else {
+            localMenu
+        }
+    }
+
+    private var menuIcon: some View {
+        Image(systemName: "ellipsis")
+            .rotationEffect(.degrees(90))
+            .font(.system(size: 16, weight: .bold))
+            .foregroundColor(iconColor)
+            .frame(width: 36, height: 44)
+            .contentShape(Rectangle())
+    }
+
+    private func remoteMenu(_ remote: SearchResult) -> some View {
+        Menu {
+            Button { player.playNext(track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { player.addToQueue(track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+            Divider()
+            if library.localTrack(for: remote) == nil {
+                Button {
+                    downloads.download(remote)
+                    Haptics.success()
+                } label: { Label("Kitaplığa indir", systemImage: "arrow.down.circle") }
+            }
+            if let url = URL(string: "https://www.youtube.com/watch?v=\(remote.id)") {
+                ShareLink(item: url) { Label("Bağlantıyı paylaş", systemImage: "square.and.arrow.up") }
+            }
+            if let extra {
+                Divider()
+                extra
+            }
+        } label: { menuIcon }
+    }
+
+    private var localMenu: some View {
         Menu {
             Button {
                 player.playNext(track)
@@ -205,14 +258,7 @@ struct TrackMenu: View {
                 Divider()
                 extra
             }
-        } label: {
-            Image(systemName: "ellipsis")
-                .rotationEffect(.degrees(90))
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(iconColor)
-                .frame(width: 36, height: 44)
-                .contentShape(Rectangle())
-        }
+        } label: { menuIcon }
         .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
             TextField("Liste adı", text: $newPlaylistName)
             Button("Oluştur") {
@@ -340,16 +386,16 @@ struct PlaylistCover: View {
             if covers.count >= 4 {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        ArtworkView(url: covers[0].url, size: size / 2, cornerRadius: 0)
-                        ArtworkView(url: covers[1].url, size: size / 2, cornerRadius: 0)
+                        ArtworkView(url: covers[0].url, size: size / 2, cornerRadius: 0, fallback: covers[0].artworkFallback)
+                        ArtworkView(url: covers[1].url, size: size / 2, cornerRadius: 0, fallback: covers[1].artworkFallback)
                     }
                     HStack(spacing: 0) {
-                        ArtworkView(url: covers[2].url, size: size / 2, cornerRadius: 0)
-                        ArtworkView(url: covers[3].url, size: size / 2, cornerRadius: 0)
+                        ArtworkView(url: covers[2].url, size: size / 2, cornerRadius: 0, fallback: covers[2].artworkFallback)
+                        ArtworkView(url: covers[3].url, size: size / 2, cornerRadius: 0, fallback: covers[3].artworkFallback)
                     }
                 }
             } else if let first = covers.first {
-                ArtworkView(url: first.url, size: size, cornerRadius: 0)
+                ArtworkView(url: first.url, size: size, cornerRadius: 0, fallback: first.artworkFallback)
             } else {
                 LinearGradient(colors: [Color.accentDeep.opacity(0.7), Color.boxSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
                 Image(systemName: icon)

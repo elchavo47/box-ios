@@ -51,11 +51,18 @@ final class PlayerManager: ObservableObject {
     @Published private(set) var artworkColor: UIColor?
     @Published private(set) var sleepTimer: SleepTimer = .off
     @Published private(set) var playbackRate: Float = 1
+    /// İnternetten dinlenen şarkı hazırlanıyor.
+    @Published private(set) var isBuffering = false
+    @Published var errorMessage: String?
 
     let clock = PlaybackClock()
 
     /// Yeni bir şarkı çalmaya başladığında (geçmiş için).
     var onTrackStart: ((Track) -> Void)?
+    /// İndirilmemiş şarkının dosyasını hazırlar.
+    var resolveRemote: ((SearchResult) async throws -> URL)?
+    var prefetchRemote: ((SearchResult) -> Void)?
+    private var loadToken = 0
 
     private let player = AVPlayer()
     private var originalQueue: [Track] = []
@@ -169,6 +176,7 @@ final class PlayerManager: ObservableObject {
 
     func resume() {
         guard current != nil else { return }
+        if isBuffering { isPlaying = true; return }
         if player.currentItem == nil {
             loadCurrent(autoplay: true)
             return
@@ -181,6 +189,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func pause() {
+        if isBuffering { isPlaying = false; return }
         player.pause()
         isPlaying = false
         updateNowPlaying()
@@ -302,19 +311,21 @@ final class PlayerManager: ObservableObject {
         guard !queue.isEmpty else { return }
         let currentPath = current?.relativePath
 
-        if let currentPath, !validPaths.contains(currentPath) {
+        if let currentPath, current?.isRemote != true, !validPaths.contains(currentPath) {
             stop()
             return
         }
 
-        queue.removeAll { !validPaths.contains($0.relativePath) }
-        originalQueue.removeAll { !validPaths.contains($0.relativePath) }
+        queue.removeAll { !$0.isRemote && !validPaths.contains($0.relativePath) }
+        originalQueue.removeAll { !$0.isRemote && !validPaths.contains($0.relativePath) }
         if let currentPath {
             currentIndex = queue.firstIndex { $0.relativePath == currentPath }
         }
     }
 
     func stop() {
+        loadToken += 1
+        isBuffering = false
         player.pause()
         player.replaceCurrentItem(with: nil)
         queue = []
@@ -415,17 +426,52 @@ final class PlayerManager: ObservableObject {
 
     private func loadCurrent(autoplay: Bool, startAt: Double = 0, record: Bool = true) {
         guard let track = current else { return }
+        loadToken += 1
+        let token = loadToken
 
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
         }
 
-        let item = AVPlayerItem(url: track.url)
-        item.audioTimePitchAlgorithm = .timeDomain
-        player.replaceCurrentItem(with: item)
         clock.currentTime = startAt
         clock.duration = track.duration
         player.volume = 1
+        currentArtwork = nil
+
+        if let remote = track.remote, !FileManager.default.fileExists(atPath: track.url.path) {
+            // İndirilmemiş şarkı: önce hazırla, sonra çal.
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            isBuffering = true
+            isPlaying = autoplay
+            updateNowPlaying()
+            Task { @MainActor [weak self] in
+                guard let self, let resolve = self.resolveRemote else { return }
+                do {
+                    let url = try await resolve(remote)
+                    guard token == self.loadToken else { return }
+                    self.isBuffering = false
+                    self.startItem(track: track, url: url, autoplay: self.isPlaying, startAt: startAt, record: record)
+                } catch {
+                    guard token == self.loadToken else { return }
+                    self.isBuffering = false
+                    self.isPlaying = false
+                    self.errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şarkı açılamadı."
+                    self.updateNowPlaying()
+                }
+            }
+            return
+        }
+
+        isBuffering = false
+        startItem(track: track, url: track.url, autoplay: autoplay, startAt: startAt, record: record)
+    }
+
+    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool) {
+        let item = AVPlayerItem(url: url)
+        item.audioTimePitchAlgorithm = .timeDomain
+        player.replaceCurrentItem(with: item)
 
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -453,11 +499,15 @@ final class PlayerManager: ObservableObject {
         updateNowPlaying()
         saveState(force: true)
 
-        let url = track.url
+        // Sıradaki internet şarkısını şimdiden hazırla.
+        if let index = currentIndex, queue.indices.contains(index + 1), let next = queue[index + 1].remote {
+            prefetchRemote?(next)
+        }
+
         Task { @MainActor [weak self] in
             let image = await ArtworkCache.shared.image(for: url)
             let color = await ArtworkCache.shared.dominantColor(for: url)
-            guard let self, self.current?.url == url else { return }
+            guard let self, self.current?.id == track.id else { return }
             self.currentArtwork = image
             self.artworkColor = color
             self.updateNowPlaying()

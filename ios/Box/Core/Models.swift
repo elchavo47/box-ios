@@ -10,8 +10,31 @@ struct Track: Identifiable, Hashable {
     var duration: Double
     var addedAt: Date
     var fileSize: Int64
+    /// İndirilmemiş, internetten dinlenen şarkı (YouTube).
+    var remote: SearchResult? = nil
 
     var id: String { relativePath }
+
+    var isRemote: Bool { remote != nil }
+
+    /// Kapak henüz yokken gösterilecek küçük resim (bantsız).
+    var artworkFallback: URL? {
+        remote.flatMap { URL(string: "https://i.ytimg.com/vi/\($0.id)/mqdefault.jpg") }
+    }
+
+    static func remote(_ result: SearchResult) -> Track {
+        Track(
+            relativePath: "yt:" + result.id,
+            url: StreamCache.fileURL(for: result.id),
+            title: result.title,
+            artist: result.channel,
+            album: "",
+            duration: Double(result.duration),
+            addedAt: Date(),
+            fileSize: 0,
+            remote: result
+        )
+    }
 
     var displayArtist: String {
         artist.isEmpty ? "Bilinmeyen sanatçı" : artist
@@ -23,12 +46,17 @@ struct Playlist: Identifiable, Codable, Hashable {
     var name: String
     var paths: [String]
     var createdAt: Date
+    /// YouTube'dan içe aktarılan, henüz indirilmemiş olabilecek şarkılar.
+    var remote: [SearchResult]?
+    var sourceID: String?
 
-    init(id: UUID = UUID(), name: String, paths: [String] = [], createdAt: Date = Date()) {
+    init(id: UUID = UUID(), name: String, paths: [String] = [], createdAt: Date = Date(), remote: [SearchResult]? = nil, sourceID: String? = nil) {
         self.id = id
         self.name = name
         self.paths = paths
         self.createdAt = createdAt
+        self.remote = remote
+        self.sourceID = sourceID
     }
 }
 
@@ -114,4 +142,39 @@ struct SearchResponse: Decodable {
 struct DownloadLinkResponse: Decodable {
     let url: String
     let expiresAt: Int
+}
+
+struct FeedSection: Decodable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let items: [SearchResult]
+}
+
+struct FeedGenre: Decodable, Identifiable, Hashable {
+    let key: String
+    let title: String
+    var id: String { key }
+}
+
+struct FeedResponse: Decodable {
+    let sections: [FeedSection]
+    let genres: [FeedGenre]
+}
+
+struct GenreResponse: Decodable {
+    let title: String
+    let results: [SearchResult]
+}
+
+struct YouTubePlaylist: Decodable, Hashable {
+    let id: String
+    let title: String
+    let channel: String
+    let thumbnail: String?
+    let items: [SearchResult]
+}
+
+struct PlaylistResponse: Decodable {
+    let playlist: YouTubePlaylist
 }

@@ -16,6 +16,8 @@ struct SearchView: View {
     @State private var scope: Scope = .online
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var focused: Bool
+    @State private var showImport = false
+    @State private var importLink = ""
 
     enum Scope: String, CaseIterable, Hashable {
         case online = "YouTube"
@@ -60,6 +62,9 @@ struct SearchView: View {
             }
             .boxScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showImport) {
+                PlaylistImportView(initialLink: importLink)
+            }
         }
     }
 
@@ -124,6 +129,36 @@ struct SearchView: View {
 
     @ViewBuilder
     private var idleContent: some View {
+        if auth.isPremium {
+            Button {
+                importLink = ""
+                showImport = true
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "square.and.arrow.down.on.square")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.black)
+                        .frame(width: 44, height: 44)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.accent))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("YouTube listesini içe aktar")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text("Bağlantıyı yapıştır, listeyi dinle ya da indir")
+                            .font(.system(size: 13))
+                            .foregroundColor(.boxSecondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundColor(.boxSecondaryText)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxSurface))
+            }
+            .buttonStyle(PressableStyle(scale: 0.98))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 18)
+        }
+
         if !downloads.sortedItems.isEmpty {
             HStack {
                 Text("İndirmeler")
@@ -230,7 +265,7 @@ struct SearchView: View {
                 icon: auth.isPremium ? "magnifyingglass" : "music.note.list",
                 title: auth.isPremium ? "Ne dinlemek istersin?" : "Kitaplığında ara",
                 message: auth.isPremium
-                    ? "Şarkı ya da sanatçı ara, beğendiğini tek dokunuşla indir. İndirilenler internetsiz çalar."
+                    ? "Şarkı ya da sanatçı ara; dokun ve hemen dinle, istersen indir."
                     : "Şarkı, sanatçı ya da albüm adı yaz."
             )
             .padding(.top, 40)
@@ -263,9 +298,19 @@ struct SearchView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
             }
+            HStack(spacing: 10) {
+                Button { playAll(shuffled: false, from: nil) } label: { Label("Hepsini dinle", systemImage: "play.fill") }
+                    .buttonStyle(PrimaryButtonStyle())
+                Button { playAll(shuffled: true, from: nil) } label: { Label("Karıştır", systemImage: "shuffle") }
+                    .buttonStyle(PrimaryButtonStyle(filled: false))
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+
             ForEach(results) { result in
-                SearchResultRow(result: result, state: downloads.state(for: result.id), downloaded: isDownloaded(result)) {
-                    tap(result)
+                OnlineResultRow(result: result) {
+                    history.add(result: result)
+                    playAll(shuffled: false, from: result)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
@@ -292,6 +337,13 @@ struct SearchView: View {
     private func submit(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if auth.isPremium, trimmed.contains("list="), trimmed.lowercased().contains("youtu") {
+            importLink = trimmed
+            showImport = true
+            query = ""
+            focused = false
+            return
+        }
         submitted = trimmed
         focused = false
         history.add(query: trimmed)
@@ -315,28 +367,20 @@ struct SearchView: View {
         }
     }
 
+    /// Son aramalardan dokunulunca: indirildiyse yerelden, değilse internetten çalar.
     private func tap(_ result: SearchResult) {
         history.add(result: result)
-        if let track = downloadedTrack(result) {
-            player.play([track])
-            return
-        }
-        if downloads.state(for: result.id)?.isActive == true { return }
-        downloads.download(result)
-        Haptics.tap()
+        player.play([library.localTrack(for: result) ?? .remote(result)])
     }
 
     private func isDownloaded(_ result: SearchResult) -> Bool {
-        downloadedTrack(result) != nil
+        library.localTrack(for: result) != nil
     }
 
-    private func downloadedTrack(_ result: SearchResult) -> Track? {
-        if case .done(let path) = downloads.state(for: result.id), let track = library.track(forPath: path) {
-            return track
-        }
-        let name = FileService.sanitize(result.title)
-        let path = AppConfig.downloadsFolderName + "/" + name + ".m4a"
-        return library.track(forPath: path)
+    private func playAll(shuffled: Bool, from start: SearchResult?) {
+        let tracks = results.map { library.localTrack(for: $0) ?? .remote($0) }
+        let index = start.flatMap { s in results.firstIndex { $0.id == s.id } } ?? 0
+        player.play(tracks, startAt: index, shuffled: shuffled)
     }
 
     private func playDownloaded(_ item: DownloadItem) {
@@ -378,92 +422,6 @@ private struct SkeletonRow: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
         }
-    }
-}
-
-private struct SearchResultRow: View {
-    let result: SearchResult
-    let state: DownloadState?
-    let downloaded: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                RemoteThumb(url: result.thumbnailURL)
-                    .frame(width: 112, height: 63)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(alignment: .bottomTrailing) {
-                        if result.duration > 0 {
-                            Text(Formatters.time(Double(result.duration)))
-                                .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(Color.black.opacity(0.8))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                                .padding(4)
-                        }
-                    }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(result.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    Text(result.channel)
-                        .font(.system(size: 13))
-                        .foregroundColor(.boxSecondaryText)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                DownloadIndicator(state: state, downloaded: downloaded)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressableStyle(scale: 0.98))
-    }
-}
-
-private struct DownloadIndicator: View {
-    let state: DownloadState?
-    let downloaded: Bool
-
-    var body: some View {
-        ZStack {
-            if downloaded {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundColor(.accent)
-            } else {
-                switch state {
-                case .none:
-                    Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundColor(.white)
-                case .failed:
-                    Image(systemName: "arrow.clockwise.circle")
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundColor(.orange)
-                case .preparing, .processing:
-                    ProgressView().tint(.white)
-                case .downloading(let progress):
-                    Circle().stroke(Color.white.opacity(0.15), lineWidth: 2.5)
-                    Circle()
-                        .trim(from: 0, to: max(0.02, progress))
-                        .stroke(Color.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 0.2), value: progress)
-                case .done:
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundColor(.accent)
-                }
-            }
-        }
-        .frame(width: 32, height: 32)
     }
 }
 

@@ -16,6 +16,7 @@ struct PlaylistDetailView: View {
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var showPicker = false
@@ -99,6 +100,14 @@ struct PlaylistDetailView: View {
                 if case .playlist = source {
                     EditButton()
                     Menu {
+                        if let remote = tracks.compactMap(\.remote) as [SearchResult]?, !remote.isEmpty {
+                            Button {
+                                downloads.download(all: remote)
+                                Haptics.success()
+                            } label: {
+                                Label("İndirilmemiş \(remote.count) şarkıyı indir", systemImage: "arrow.down.circle")
+                            }
+                        }
                         Button {
                             showPicker = true
                         } label: {

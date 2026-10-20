@@ -168,6 +168,49 @@ switch ($route) {
         q('INSERT INTO search_log(day,user_id,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$u['id']]);
         jsonOut(['ok' => true, 'results' => $results]);
 
+    case 'feed':
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('feed:' . $u['id'], 20, 60);
+        $artists = array_filter(array_map('trim', explode('|', mb_substr((string)($_GET['artists'] ?? ''), 0, 300))));
+        try { $sections = boxFeed(array_values($artists)); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
+        $genres = [];
+        foreach (boxGenres() as $key => [$title]) $genres[] = ['key' => $key, 'title' => $title];
+        jsonOut(['ok' => true, 'sections' => $sections, 'genres' => $genres]);
+
+    case 'feed/genre':
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('feed:' . $u['id'], 20, 60);
+        $genre = boxGenres()[(string)($_GET['key'] ?? '')] ?? null;
+        if (!$genre) jsonOut(['ok' => false, 'error' => 'Bilinmeyen tür.'], 404);
+        try { $items = boxSearch($genre[1], true, 30, 43200); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
+        jsonOut(['ok' => true, 'title' => $genre[0], 'results' => $items]);
+
+    case 'playlist':
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('playlist:' . $u['id'], 10, 60);
+        $listId = boxPlaylistId((string)($_GET['url'] ?? ''));
+        if (!$listId) jsonOut(['ok' => false, 'error' => 'Geçerli bir YouTube çalma listesi bağlantısı yapıştır (içinde "list=" olmalı).'], 400);
+        try { $playlist = boxPlaylist($listId); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 422); }
+        jsonOut(['ok' => true, 'playlist' => $playlist]);
+
+    case 'stream':
+        // İndirmeden dinleme: imzalı bağlantı verir, indirme kotasından düşmez.
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('stream:' . $u['id'], 30, 60);
+        throttle('stream-day:' . $u['id'], 800, 86400);
+        $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
+        if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
+        try { $link = boxSignedDownload($videoId); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }
+        jsonOut(['ok' => true, 'url' => $link['url'], 'expires_at' => $link['expires_at']]);
+
     case 'download':
         $u = boxApiUser();
         if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);

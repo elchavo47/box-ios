@@ -12,6 +12,8 @@ final class LibraryStore: ObservableObject {
     /// Son çalınanlar (en yeni başta, en fazla 60).
     @Published private(set) var recentPaths: [String] = []
     @Published private(set) var playCounts: [String: Int] = [:]
+    /// YouTube video kimliği → kitaplıktaki dosya yolu.
+    @Published private(set) var videoPaths: [String: String] = [:]
 
     let documents: URL
     private let supportDirectory: URL
@@ -22,6 +24,7 @@ final class LibraryStore: ObservableObject {
     private var favoritesFile: URL { supportDirectory.appendingPathComponent("favorites.json") }
     private var metadataFile: URL { supportDirectory.appendingPathComponent("metadata-cache.json") }
     private var historyFile: URL { supportDirectory.appendingPathComponent("history.json") }
+    private var videoPathsFile: URL { supportDirectory.appendingPathComponent("video-paths.json") }
 
     private struct History: Codable {
         var recent: [String]
@@ -43,6 +46,7 @@ final class LibraryStore: ObservableObject {
         playlists = Self.load([Playlist].self, from: playlistsFile) ?? []
         favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
+        videoPaths = Self.load([String: String].self, from: videoPathsFile) ?? [:]
         if let history = Self.load(History.self, from: historyFile) {
             recentPaths = history.recent
             playCounts = history.counts
@@ -173,7 +177,53 @@ final class LibraryStore: ObservableObject {
 
     func tracks(for playlist: Playlist) -> [Track] {
         let index = trackIndex
-        return playlist.paths.compactMap { index[$0] }
+        var result = playlist.paths.compactMap { index[$0] }
+        if let remote = playlist.remote {
+            let have = Set(result.map(\.relativePath))
+            for item in remote {
+                if let path = downloadedPath(for: item.id), let local = index[path] {
+                    if !have.contains(path) { result.append(local) }
+                } else {
+                    result.append(.remote(item))
+                }
+            }
+        }
+        return result
+    }
+
+    // MARK: - YouTube eşleştirme
+
+    /// Bu video daha önce indirildiyse kitaplıktaki yolu.
+    func downloadedPath(for videoID: String) -> String? {
+        if let path = videoPaths[videoID], track(forPath: path) != nil { return path }
+        return nil
+    }
+
+    func localTrack(for result: SearchResult) -> Track? {
+        if let path = downloadedPath(for: result.id) { return track(forPath: path) }
+        // Eski sürümde indirilenler: dosya adından eşleştir.
+        let legacy = AppConfig.downloadsFolderName + "/" + FileService.sanitize(result.title) + ".m4a"
+        return track(forPath: legacy)
+    }
+
+    func setDownloadedPath(_ path: String, for videoID: String) {
+        videoPaths[videoID] = path
+        Self.save(videoPaths, to: videoPathsFile)
+    }
+
+    /// YouTube listesini Box listesi olarak kaydeder (indirilmemiş şarkılar internetten çalar).
+    @discardableResult
+    func importPlaylist(_ list: YouTubePlaylist) -> Playlist {
+        if let index = playlists.firstIndex(where: { $0.sourceID == list.id }) {
+            playlists[index].remote = list.items
+            playlists[index].name = list.title
+            savePlaylists()
+            return playlists[index]
+        }
+        let playlist = Playlist(name: list.title, remote: list.items, sourceID: list.id)
+        playlists.append(playlist)
+        savePlaylists()
+        return playlist
     }
 
     var favoriteTracks: [Track] {
@@ -187,6 +237,7 @@ final class LibraryStore: ObservableObject {
     // MARK: - Dinleme geçmişi
 
     func recordPlay(_ track: Track) {
+        guard !track.isRemote else { return }
         let path = track.relativePath
         recentPaths.removeAll { $0 == path }
         recentPaths.insert(path, at: 0)
@@ -294,14 +345,21 @@ final class LibraryStore: ObservableObject {
 
     func removeTracks(at offsets: IndexSet, from id: UUID) {
         guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
-        let visible = tracks(for: playlists[index]).map(\.relativePath)
-        let toRemove = Set(offsets.compactMap { visible.indices.contains($0) ? visible[$0] : nil })
+        let visible = tracks(for: playlists[index])
+        let chosen = offsets.compactMap { visible.indices.contains($0) ? visible[$0] : nil }
+        let toRemove = Set(chosen.map(\.relativePath))
         playlists[index].paths.removeAll { toRemove.contains($0) }
+        let remoteIDs = Set(chosen.compactMap { track -> String? in
+            if let r = track.remote { return r.id }
+            return videoPaths.first { $0.value == track.relativePath }?.key
+        })
+        playlists[index].remote?.removeAll { remoteIDs.contains($0.id) }
         savePlaylists()
     }
 
     func moveTracks(from source: IndexSet, to destination: Int, in id: UUID) {
         guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        guard playlists[index].remote == nil else { return }
         var visible = tracks(for: playlists[index]).map(\.relativePath)
         visible.move(fromOffsets: source, toOffset: destination)
         let missing = playlists[index].paths.filter { !visible.contains($0) }
@@ -337,6 +395,8 @@ final class LibraryStore: ObservableObject {
         }
         favorites = Set(favorites.map(remap))
         recentPaths = recentPaths.map(remap)
+        videoPaths = videoPaths.mapValues(remap)
+        Self.save(videoPaths, to: videoPathsFile)
         playCounts = Dictionary(playCounts.map { (remap($0.key), $0.value) }, uniquingKeysWith: +)
         saveHistory()
 
@@ -365,6 +425,8 @@ final class LibraryStore: ObservableObject {
         }
         favorites = favorites.filter(keep)
         recentPaths = recentPaths.filter(keep)
+        videoPaths = videoPaths.filter { keep($0.value) }
+        Self.save(videoPaths, to: videoPathsFile)
         playCounts = playCounts.filter { keep($0.key) }
         saveHistory()
 
