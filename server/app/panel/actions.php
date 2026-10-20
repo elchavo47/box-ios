@@ -306,6 +306,7 @@ function panelAction(array $admin): string|array {
             case 'user_delete':
                 requirePasswordConfirm($admin);
                 if (mb_strtolower(trim((string)($_POST['confirm_email'] ?? ''))) !== mb_strtolower((string)$u['email'])) throw new RuntimeException('Onay için kullanıcının e-postasını aynen yaz.');
+                boxDeleteAvatarFile($u['avatar_file'] ?? null);
                 q('DELETE FROM users WHERE id=?', [$uid]);
                 logAdmin((int)$admin['id'], 'user_delete', ['user_id' => $uid, 'email' => $u['email']]);
                 watchRefresh();

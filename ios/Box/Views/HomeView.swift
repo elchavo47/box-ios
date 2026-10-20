@@ -287,12 +287,28 @@ struct HomeView: View {
         let text = hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar"
         let name = auth.user?.name.split(separator: " ").first.map(String.init)
 
-        return VStack(alignment: .leading, spacing: 14) {
-            Text(name.map { "\(text), \($0)" } ?? text)
-                .font(.system(size: 28, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                if auth.user != nil {
+                    Button { router.showAccount = true } label: { UserAvatar(user: auth.user, size: 46) }
+                        .buttonStyle(PressableStyle())
+                        .accessibilityLabel("Profil")
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    if let fullName = auth.user?.name {
+                        Text(fullName.uppercased(with: Locale(identifier: "tr_TR")))
+                            .font(.system(size: 13, weight: .semibold))
+                            .tracking(0.6)
+                            .foregroundColor(.boxSecondaryText)
+                            .lineLimit(1)
+                    }
+                    Text(auth.user == nil ? (name.map { "\(text), \($0)" } ?? text) : text)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
 
             HStack(spacing: 10) {
                 Button {

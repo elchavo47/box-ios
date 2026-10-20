@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct AccountView: View {
@@ -183,16 +184,29 @@ private struct ProfileView: View {
     @State private var showDelete = false
     @State private var deletePassword = ""
     @State private var errorMessage: String?
+    @State private var photoItem: PhotosPickerItem?
+    @State private var uploading = false
 
     var body: some View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    Text(String(user.name.prefix(1)).uppercased())
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 62, height: 62)
-                        .background(Circle().fill(Color.accentDeep))
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        ZStack(alignment: .bottomTrailing) {
+                            UserAvatar(user: user, size: 68)
+                                .overlay {
+                                    if auth.isWorking && uploading { ProgressView().tint(.white) }
+                                }
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.black)
+                                .frame(width: 24, height: 24)
+                                .background(Circle().fill(Color.white))
+                                .overlay(Circle().stroke(Color.boxSurface2, lineWidth: 2))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Profil fotoğrafını değiştir")
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(user.name)
@@ -204,6 +218,25 @@ private struct ProfileView: View {
                     }
                 }
                 .padding(.vertical, 6)
+
+                if user.avatarURL != nil {
+                    Button(role: .destructive) {
+                        Task {
+                            do { try await auth.removeAvatar() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
+                        }
+                    } label: {
+                        Label("Profil fotoğrafını kaldır", systemImage: "person.crop.circle.badge.minus")
+                    }
+                }
+            }
+            .listRowBackground(Color.boxSurface2)
+
+            Section {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Ayarlar", systemImage: "gearshape")
+                }
             }
             .listRowBackground(Color.boxSurface2)
 
@@ -249,15 +282,6 @@ private struct ProfileView: View {
                 .listRowBackground(Color.boxSurface2)
             }
 
-            Section {
-                NavigationLink {
-                    SettingsView()
-                } label: {
-                    Label("Ayarlar", systemImage: "gearshape")
-                }
-            }
-            .listRowBackground(Color.boxSurface2)
-
             Section("Hesap") {
                 Button {
                     newName = user.name
@@ -296,6 +320,20 @@ private struct ProfileView: View {
             .listRowBackground(Color.clear)
         }
         .scrollContentBackground(.hidden)
+        .onChange(of: photoItem) { item in
+            guard let item else { return }
+            Task {
+                uploading = true
+                defer { uploading = false; photoItem = nil }
+                guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { return }
+                do {
+                    try await auth.uploadAvatar(image)
+                    Haptics.success()
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Fotoğraf yüklenemedi."
+                }
+            }
+        }
         .refreshable { await auth.refresh() }
         .task { cacheSize = stream.totalSize }
         .alert("İsmini değiştir", isPresented: $showRename) {

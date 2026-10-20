@@ -141,11 +141,7 @@ struct AccountButton: View {
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 if let user = auth.user {
-                    Text(String(user.name.prefix(1)).uppercased())
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.accentDeep))
+                    UserAvatar(user: user, size: 32)
                 } else {
                     Image(systemName: "person.crop.circle")
                         .font(.system(size: 26, weight: .regular))

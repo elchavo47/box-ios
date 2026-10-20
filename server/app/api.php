@@ -40,6 +40,18 @@ if ($path === '/cron') {
 
 if ($method === 'OPTIONS') { http_response_code(204); exit; }
 
+// Profil fotoğrafı (adı tahmin edilemez, herkese açık önbelleklenebilir)
+if (preg_match('#^/api/v1/avatar/([a-f0-9]{32}\.(jpg|png))$#', $path, $am)) {
+    $file = boxAvatarDir() . '/' . $am[1];
+    if (!is_file($file)) { http_response_code(404); exit; }
+    header('Content-Type: ' . ($am[2] === 'png' ? 'image/png' : 'image/jpeg'));
+    header('Content-Length: ' . filesize($file));
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header_remove('Content-Security-Policy');
+    readfile($file);
+    exit;
+}
+
 apiIpThrottle();
 
 /* ---------------- Rota çözümü ---------------- */
@@ -146,10 +158,27 @@ switch ($route) {
         if (boxIsPremium($u)) $out['quota'] = boxQuota($u);
         jsonOut($out);
 
+    case 'me/avatar':
+        $need('POST');
+        $u = boxApiUser();
+        throttle('avatar:' . $u['id'], 10, 3600);
+        $data = body()['image'] ?? '';
+        if ((body()['remove'] ?? false) === true) {
+            boxDeleteAvatarFile($u['avatar_file'] ?? null);
+            q('UPDATE users SET avatar_file=NULL WHERE id=?', [$u['id']]);
+        } else {
+            $binary = is_string($data) ? base64_decode($data, true) : false;
+            if ($binary === false) jsonOut(['ok' => false, 'error' => 'Fotoğraf okunamadı.'], 400);
+            try { boxSetAvatar($u, $binary); }
+            catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 400); }
+        }
+        jsonOut(['ok' => true, 'user' => boxUserPublic(boxFindUser((int)$u['id']))]);
+
     case 'me/delete':
         $need('POST');
         $u = boxApiUser();
         if (!password_verify((string)(body()['password'] ?? ''), (string)$u['password_hash'])) jsonOut(['ok' => false, 'error' => 'Şifre hatalı.'], 401);
+        boxDeleteAvatarFile($u['avatar_file'] ?? null);
         q('DELETE FROM users WHERE id=?', [$u['id']]);
         jsonOut(['ok' => true]);
 

@@ -85,6 +85,9 @@ struct BoxUser: Codable, Equatable {
     let premium: Bool
     let premiumUntil: String?
     let createdAt: String?
+    let avatarUrl: String?
+
+    var avatarURL: URL? { avatarUrl.flatMap(URL.init(string:)) }
 
     var premiumUntilDate: Date? {
         guard let premiumUntil else { return nil }

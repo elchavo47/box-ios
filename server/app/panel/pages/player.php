@@ -4,6 +4,7 @@ $uid = (int)($_GET['id'] ?? 0);
 $u = boxFindUser($uid);
 if (!$u) { card(); echo emptyState('Kullanıcı bulunamadı', 'Numara yanlış olabilir ya da hesap silinmiş.') . '<p><a class="btn ghost" href="/admin?p=users">Kullanıcılara dön</a></p>'; cardEnd(); return; }
 $isPrem = boxIsPremium($u);
+$u['avatar_url'] = boxAvatarUrl($u);
 $q = boxQuota($u);
 $devices = q('SELECT device,created_at,last_used_at,expires_at FROM tokens WHERE user_id=? AND expires_at>NOW() ORDER BY COALESCE(last_used_at,created_at) DESC', [$uid])->fetchAll();
 $dls = q('SELECT * FROM downloads WHERE user_id=? ORDER BY id DESC LIMIT 50', [$uid])->fetchAll();

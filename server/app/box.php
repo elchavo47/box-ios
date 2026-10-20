@@ -35,7 +35,39 @@ function boxUserPublic(array $u): array {
         'premium' => boxIsPremium($u),
         'premium_until' => !empty($u['premium_until']) ? date(DATE_ATOM, (int)strtotime((string)$u['premium_until'])) : null,
         'created_at' => date(DATE_ATOM, (int)strtotime((string)$u['created_at'])),
+        'avatar_url' => boxAvatarUrl($u),
     ];
+}
+
+/* ---------------- Profil fotoğrafı ---------------- */
+
+function boxAvatarDir(): string {
+    $dir = nbPrivateDir('avatars');
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    return $dir;
+}
+
+function boxAvatarUrl(array $u): ?string {
+    $file = (string)($u['avatar_file'] ?? '');
+    if ($file === '' || !preg_match('/^[a-f0-9]{32}\.(jpg|png)$/', $file)) return null;
+    return rtrim((string)cfg('app.url', ''), '/') . '/api/v1/avatar/' . $file;
+}
+
+/** Yeni fotoğrafı kaydeder, eskisini sunucudan siler. */
+function boxSetAvatar(array $u, string $binary): void {
+    if (strlen($binary) < 100 || strlen($binary) > 1024 * 1024) throw new RuntimeException('Fotoğraf en fazla 1 MB olmalı.');
+    $info = @getimagesizefromstring($binary);
+    $ext = match ($info['mime'] ?? '') { 'image/jpeg' => 'jpg', 'image/png' => 'png', default => '' };
+    if ($ext === '' || ($info[0] ?? 0) < 32 || ($info[1] ?? 0) < 32 || ($info[0] ?? 0) > 4000 || ($info[1] ?? 0) > 4000) throw new RuntimeException('Geçerli bir JPEG ya da PNG fotoğraf gönder.');
+    $name = bin2hex(random_bytes(16)) . '.' . $ext;
+    if (@file_put_contents(boxAvatarDir() . '/' . $name, $binary, LOCK_EX) === false) throw new RuntimeException('Fotoğraf kaydedilemedi.');
+    $old = (string)($u['avatar_file'] ?? '');
+    q('UPDATE users SET avatar_file=? WHERE id=?', [$name, $u['id']]);
+    boxDeleteAvatarFile($old);
+}
+
+function boxDeleteAvatarFile(?string $file): void {
+    if ($file && preg_match('/^[a-f0-9]{32}\.(jpg|png)$/', $file)) @unlink(boxAvatarDir() . '/' . $file);
 }
 
 function boxIssueToken(int $userId, string $device = ''): string {

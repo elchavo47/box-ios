@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class AuthStore: ObservableObject {
@@ -69,6 +70,25 @@ final class AuthStore: ObservableObject {
         let response: UserResponse = try await APIClient.shared.send(
             "me", method: "POST", body: ["name": name], token: token
         )
+        store(token: token, user: response.user)
+    }
+
+    /// Profil fotoğrafını yükler; sunucu eskisini siler.
+    func uploadAvatar(_ image: UIImage) async throws {
+        guard let token else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let square = ArtworkCache.downscale(ArtworkCache.squareCrop(image.normalizedOrientation()), maxSide: 400)
+        guard let data = square.jpegData(compressionQuality: 0.82) else { throw APIError(message: "Fotoğraf hazırlanamadı.", status: 0) }
+        let response: UserResponse = try await APIClient.shared.send("me/avatar", method: "POST", body: ["image": data.base64EncodedString()], token: token)
+        store(token: token, user: response.user)
+    }
+
+    func removeAvatar() async throws {
+        guard let token else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let response: UserResponse = try await APIClient.shared.send("me/avatar", method: "POST", body: ["remove": true], token: token)
         store(token: token, user: response.user)
     }
 
