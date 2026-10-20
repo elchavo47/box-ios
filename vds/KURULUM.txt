@@ -38,3 +38,18 @@ Box anında dinleme servisi - VDS kurulumu (Ubuntu, root)
 
 5) Dene:
    curl https://yt2.aydworks.com.tr/stream/health      ->  {"ok":true,...}
+
+---------------------------------------------------------------
+YouTube Music araması (kota yok) - Box backend 2.8.0 ile
+---------------------------------------------------------------
+1) Kütüphaneyi servisin kullandığı Python ortamına kur:
+   /opt/yt-api-venv/bin/pip install -U ytmusicapi
+
+2) /opt/yt_stream.py dosyasının içeriğini yeni yt_stream.py ile değiştir.
+
+3) Servisi yeniden başlat:
+   systemctl restart yt-stream && systemctl status yt-stream --no-pager
+
+4) Dene:
+   curl https://yt2.aydworks.com.tr/stream/music/health    ->  {"ok":true,"cached":0}
+   (nginx'te değişiklik gerekmez; /stream ile başlayan her adres zaten bu servise gidiyor.)

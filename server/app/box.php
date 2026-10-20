@@ -258,7 +258,89 @@ function boxVideoResults(array $ids, array $snippets, ?int $ttl = null): array {
     return $out;
 }
 
+/* ---------------- YouTube Music (VDS üzerinden, kota harcamaz) ---------------- */
+
+/** Arama kaynağı: "music" = VDS'deki YouTube Music (varsayılan), "api" = YouTube Data API. */
+function boxMusicEnabled(): bool {
+    return boxVdsKey() !== '' && site('search_source', 'music') === 'music';
+}
+
+function boxMusic(string $path, array $params, int $ttl): array {
+    $cacheKey = 'music' . $path . '?' . http_build_query($params);
+    if ($cached = boxCacheGet($cacheKey, $ttl)) return $cached;
+    $exp = time() + 300;
+    $url = boxVdsUrl() . $path . '?' . http_build_query($params + ['exp' => $exp, 'sig' => hash_hmac('sha256', 'music:' . $exp, boxVdsKey())]);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 25, CURLOPT_ENCODING => '', CURLOPT_USERAGENT => 'Box/' . boxVersion()]);
+    $t = microtime(true);
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    $data = is_string($body) ? json_decode($body, true) : null;
+    if (!is_array($data) || $status !== 200 || empty($data['ok'])) {
+        $reason = is_array($data) ? (string)($data['detail'] ?? '') : ($err !== '' ? $err : 'HTTP ' . $status);
+        saveSite('music_last_error', json_encode(['at' => date('Y-m-d H:i:s'), 'status' => $status, 'reason' => mb_substr($reason, 0, 200)], JSON_UNESCAPED_UNICODE));
+        throw new RuntimeException('YouTube Music araması yapılamadı: ' . ($reason !== '' ? $reason : 'HTTP ' . $status));
+    }
+    q("INSERT INTO site_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=setting_value+VALUES(setting_value)", ['music_calls_' . date('Y-m-d'), '1']);
+    saveSite('music_last_ok', json_encode(['at' => date('Y-m-d H:i:s'), 'ms' => (int)round((microtime(true) - $t) * 1000)]));
+    boxCachePut($cacheKey, $data);
+    return $data;
+}
+
+/** VDS'nin döndürdüğü şarkıları uygulamanın beklediği biçime çevirir. */
+function boxMusicResults(array $rows, bool $music): array {
+    $out = []; $seen = [];
+    foreach ($rows as $r) {
+        $id = (string)($r['id'] ?? '');
+        if (!preg_match(BOX_VIDEO_ID, $id) || isset($seen[$id])) continue;
+        $title = boxCleanText((string)($r['title'] ?? ''));
+        $artist = boxCleanText((string)($r['channel'] ?? ''));
+        if (($r['kind'] ?? 'song') === 'video') {
+            [$clean, $guess] = boxSplitTitle($title, $artist);
+            $title = $clean;
+            if ($artist === '') $artist = $guess;
+        }
+        $duration = (int)($r['duration'] ?? 0);
+        if ($music && ($duration < 60 || $duration > 900)) continue;
+        if ($title === '') continue;
+        $seen[$id] = 1;
+        $out[] = ['id' => $id, 'title' => $title, 'channel' => $artist, 'thumbnail' => $r['thumbnail'] ?? ('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg'), 'duration' => $duration];
+    }
+    return $out;
+}
+
+function boxMusicSearch(string $query, bool $music, int $max, ?int $ttl): array {
+    $ttl ??= max(60, (int)site('search_cache_seconds', '21600'));
+    $songs = boxMusic('/stream/music/search', ['q' => $query, 'limit' => min(40, $max), 'filter' => 'songs'], $ttl);
+    $out = boxMusicResults($songs['results'] ?? [], $music);
+    // Az şarkı çıkarsa (yeni çıkan, cover, remix) videolarla tamamla.
+    if (!$music && count($out) < 8) {
+        try {
+            $videos = boxMusic('/stream/music/search', ['q' => $query, 'limit' => 15, 'filter' => 'videos'], $ttl);
+            $have = array_flip(array_column($out, 'id'));
+            foreach (boxMusicResults($videos['results'] ?? [], false) as $v) if (!isset($have[$v['id']])) $out[] = $v;
+        } catch (RuntimeException $e) {}
+    }
+    return array_slice($out, 0, $max);
+}
+
+/** YouTube Music şarkı radyosu (gerçek benzer şarkılar). */
+function boxMusicRadio(string $videoId, int $limit = 30): array {
+    $data = boxMusic('/stream/music/radio', ['v' => $videoId, 'limit' => $limit], 43200);
+    return boxMusicResults($data['results'] ?? [], true);
+}
+
 function boxSearch(string $query, bool $music = false, int $max = 25, ?int $ttl = null): array {
+    if (boxMusicEnabled()) {
+        try {
+            $out = boxMusicSearch($query, $music, $max, $ttl);
+            if ($out) return $out;
+        } catch (RuntimeException $e) {
+            error_log('[Box] ' . $e->getMessage() . ' (YouTube API ile devam ediliyor)');
+        }
+    }
     $params = ['part' => 'snippet', 'q' => $query, 'type' => 'video', 'maxResults' => max(1, min(50, $max)), 'regionCode' => 'TR', 'safeSearch' => 'none'];
     if ($music) $params['videoCategoryId'] = '10';
     $search = boxYoutube('search', $params, $ttl);
@@ -323,6 +405,13 @@ function boxFeed(array $artists): array {
     // 1) Benzer sanatçılar: tohum sanatçıların tarzındaki listelerden, tohumun kendisi hariç.
     $similar = [];
     foreach (array_values($seeds) as $artist) {
+        if (boxMusicEnabled()) {
+            // Sanatçının en bilinen şarkısının YouTube Music radyosu = gerçekten benzer şarkılar.
+            try {
+                $top = boxMusicSearch($artist, true, 3, 43200);
+                if ($top) { $similar = array_merge($similar, boxMusicRadio($top[0]['id'], 40)); continue; }
+            } catch (RuntimeException $e) {}
+        }
         foreach ([$artist . ' tarzı şarkılar', $artist . ' benzeri şarkılar'] as $query) {
             try { $similar = array_merge($similar, boxSearch($query, true, 25, 43200)); } catch (RuntimeException $e) {}
         }
@@ -362,6 +451,27 @@ function boxRadio(string $artist, string $title, array $exclude = []): array {
     $artist = trim(preg_replace('/\s*-\s*Topic$/iu', '', mb_substr($artist, 0, 60)));
     $title = mb_substr(trim($title), 0, 80);
     $pool = [];
+    if (boxMusicEnabled() && ($title !== '' || $artist !== '')) {
+        // YouTube Music'in kendi radyosu: şarkıyı bul, radyosunu al.
+        try {
+            $seed = boxMusicSearch(trim($title . ' ' . $artist), true, 3, 43200);
+            if ($seed) $pool = boxMusicRadio($seed[0]['id'], 40);
+        } catch (RuntimeException $e) { $pool = []; }
+        if ($pool) {
+            $skip = array_flip($exclude);
+            $seen = []; $perArtist = []; $out = [];
+            foreach ($pool as $r) {
+                $key = boxNorm($r['title']);
+                $a = boxNorm($r['channel']);
+                if (isset($skip[$r['id']]) || isset($seen[$key]) || ($perArtist[$a] ?? 0) >= 3) continue;
+                $seen[$key] = 1; $perArtist[$a] = ($perArtist[$a] ?? 0) + 1;
+                $out[] = $r;
+                if (count($out) >= 25) break;
+            }
+            if (count($out) >= 5) return $out;
+            $pool = [];
+        }
+    }
     foreach (array_filter([$artist !== '' ? $artist . ' tarzı şarkılar' : '', $artist !== '' ? $artist . ' benzeri şarkılar' : '', $title !== '' ? $title . ' ' . $artist . ' radyo' : '', $artist]) as $query) {
         try { $pool = array_merge($pool, boxSearch($query, true, 25, 43200)); } catch (RuntimeException $e) {}
     }

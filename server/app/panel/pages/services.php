@@ -3,18 +3,27 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
 $vds = json_decode(site('vds_health'), true) ?: null;
 $units = boxYoutubeUnitsToday();
 $hasYt = boxYoutubeKey() !== ''; $hasVds = boxVdsKey() !== '';
+$musicOk = json_decode(site('music_last_ok'), true) ?: null;
+$musicErr = json_decode(site('music_last_error'), true) ?: null;
+$musicCalls = (int)site('music_calls_' . date('Y-m-d'), '0');
 $cron = rtrim((string)cfg('app.url', ''), '/') . '/cron?key=' . site('cron_key');
 ?>
 <section class="kpis">
   <?=kpi('VDS indirme', $vds ? ($vds['ok'] ? 'Çalışıyor' : 'Ulaşılamıyor') : 'Kontrol edilmedi', $vds ? h($vds['ok'] ? $vds['ms'] . ' ms · ' . nbAgo($vds['at']) : $vds['error']) : 'Aşağıdan kontrol et', $vds ? ($vds['ok'] ? 'good' : 'bad') : '')?>
+  <?php if (boxMusicEnabled()): $musicFresh = $musicErr && (!$musicOk || strtotime($musicErr['at']) > strtotime($musicOk['at'])); ?>
+  <?=kpi('Arama: YouTube Music', $musicFresh ? 'Hata' : ($musicOk ? 'Çalışıyor' : 'Henüz arama yok'), $musicFresh ? h($musicErr['reason'] . ' · ' . nbAgo($musicErr['at']) . ' (yedek: YouTube API)') : ($musicOk ? (int)$musicOk['ms'] . ' ms · ' . nbAgo($musicOk['at']) . ' · bugün ' . nbNum($musicCalls) . ' istek' : 'Kota yok, VDS üzerinden'), $musicFresh ? 'bad' : ($musicOk ? 'good' : ''))?>
+  <?=kpi('Yedek: YouTube API', nbNum($units) . ' / 10.000', $hasYt ? 'YouTube Music çalışmazsa devreye girer' : 'Anahtar yok, yedek kapalı', $units > 8000 ? 'bad' : '')?>
+  <?php else: ?>
   <?=kpi('YouTube anahtarı', $hasYt ? 'Tanımlı' : 'Eksik', $hasYt ? 'Şifreli saklanıyor' : 'Arama çalışmaz', $hasYt ? 'good' : 'bad')?>
   <?=kpi('Bugünkü kota', nbNum($units) . ' / 10.000', 'Bir arama yaklaşık 101 birim', $units > 8000 ? 'bad' : '')?>
+  <?php endif ?>
 </section>
 <div class="cols-2">
   <?php card('Bağlantı ayarları', 'Anahtarlar şifreli saklanır ve bir daha gösterilmez. Boş bırakılan alan değişmez.');
   formStart('services_save', 'stack');
   field('VDS adresi', 'vds_url', boxVdsUrl(), 'url', ['hint' => 'Örnek: https://yt2.aydworks.com.tr']);
   field('VDS imza anahtarı', 'vds_signing_key', '', 'password', ['autocomplete' => 'off', 'placeholder' => $hasVds ? '•••••••• (tanımlı)' : 'Tanımlı değil', 'hint' => 'VDS\'deki /etc/yt-api.env içindeki YT_API_KEY ile aynı olmalı.']);
+  selectField('Arama kaynağı', 'search_source', ['music' => 'YouTube Music (VDS, kota yok) — önerilen', 'api' => 'YouTube Data API (günde ~99 arama)'], site('search_source', 'music'), ['hint' => 'YouTube Music seçiliyken bir sorun olursa arama kendiliğinden YouTube API ile yapılır.']);
   field('YouTube Data API anahtarı', 'yt_api_key', '', 'password', ['autocomplete' => 'off', 'placeholder' => $hasYt ? '•••••••• (tanımlı)' : 'Tanımlı değil']);
   echo '<div class="grid-3">';
   field('İndirme bağlantısı (sn)', 'download_link_ttl', site('download_link_ttl', '300'), 'number', ['min' => 60]);

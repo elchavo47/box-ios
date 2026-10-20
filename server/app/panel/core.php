@@ -166,7 +166,8 @@ function securityChecks(): array {
     elseif (!$vds) $add('Servisler', 'VDS indirme servisi', 'info', 'Henüz kontrol edilmedi. Servisler sayfasından "Şimdi kontrol et" de.', 'services');
     else $add('Servisler', 'VDS indirme servisi', $vds['ok'] ? 'ok' : ((int)($vds['fails'] ?? 1) >= 2 ? 'bad' : 'warn'), $vds['ok'] ? 'Çalışıyor, ' . (int)$vds['ms'] . ' ms (' . nbAgo($vds['at']) . ').' : 'Ulaşılamıyor: ' . $vds['error'] . ' (' . nbAgo($vds['at']) . ').', 'services', 'VDS\'de "systemctl status yt-api" ve nginx durumunu kontrol et.');
     $ytErr = $json('yt_last_error');
-    if (boxYoutubeKey() === '') $add('Servisler', 'YouTube arama anahtarı', 'bad', 'Girilmemiş; premium kullanıcılar arama yapamaz.', 'services', 'Servisler sayfasından YouTube Data API anahtarını gir.');
+    if (boxYoutubeKey() === '' && boxMusicEnabled()) $add('Servisler', 'YouTube arama anahtarı', 'info', 'Girilmemiş. Arama YouTube Music üzerinden yapılıyor; anahtar yalnızca yedek olarak gerekir.', 'services');
+    elseif (boxYoutubeKey() === '') $add('Servisler', 'YouTube arama anahtarı', 'bad', 'Girilmemiş; premium kullanıcılar arama yapamaz.', 'services', 'Servisler sayfasından YouTube Data API anahtarını gir.');
     elseif ($ytErr && ($hoursSince($ytErr['at']) ?? 999) < 6) $add('Servisler', 'YouTube arama', 'warn', 'Son hata (' . nbAgo($ytErr['at']) . '): ' . ($ytErr['reason'] !== '' ? $ytErr['reason'] : 'HTTP ' . $ytErr['status']) . '.', 'services');
     else $add('Servisler', 'YouTube arama', 'ok', 'Anahtar tanımlı. Bugün yaklaşık ' . nbNum(boxYoutubeUnitsToday()) . ' / 10.000 kota birimi kullanıldı.', 'services');
     if (configBool('maintenance_mode')) $add('Servisler', 'Bakım modu', 'warn', 'Açık. Kullanıcılar şu an uygulamayı kullanamıyor.', 'app');

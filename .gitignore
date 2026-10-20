@@ -11,3 +11,4 @@ backend/api/config.php
 backend/api/cache/
 
 .DS_Store
+__pycache__/

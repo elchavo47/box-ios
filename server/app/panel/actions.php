@@ -362,6 +362,8 @@ function panelAction(array $admin): string|array {
         if ($yt !== '') { if (!preg_match('/^[A-Za-z0-9_-]{30,60}$/', $yt)) throw new RuntimeException('YouTube API anahtarı biçimi geçersiz.'); saveSecretSetting('yt_api_key', $yt); $changed[] = 'YouTube anahtarı'; }
         $key = trim((string)($_POST['vds_signing_key'] ?? ''));
         if ($key !== '') { if (strlen($key) < 16) throw new RuntimeException('VDS imza anahtarı çok kısa.'); saveSecretSetting('vds_signing_key', $key); $changed[] = 'VDS imza anahtarı'; }
+        $source = ($_POST['search_source'] ?? '') === 'api' ? 'api' : 'music';
+        if (isset($_POST['search_source']) && $source !== site('search_source', 'music')) { saveSite('search_source', $source); $changed[] = 'Arama kaynağı'; }
         $url = rtrim(trim((string)($_POST['vds_url'] ?? '')), '/');
         if ($url !== '' && $url !== boxVdsUrl()) { if (!preg_match('#^https://[a-z0-9.-]+(:\d+)?$#i', $url)) throw new RuntimeException('VDS adresi https:// ile başlayan bir alan adı olmalı.'); saveSite('vds_url', $url); $changed[] = 'VDS adresi'; }
         foreach (['download_link_ttl' => [60, 3600], 'search_cache_seconds' => [60, 86400], 'token_ttl_days' => [1, 3650]] as $k => [$min, $max]) {
