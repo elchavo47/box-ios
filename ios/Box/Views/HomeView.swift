@@ -553,11 +553,11 @@ struct HomeRouteView: View {
 }
 
 
-/// Ana sayfanın üstündeki renk geçişi (YouTube Music gibi): renkler kendi kendine sırayla döner.
-/// Her renk 8 sn kalır, 3 sn'de yumuşakça diğerine geçer. Geçişler yalnızca saydamlıkla yapılır, telefonu yormaz.
+/// Ana sayfanın üstündeki renk geçişi (YouTube Music gibi). Her açılışta 5 renkten biri
+/// rastgele seçilir ve uygulama açık kaldıkça değişmez.
 private struct HomeGlow: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var index = 0
+    /// Uygulama her açıldığında bir kez seçilir.
+    private static let launchIndex = Int.random(in: 0..<palettes.count)
 
     /// (üst renk, alttaki ikinci renk)
     private static let palettes: [(Color, Color)] = [
@@ -569,23 +569,11 @@ private struct HomeGlow: View {
     ]
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ForEach(Self.palettes.indices, id: \.self) { i in
-                layer(Self.palettes[i])
-                    .opacity(i == index ? 1 : 0)
-            }
-        }
+        layer(Self.palettes[Self.launchIndex])
         .frame(height: 480)
         .frame(maxWidth: .infinity)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
-        .task {
-            guard !reduceMotion else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                withAnimation(.easeInOut(duration: 3)) { index = (index + 1) % Self.palettes.count }
-            }
-        }
     }
 
     private func layer(_ colors: (Color, Color)) -> some View {
