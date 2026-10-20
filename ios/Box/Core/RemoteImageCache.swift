@@ -1,4 +1,5 @@
 import ImageIO
+import SwiftUI
 import UIKit
 
 /// İnternetten gelen küçük resimler (YouTube kapakları, profil fotoğrafları) için bellek önbelleği.
@@ -112,6 +113,7 @@ struct CachedRemoteImage<Placeholder: View>: View {
         }
     }
 
+    @MainActor
     private var currentImage: UIImage? {
         guard let url else { return nil }
         if let hit = RemoteImageCache.shared.cached(url, maxSide: maxSide) { return hit }
