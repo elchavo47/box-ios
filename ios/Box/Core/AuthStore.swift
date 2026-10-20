@@ -5,6 +5,7 @@ final class AuthStore: ObservableObject {
     @Published private(set) var user: BoxUser?
     @Published private(set) var token: String?
     @Published var isWorking = false
+    @Published private(set) var quota: Quota?
 
     private let tokenKey = "box.token"
     private let userCacheKey = "box.cachedUser"
@@ -23,25 +24,25 @@ final class AuthStore: ObservableObject {
     }
 
     func login(email: String, password: String) async throws {
-        try await authenticate(action: "login", body: [
+        try await authenticate(path: "auth/login", body: [
             "email": email.trimmingCharacters(in: .whitespacesAndNewlines),
             "password": password,
         ])
     }
 
     func register(name: String, email: String, password: String) async throws {
-        try await authenticate(action: "register", body: [
+        try await authenticate(path: "auth/register", body: [
             "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
             "email": email.trimmingCharacters(in: .whitespacesAndNewlines),
             "password": password,
         ])
     }
 
-    private func authenticate(action: String, body: [String: Any]) async throws {
+    private func authenticate(path: String, body: [String: Any]) async throws {
         isWorking = true
         defer { isWorking = false }
 
-        let response: AuthResponse = try await APIClient.shared.send(action, method: "POST", body: body)
+        let response: AuthResponse = try await APIClient.shared.send(path, method: "POST", body: body)
         store(token: response.token, user: response.user)
     }
 
@@ -52,6 +53,7 @@ final class AuthStore: ObservableObject {
         do {
             let response: UserResponse = try await APIClient.shared.send("me", token: token)
             store(token: token, user: response.user)
+            quota = response.quota
         } catch let error as APIError where error.status == 401 || error.status == 403 {
             clear()
         } catch {
@@ -65,14 +67,14 @@ final class AuthStore: ObservableObject {
         defer { isWorking = false }
 
         let response: UserResponse = try await APIClient.shared.send(
-            "update_profile", method: "POST", body: ["name": name], token: token
+            "me", method: "POST", body: ["name": name], token: token
         )
         store(token: token, user: response.user)
     }
 
     func logout() async {
         if let token {
-            _ = try? await APIClient.shared.send("logout", method: "POST", token: token, as: EmptyResponse.self)
+            _ = try? await APIClient.shared.send("auth/logout", method: "POST", token: token, as: EmptyResponse.self)
         }
         clear()
     }
@@ -83,7 +85,7 @@ final class AuthStore: ObservableObject {
         defer { isWorking = false }
 
         _ = try await APIClient.shared.send(
-            "delete_account", method: "POST", body: ["password": password], token: token, as: EmptyResponse.self
+            "me/delete", method: "POST", body: ["password": password], token: token, as: EmptyResponse.self
         )
         clear()
     }
@@ -101,6 +103,7 @@ final class AuthStore: ObservableObject {
     private func clear() {
         token = nil
         user = nil
+        quota = nil
         KeychainStore.set(nil, for: tokenKey)
         UserDefaults.standard.removeObject(forKey: userCacheKey)
     }

@@ -4,14 +4,9 @@ enum TrackSort: String, CaseIterable, Identifiable {
     case title = "Ada göre"
     case artist = "Sanatçıya göre"
     case added = "Eklenme tarihine göre"
+    case plays = "En çok dinlenen"
 
     var id: String { rawValue }
-}
-
-enum LibraryRoute: Hashable {
-    case playlist(UUID)
-    case favorites
-    case allSongs
 }
 
 struct LibraryView: View {
@@ -19,344 +14,253 @@ struct LibraryView: View {
     @EnvironmentObject private var player: PlayerManager
 
     @State private var path = NavigationPath()
+    @State private var section: LibSection = .playlists
     @State private var searchText = ""
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
+    @AppStorage("box.sort") private var sort: TrackSort = .title
 
-    private var filtered: [Track] {
+    enum LibSection: String, CaseIterable, Hashable {
+        case playlists = "Listeler"
+        case songs = "Şarkılar"
+        case artists = "Sanatçılar"
+        case albums = "Albümler"
+    }
+
+    private var sortedTracks: [Track] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return library.tracks }
-        return library.tracks.filter {
+        let base = query.isEmpty ? library.tracks : library.tracks.filter {
             $0.title.localizedCaseInsensitiveContains(query)
                 || $0.artist.localizedCaseInsensitiveContains(query)
                 || $0.album.localizedCaseInsensitiveContains(query)
+        }
+        switch sort {
+        case .title:
+            return base
+        case .artist:
+            return base.sorted { $0.displayArtist.localizedCaseInsensitiveCompare($1.displayArtist) == .orderedAscending }
+        case .added:
+            return base.sorted { $0.addedAt > $1.addedAt }
+        case .plays:
+            return base.sorted { (library.playCounts[$0.relativePath] ?? 0) > (library.playCounts[$1.relativePath] ?? 0) }
         }
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                if library.tracks.isEmpty && !library.isScanning {
-                    emptyLibrary
-                } else if !searchText.isEmpty {
-                    searchResults
-                } else {
-                    content
+            List {
+                ChipBar(items: LibSection.allCases, selection: $section) { $0.rawValue }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 10, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
+                switch section {
+                case .playlists: playlists
+                case .songs: songs
+                case .artists: groups(library.artists, kind: .artist)
+                case .albums: groups(library.albums, kind: .album)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .boxScreenBackground()
             .navigationTitle("Kitaplık")
-            .searchable(text: $searchText, prompt: "Şarkı, sanatçı veya albüm")
+            .searchable(text: $searchText, prompt: "Kitaplığında ara")
+            .onChange(of: searchText) { text in
+                if !text.isEmpty && section == .playlists { section = .songs }
+            }
             .refreshable { await library.refresh() }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Image("BoxLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 30, height: 30)
-                        .blendMode(.screen)
-                        .shadow(color: .neon.opacity(0.6), radius: 6)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     if library.isScanning {
-                        ProgressView().tint(.neon)
+                        ProgressView().tint(.white)
                     }
+                    if section == .songs {
+                        Menu {
+                            Picker("Sırala", selection: $sort) {
+                                ForEach(TrackSort.allCases) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                        }
+                    }
+                    AccountButton()
                 }
             }
-            .navigationDestination(for: LibraryRoute.self) { route in
-                switch route {
-                case .playlist(let id):
-                    PlaylistDetailView(source: .playlist(id))
-                case .favorites:
-                    PlaylistDetailView(source: .favorites)
-                case .allSongs:
-                    AllSongsView()
-                }
+            .navigationDestination(for: HomeRoute.self) { route in
+                HomeRouteView(route: route)
             }
             .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
                 TextField("Liste adı", text: $newPlaylistName)
                 Button("Oluştur") {
                     let playlist = library.createPlaylist(name: newPlaylistName.trimmingCharacters(in: .whitespaces))
                     newPlaylistName = ""
-                    path.append(LibraryRoute.playlist(playlist.id))
+                    path.append(HomeRoute.playlist(playlist.id))
                 }
                 Button("Vazgeç", role: .cancel) { newPlaylistName = "" }
             }
         }
     }
 
-    // MARK: - Bölümler
+    // MARK: Bölümler
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            quickActions
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+    @ViewBuilder
+    private var playlists: some View {
+        Button {
+            showNewPlaylist = true
+        } label: {
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay(Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundColor(.white))
+                Text("Yeni çalma listesi")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                Spacer()
+            }
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
 
-            if !library.recentlyAdded.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Son eklenenler")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .top, spacing: 14) {
-                            ForEach(library.recentlyAdded) { track in
-                                RecentCard(track: track)
-                                    .onTapGesture {
-                                        player.play(library.recentlyAdded, startAt: library.recentlyAdded.firstIndex(of: track) ?? 0)
-                                    }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
+        playlistRow(title: "Beğenilenler", subtitle: "Otomatik liste • \(library.favoriteTracks.count) şarkı", route: .favorites) {
+            ZStack {
+                LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "heart.fill").foregroundColor(.white)
+            }
+        }
+
+        if !library.downloadedTracks.isEmpty {
+            playlistRow(title: "İndirilenler", subtitle: "Otomatik liste • \(library.downloadedTracks.count) şarkı", route: .downloads) {
+                PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 56, cornerRadius: 0)
+            }
+        }
+
+        if !library.recentlyPlayed.isEmpty {
+            playlistRow(title: "Son çalınanlar", subtitle: "Otomatik liste • \(library.recentlyPlayed.count) şarkı", route: .recent) {
+                PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
+            }
+        }
+
+        ForEach(library.playlists) { playlist in
+            let tracks = library.tracks(for: playlist)
+            playlistRow(title: playlist.name, subtitle: "Liste • \(tracks.count) şarkı", route: .playlist(playlist.id)) {
+                PlaylistCover(tracks: tracks, icon: "music.note.list", size: 56, cornerRadius: 0)
+            }
+            .swipeActions {
+                Button(role: .destructive) {
+                    library.deletePlaylist(playlist.id)
+                } label: {
+                    Label("Sil", systemImage: "trash")
                 }
             }
-
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Çalma listeleri", action: { showNewPlaylist = true }, actionTitle: "Yeni")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 14) {
-                        PlaylistCard(
-                            title: "Beğenilenler",
-                            subtitle: "\(library.favoriteTracks.count) şarkı",
-                            tracks: library.favoriteTracks,
-                            icon: "heart.fill"
-                        )
-                        .onTapGesture { path.append(LibraryRoute.favorites) }
-
-                        ForEach(library.playlists) { playlist in
-                            let tracks = library.tracks(for: playlist)
-                            PlaylistCard(
-                                title: playlist.name,
-                                subtitle: "\(tracks.count) şarkı",
-                                tracks: tracks,
-                                icon: "music.note.list"
-                            )
-                            .onTapGesture { path.append(LibraryRoute.playlist(playlist.id)) }
-                        }
-
-                        Button {
-                            showNewPlaylist = true
-                        } label: {
-                            VStack(spacing: 10) {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .strokeBorder(Color.neon.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-                                    .frame(width: 140, height: 140)
-                                    .overlay(
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 30, weight: .semibold))
-                                            .foregroundColor(.neon)
-                                    )
-                                Text("Yeni liste")
-                                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "Şarkılar", action: { path.append(LibraryRoute.allSongs) }, actionTitle: "Tümü (\(library.tracks.count))")
-
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(library.tracks.prefix(20))) { track in
-                        TrackRow(track: track)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .onTapGesture {
-                                player.play(library.tracks, startAt: library.tracks.firstIndex(of: track) ?? 0)
-                            }
-                    }
-                }
-            }
-            .padding(.bottom, 20)
         }
     }
 
-    private var quickActions: some View {
-        HStack(spacing: 12) {
-            Button {
-                player.play(library.tracks, startAt: 0)
-            } label: {
-                Label("Tümünü çal", systemImage: "play.fill")
-            }
-            .buttonStyle(NeonButtonStyle())
-
-            Button {
-                player.play(library.tracks, startAt: 0, shuffled: true)
-            } label: {
-                Label("Karıştır", systemImage: "shuffle")
-            }
-            .buttonStyle(NeonButtonStyle(filled: false))
-        }
-        .disabled(library.tracks.isEmpty)
-    }
-
-    private var searchResults: some View {
-        LazyVStack(spacing: 0) {
-            if filtered.isEmpty {
-                EmptyStateView(icon: "magnifyingglass", title: "Sonuç yok", message: "\"\(searchText)\" ile eşleşen şarkı bulunamadı.")
-            }
-            ForEach(filtered) { track in
-                TrackRow(track: track)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .onTapGesture {
-                        player.play(filtered, startAt: filtered.firstIndex(of: track) ?? 0)
-                    }
+    private func playlistRow<Cover: View>(title: String, subtitle: String, route: HomeRoute, @ViewBuilder cover: () -> Cover) -> some View {
+        NavigationLink(value: route) {
+            HStack(spacing: 14) {
+                cover()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundColor(.boxSecondaryText)
+                        .lineLimit(1)
+                }
             }
         }
-        .padding(.top, 8)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
-    private var emptyLibrary: some View {
-        VStack(spacing: 18) {
-            Image("BoxLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 140, height: 140)
-                .blendMode(.screen)
-                .shadow(color: .neon.opacity(0.7), radius: 20)
-                .padding(.top, 60)
+    @ViewBuilder
+    private var songs: some View {
+        let tracks = sortedTracks
 
-            Text("Kitaplığın boş")
-                .font(.system(.title2, design: .rounded).weight(.bold))
+        if tracks.isEmpty {
+            EmptyStateView(
+                icon: searchText.isEmpty ? "music.note" : "magnifyingglass",
+                title: searchText.isEmpty ? "Henüz şarkı yok" : "Sonuç yok",
+                message: searchText.isEmpty ? "Dosyalar sekmesinden müzik ekle." : "\"\(searchText)\" ile eşleşen şarkı bulunamadı."
+            )
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        } else {
+            HStack(spacing: 10) {
+                Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                    .buttonStyle(PrimaryButtonStyle())
+                Button { player.play(tracks, startAt: 0) } label: { Label("Çal", systemImage: "play.fill") }
+                    .buttonStyle(PrimaryButtonStyle(filled: false))
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
 
-            Text("Müziklerini Dosyalar sekmesinden içe aktar, bilgisayardan Finder/iTunes ile at ya da başka bir uygulamadan \"Box ile aç\" de.")
-                .font(.subheadline)
+            Text("\(tracks.count) şarkı • \(Formatters.bytes(library.totalSize))")
+                .font(.footnote)
                 .foregroundColor(.boxSecondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-private struct RecentCard: View {
-    let track: Track
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ArtworkView(url: track.url, size: 140, cornerRadius: 14)
-            Text(track.title)
-                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .lineLimit(1)
-            Text(track.displayArtist)
-                .font(.caption)
-                .foregroundColor(.boxSecondaryText)
-                .lineLimit(1)
-        }
-        .frame(width: 140)
-    }
-}
-
-struct PlaylistCard: View {
-    let title: String
-    let subtitle: String
-    let tracks: [Track]
-    let icon: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PlaylistCover(tracks: tracks, icon: icon, size: 140)
-            Text(title)
-                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundColor(.boxSecondaryText)
-        }
-        .frame(width: 140)
-    }
-}
-
-/// İlk dört şarkının kapağından mozaik, yoksa ikon.
-struct PlaylistCover: View {
-    let tracks: [Track]
-    let icon: String
-    let size: CGFloat
-
-    var body: some View {
-        let covers = Array(tracks.prefix(4))
-
-        ZStack {
-            if covers.count >= 4 {
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        ArtworkView(url: covers[0].url, size: size / 2, cornerRadius: 0)
-                        ArtworkView(url: covers[1].url, size: size / 2, cornerRadius: 0)
-                    }
-                    HStack(spacing: 0) {
-                        ArtworkView(url: covers[2].url, size: size / 2, cornerRadius: 0)
-                        ArtworkView(url: covers[3].url, size: size / 2, cornerRadius: 0)
-                    }
-                }
-            } else if let first = covers.first {
-                ArtworkView(url: first.url, size: size, cornerRadius: 0)
-            } else {
-                LinearGradient(colors: [Color.neonDim, Color.boxCard], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: icon)
-                    .font(.system(size: size * 0.3, weight: .semibold))
-                    .foregroundColor(.neon)
-                    .shadow(color: .neon.opacity(0.7), radius: 10)
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
-struct AllSongsView: View {
-    @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var player: PlayerManager
-    @AppStorage("box.sort") private var sort: TrackSort = .title
-
-    private var sorted: [Track] {
-        switch sort {
-        case .title:
-            return library.tracks
-        case .artist:
-            return library.tracks.sorted {
-                $0.displayArtist.localizedCaseInsensitiveCompare($1.displayArtist) == .orderedAscending
-            }
-        case .added:
-            return library.tracks.sorted { $0.addedAt > $1.addedAt }
-        }
-    }
-
-    var body: some View {
-        List {
-            ForEach(sorted) { track in
+            ForEach(tracks) { track in
                 TrackRow(track: track)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 8))
                     .onTapGesture {
-                        player.play(sorted, startAt: sorted.firstIndex(of: track) ?? 0)
+                        player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { player.playNext(track) } label: { Label("Sıradaki", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                            .tint(.accentDeep)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button { player.addToQueue(track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+                            .tint(.gray)
                     }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .boxScreenBackground()
-        .navigationTitle("Tüm şarkılar")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("Sırala", selection: $sort) {
-                        ForEach(TrackSort.allCases) { option in
-                            Text(option.rawValue).tag(option)
-                        }
+    }
+
+    @ViewBuilder
+    private func groups(_ groups: [LibraryStore.TrackGroup], kind: GroupKind) -> some View {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        let shown = query.isEmpty ? groups : groups.filter { $0.name.localizedCaseInsensitiveContains(query) }
+
+        if shown.isEmpty {
+            EmptyStateView(
+                icon: kind == .artist ? "music.mic" : "square.stack",
+                title: kind == .artist ? "Sanatçı yok" : "Albüm yok",
+                message: kind == .album ? "Dosyalarında albüm bilgisi olan şarkılar burada gruplanır." : "Şarkı ekledikçe sanatçılar burada görünür."
+            )
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+
+        ForEach(shown) { group in
+            NavigationLink(value: HomeRoute.group(kind: kind, name: group.name)) {
+                HStack(spacing: 14) {
+                    ArtworkView(url: group.tracks.first?.url, size: 56, cornerRadius: kind == .artist ? 28 : 6)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(group.name)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        Text("\(group.tracks.count) şarkı • \(Formatters.longDuration(group.duration))")
+                            .font(.system(size: 13))
+                            .foregroundColor(.boxSecondaryText)
                     }
-                    Divider()
-                    Button {
-                        player.play(sorted, startAt: 0, shuffled: true)
-                    } label: {
-                        Label("Karıştırarak çal", systemImage: "shuffle")
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle")
                 }
             }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
 }

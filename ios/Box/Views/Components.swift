@@ -1,39 +1,62 @@
 import SwiftUI
 
-/// Şarkı kapağı; dosyada kapak yoksa neon kutulu bir yer tutucu gösterir.
+/// Şarkı kapağı; dosyada kapak yoksa sade bir yer tutucu gösterir.
 struct ArtworkView: View {
     let url: URL?
     var size: CGFloat
-    var cornerRadius: CGFloat = 8
+    var cornerRadius: CGFloat = 6
+
+    var body: some View {
+        ArtworkFill(url: url, maxSide: size * UIScreen.main.scale)
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+/// Bulunduğu çerçeveyi dolduran kapak (boyut dışarıdan verilir).
+struct ArtworkFill: View {
+    let url: URL?
+    var maxSide: CGFloat = 900
 
     @State private var image: UIImage?
+    @State private var loadedURL: URL?
 
     var body: some View {
         ZStack {
-            if let image {
+            if let image, loadedURL == url {
                 Image(uiImage: image)
                     .resizable()
+                    .interpolation(.high)
                     .scaledToFill()
+                    .transition(.opacity)
             } else {
-                LinearGradient(
-                    colors: [Color.boxCardHighlight, Color.boxCard],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Image(systemName: "music.note")
-                    .font(.system(size: size * 0.36, weight: .semibold))
-                    .foregroundColor(.neon.opacity(0.85))
-                    .shadow(color: .neon.opacity(0.6), radius: 6)
+                ArtworkPlaceholder()
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .clipped()
         .task(id: url) {
             guard let url else {
                 image = nil
                 return
             }
-            image = await ArtworkCache.shared.image(for: url)
+            let loaded = await ArtworkCache.shared.image(for: url, maxSide: maxSide)
+            withAnimation(.easeOut(duration: 0.18)) {
+                image = loaded
+                loadedURL = url
+            }
+        }
+    }
+}
+
+struct ArtworkPlaceholder: View {
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                LinearGradient(colors: [Color.boxSurface2, Color.boxSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "music.note")
+                    .font(.system(size: max(10, proxy.size.width * 0.32), weight: .medium))
+                    .foregroundColor(.white.opacity(0.28))
+            }
         }
     }
 }
@@ -41,20 +64,21 @@ struct ArtworkView: View {
 /// Çalan şarkıyı belirten küçük animasyonlu çubuklar.
 struct PlayingBars: View {
     var animating: Bool
+    var color: Color = .white
     @State private var phase = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(0..<3, id: \.self) { index in
                 Capsule()
-                    .fill(Color.neon)
+                    .fill(color)
                     .frame(width: 3, height: barHeight(index))
             }
         }
-        .frame(width: 14, height: 14, alignment: .bottom)
+        .frame(width: 15, height: 14, alignment: .bottom)
         .onAppear { phase = true }
         .animation(
-            animating ? .easeInOut(duration: 0.45).repeatForever(autoreverses: true) : .default,
+            animating ? .easeInOut(duration: 0.42).repeatForever(autoreverses: true) : .default,
             value: phase
         )
     }
@@ -70,44 +94,47 @@ struct PlayingBars: View {
 struct TrackRow: View {
     let track: Track
     var showMenu = true
+    var showArtwork = true
     var extraMenu: AnyView? = nil
 
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
 
-    var isCurrent: Bool { player.current?.id == track.id }
+    private var isCurrent: Bool { player.current?.id == track.id }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                ArtworkView(url: track.url, size: 50, cornerRadius: 8)
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.black.opacity(0.45))
-                        .frame(width: 50, height: 50)
-                    PlayingBars(animating: player.isPlaying)
+        HStack(spacing: 14) {
+            if showArtwork {
+                ZStack {
+                    ArtworkView(url: track.url, size: 52, cornerRadius: 5)
+                    if isCurrent {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.black.opacity(0.5))
+                            .frame(width: 52, height: 52)
+                        PlayingBars(animating: player.isPlaying)
+                    }
                 }
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(track.title)
-                    .font(.system(.body, design: .rounded).weight(.semibold))
-                    .foregroundColor(isCurrent ? .neon : .white)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(isCurrent ? .accent : .white)
                     .lineLimit(1)
 
-                Text("\(track.displayArtist) • \(Formatters.time(track.duration))")
-                    .font(.subheadline)
-                    .foregroundColor(.boxSecondaryText)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    if library.isFavorite(track) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.accent)
+                    }
+                    Text(track.displayArtist + (track.duration > 0 ? " • " + Formatters.time(track.duration) : ""))
+                        .lineLimit(1)
+                }
+                .font(.system(size: 14))
+                .foregroundColor(.boxSecondaryText)
             }
-
-            Spacer(minLength: 4)
-
-            if library.isFavorite(track) {
-                Image(systemName: "heart.fill")
-                    .font(.caption)
-                    .foregroundColor(.neon)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if showMenu {
                 TrackMenu(track: track, extra: extraMenu)
@@ -120,6 +147,7 @@ struct TrackRow: View {
 struct TrackMenu: View {
     let track: Track
     var extra: AnyView? = nil
+    var iconColor: Color = .boxSecondaryText
 
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
@@ -131,7 +159,7 @@ struct TrackMenu: View {
             Button {
                 player.playNext(track)
             } label: {
-                Label("Sıradaki olarak çal", systemImage: "text.insert")
+                Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward")
             }
 
             Button {
@@ -140,29 +168,33 @@ struct TrackMenu: View {
                 Label("Sıraya ekle", systemImage: "text.append")
             }
 
-            Menu {
-                ForEach(library.playlists) { playlist in
-                    Button(playlist.name) {
-                        library.add([track], to: playlist.id)
-                    }
-                }
-                Divider()
-                Button {
-                    showNewPlaylist = true
-                } label: {
-                    Label("Yeni liste…", systemImage: "plus")
-                }
-            } label: {
-                Label("Listeye ekle", systemImage: "music.note.list")
-            }
+            Divider()
 
             Button {
                 library.toggleFavorite(track)
+                Haptics.tap()
             } label: {
                 Label(
                     library.isFavorite(track) ? "Beğenilenlerden çıkar" : "Beğen",
                     systemImage: library.isFavorite(track) ? "heart.slash" : "heart"
                 )
+            }
+
+            Menu {
+                Button {
+                    showNewPlaylist = true
+                } label: {
+                    Label("Yeni liste…", systemImage: "plus")
+                }
+                if !library.playlists.isEmpty { Divider() }
+                ForEach(library.playlists) { playlist in
+                    Button(playlist.name) {
+                        library.add([track], to: playlist.id)
+                        Haptics.success()
+                    }
+                }
+            } label: {
+                Label("Listeye ekle", systemImage: "text.badge.plus")
             }
 
             ShareLink(item: track.url) {
@@ -175,9 +207,10 @@ struct TrackMenu: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundColor(.boxSecondaryText)
-                .frame(width: 34, height: 40)
+                .rotationEffect(.degrees(90))
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(iconColor)
+                .frame(width: 36, height: 44)
                 .contentShape(Rectangle())
         }
         .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
@@ -186,6 +219,7 @@ struct TrackMenu: View {
                 let playlist = library.createPlaylist(name: newPlaylistName.trimmingCharacters(in: .whitespaces))
                 library.add([track], to: playlist.id)
                 newPlaylistName = ""
+                Haptics.success()
             }
             Button("Vazgeç", role: .cancel) { newPlaylistName = "" }
         }
@@ -194,17 +228,33 @@ struct TrackMenu: View {
 
 struct SectionHeader: View {
     let title: String
+    var subtitle: String? = nil
     var action: (() -> Void)? = nil
     var actionTitle = "Tümü"
 
     var body: some View {
-        HStack {
-            Text(title)
-                .font(.system(.title2, design: .rounded).weight(.bold))
+        HStack(alignment: .lastTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.boxSecondaryText)
+                }
+                Text(title)
+                    .font(.system(size: 23, weight: .bold))
+                    .foregroundColor(.white)
+            }
             Spacer()
             if let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(ChipButtonStyle())
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                }
+                .buttonStyle(PressableStyle())
             }
         }
         .padding(.horizontal, 16)
@@ -215,21 +265,121 @@ struct EmptyStateView: View {
     let icon: String
     let title: String
     let message: String
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 46, weight: .light))
-                .foregroundColor(.neon)
-                .shadow(color: .neon.opacity(0.7), radius: 12)
+                .font(.system(size: 40, weight: .light))
+                .foregroundColor(.white.opacity(0.55))
+                .padding(.bottom, 4)
             Text(title)
-                .font(.system(.title3, design: .rounded).weight(.bold))
+                .font(.system(size: 19, weight: .bold))
             Text(message)
                 .font(.subheadline)
                 .foregroundColor(.boxSecondaryText)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 220)
+                    .padding(.top, 8)
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// Yatay listelerdeki büyük kapak kartı.
+struct CoverCard<Cover: View>: View {
+    let title: String
+    let subtitle: String
+    var size: CGFloat = 150
+    let cover: Cover
+
+    init(title: String, subtitle: String, size: CGFloat = 150, @ViewBuilder cover: () -> Cover) {
+        self.title = title
+        self.subtitle = subtitle
+        self.size = size
+        self.cover = cover()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            cover
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.system(size: 13))
+                .foregroundColor(.boxSecondaryText)
+                .lineLimit(1)
+        }
+        .frame(width: size, alignment: .leading)
+    }
+}
+
+/// İlk dört şarkının kapağından mozaik, yoksa ikon.
+struct PlaylistCover: View {
+    let tracks: [Track]
+    let icon: String
+    let size: CGFloat
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        let covers = Array(tracks.prefix(4))
+
+        ZStack {
+            if covers.count >= 4 {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        ArtworkView(url: covers[0].url, size: size / 2, cornerRadius: 0)
+                        ArtworkView(url: covers[1].url, size: size / 2, cornerRadius: 0)
+                    }
+                    HStack(spacing: 0) {
+                        ArtworkView(url: covers[2].url, size: size / 2, cornerRadius: 0)
+                        ArtworkView(url: covers[3].url, size: size / 2, cornerRadius: 0)
+                    }
+                }
+            } else if let first = covers.first {
+                ArtworkView(url: first.url, size: size, cornerRadius: 0)
+            } else {
+                LinearGradient(colors: [Color.accentDeep.opacity(0.7), Color.boxSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: icon)
+                    .font(.system(size: size * 0.3, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+/// Üstte yatay kaydırılan filtre çipleri.
+struct ChipBar<Item: Hashable>: View {
+    let items: [Item]
+    @Binding var selection: Item
+    let title: (Item) -> String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.self) { item in
+                    Button(title(item)) {
+                        withAnimation(.easeOut(duration: 0.18)) { selection = item }
+                        Haptics.tap()
+                    }
+                    .buttonStyle(ChipButtonStyle(selected: selection == item))
+                }
+            }
+            .padding(.horizontal, 16)
+        }
     }
 }

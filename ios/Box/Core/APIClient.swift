@@ -3,6 +3,8 @@ import Foundation
 struct APIError: LocalizedError {
     let message: String
     let status: Int
+    var maintenance = false
+    var updateRequired = false
 
     var errorDescription: String? { message }
 }
@@ -10,6 +12,13 @@ struct APIError: LocalizedError {
 private struct ErrorEnvelope: Decodable {
     let ok: Bool?
     let error: String?
+    let maintenance: Bool?
+    let updateRequired: Bool?
+}
+
+extension Notification.Name {
+    /// Sunucu bakım ya da zorunlu güncelleme bildirdiğinde yayınlanır.
+    static let boxServerState = Notification.Name("box.serverState")
 }
 
 final class APIClient {
@@ -22,28 +31,31 @@ final class APIClient {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.waitsForConnectivity = false
         session = URLSession(configuration: configuration)
 
         decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
+    /// `path` örnekleri: "auth/login", "me", "search".
     func send<T: Decodable>(
-        _ action: String,
+        _ path: String,
         method: String = "GET",
         query: [String: String] = [:],
         body: [String: Any]? = nil,
         token: String? = nil,
         as type: T.Type = T.self
     ) async throws -> T {
-        var components = URLComponents(url: AppConfig.apiBase, resolvingAgainstBaseURL: false)!
-        var items = [URLQueryItem(name: "action", value: action)]
-        items.append(contentsOf: query.map { URLQueryItem(name: $0.key, value: $0.value) })
-        components.queryItems = items
+        var components = URLComponents(url: AppConfig.apiBase.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
 
         var request = URLRequest(url: components.url!)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(AppConfig.shortVersion, forHTTPHeaderField: "X-Box-Version")
 
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -68,7 +80,18 @@ final class APIClient {
 
         guard (200..<300).contains(status) else {
             let envelope = try? decoder.decode(ErrorEnvelope.self, from: data)
-            throw APIError(message: envelope?.error ?? "Beklenmeyen bir hata oluştu (\(status)).", status: status)
+            let error = APIError(
+                message: envelope?.error ?? "Beklenmeyen bir hata oluştu (\(status)).",
+                status: status,
+                maintenance: envelope?.maintenance == true,
+                updateRequired: envelope?.updateRequired == true
+            )
+            if error.maintenance || error.updateRequired {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .boxServerState, object: error)
+                }
+            }
+            throw error
         }
 
         do {

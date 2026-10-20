@@ -6,21 +6,39 @@ struct BoxApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var player = PlayerManager()
     @StateObject private var downloads = DownloadManager()
+    @StateObject private var history = SearchHistory()
+    @StateObject private var server = ServerState()
+    @StateObject private var router = AppRouter()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(red: 0.04, green: 0.05, blue: 0.055, alpha: 0.96)
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
+        let tab = UITabBarAppearance()
+        tab.configureWithOpaqueBackground()
+        tab.backgroundColor = UIColor(red: 0.04, green: 0.04, blue: 0.05, alpha: 1)
+        tab.shadowColor = UIColor.white.withAlphaComponent(0.06)
+        let item = UITabBarItemAppearance()
+        item.normal.iconColor = UIColor(white: 0.62, alpha: 1)
+        item.normal.titleTextAttributes = [.foregroundColor: UIColor(white: 0.62, alpha: 1), .font: UIFont.systemFont(ofSize: 10, weight: .medium)]
+        item.selected.iconColor = .white
+        item.selected.titleTextAttributes = [.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 10, weight: .semibold)]
+        tab.stackedLayoutAppearance = item
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
 
         let nav = UINavigationBarAppearance()
-        nav.configureWithTransparentBackground()
-        nav.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
-        nav.titleTextAttributes = [.foregroundColor: UIColor.white]
+        nav.configureWithOpaqueBackground()
+        nav.backgroundColor = UIColor(red: 0.012, green: 0.012, blue: 0.016, alpha: 0.96)
+        nav.shadowColor = .clear
+        nav.largeTitleTextAttributes = [.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 32, weight: .bold)]
+        nav.titleTextAttributes = [.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 17, weight: .semibold)]
         UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
+        let edge = UINavigationBarAppearance()
+        edge.configureWithTransparentBackground()
+        edge.largeTitleTextAttributes = nav.largeTitleTextAttributes
+        edge.titleTextAttributes = nav.titleTextAttributes
+        UINavigationBar.appearance().scrollEdgeAppearance = edge
+        UINavigationBar.appearance().tintColor = .white
     }
 
     var body: some Scene {
@@ -30,14 +48,21 @@ struct BoxApp: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(downloads)
+                .environmentObject(history)
+                .environmentObject(server)
+                .environmentObject(router)
                 .preferredColorScheme(.dark)
-                .tint(.neon)
+                .tint(.accent)
                 .task {
                     downloads.attach(library: library, auth: auth)
+                    player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
                     await library.refresh()
+                    player.restoreIfNeeded(tracks: library.tracks)
+                    await server.refresh()
                     await auth.refresh()
                 }
                 .onOpenURL { url in
+                    guard url.isFileURL else { return }
                     Task {
                         let inbox = library.documents.appendingPathComponent(AppConfig.inboxFolderName, isDirectory: true)
                         await library.importFiles([url], into: inbox)
@@ -47,6 +72,7 @@ struct BoxApp: App {
                     if phase == .active {
                         Task {
                             await library.refresh()
+                            await server.refresh()
                             await auth.refresh()
                         }
                     }
@@ -56,4 +82,11 @@ struct BoxApp: App {
                 }
         }
     }
+}
+
+/// Sekmeler ve uygulama genelindeki sayfalar.
+@MainActor
+final class AppRouter: ObservableObject {
+    @Published var tab: BoxTab = .home
+    @Published var showAccount = false
 }

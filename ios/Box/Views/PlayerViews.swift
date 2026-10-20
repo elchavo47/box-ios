@@ -1,346 +1,682 @@
 import AVKit
+import MediaPlayer
 import SwiftUI
+
+// MARK: - Mini oynatıcı
 
 struct MiniPlayerBar: View {
     @EnvironmentObject private var player: PlayerManager
+    @State private var dragX: CGFloat = 0
 
     var body: some View {
         if let track = player.current {
             VStack(spacing: 0) {
-                GeometryReader { proxy in
-                    let progress = player.duration > 0 ? min(player.currentTime / player.duration, 1) : 0
-                    ZStack(alignment: .leading) {
-                        Rectangle().fill(Color.white.opacity(0.08))
-                        Rectangle()
-                            .fill(Color.neon)
-                            .frame(width: proxy.size.width * progress)
-                            .shadow(color: .neon, radius: 3)
-                    }
-                }
-                .frame(height: 2)
-
                 HStack(spacing: 12) {
-                    ArtworkView(url: track.url, size: 44, cornerRadius: 6)
+                    ArtworkView(url: track.url, size: 44, cornerRadius: 5)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title)
-                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
                             .lineLimit(1)
                         Text(track.displayArtist)
-                            .font(.caption)
+                            .font(.system(size: 13))
                             .foregroundColor(.boxSecondaryText)
                             .lineLimit(1)
                     }
-
-                    Spacer(minLength: 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .offset(x: dragX)
+                    .opacity(1 - min(abs(dragX) / 160, 0.6))
 
                     Button {
                         player.togglePlayPause()
+                        Haptics.tap()
                     } label: {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .frame(width: 40, height: 40)
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
+                    .accessibilityLabel(player.isPlaying ? "Duraklat" : "Çal")
 
                     Button {
                         player.next()
                     } label: {
                         Image(systemName: "forward.fill")
-                            .font(.system(size: 18, weight: .bold))
-                            .frame(width: 36, height: 40)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 38, height: 44)
                             .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("Sonraki")
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.leading, 10)
+                .padding(.trailing, 6)
+                .padding(.vertical, 7)
+
+                MiniProgress(clock: player.clock)
             }
             .background(
                 ZStack {
-                    Color.boxCard
-                    LinearGradient(colors: [Color.neon.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
+                    Color.boxSurface
+                    if let color = player.artworkColor {
+                        Color(color).opacity(0.35)
+                    }
                 }
+                .animation(.easeOut(duration: 0.4), value: player.artworkColor)
             )
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 0.5)
+            }
             .contentShape(Rectangle())
             .onTapGesture {
                 player.showFullPlayer = true
             }
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        if abs(value.translation.width) > abs(value.translation.height) {
+                            dragX = value.translation.width * 0.6
+                        } else if value.translation.height < -30 {
+                            player.showFullPlayer = true
+                        }
+                    }
+                    .onEnded { value in
+                        if value.translation.width < -70 { player.next(); Haptics.tap() }
+                        else if value.translation.width > 70 { player.previous(); Haptics.tap() }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragX = 0 }
+                    }
+            )
         }
     }
 }
+
+private struct MiniProgress: View {
+    @ObservedObject var clock: PlaybackClock
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.white.opacity(0.12))
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: proxy.size.width * clock.progress)
+            }
+        }
+        .frame(height: 2)
+    }
+}
+
+// MARK: - Tam ekran oynatıcı
 
 struct FullPlayerView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var scrubbing = false
-    @State private var scrubValue: Double = 0
     @State private var showQueue = false
+    @State private var showSleep = false
+    @State private var dragY: CGFloat = 0
+    @State private var swipeX: CGFloat = 0
 
     var body: some View {
-        ZStack {
-            background
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let artSide = max(160, min(width - 48, proxy.size.height * 0.44))
 
-            if let track = player.current {
-                VStack(spacing: 0) {
-                    header(track)
+            ZStack {
+                background
 
-                    Spacer(minLength: 12)
+                if let track = player.current {
+                    VStack(spacing: 0) {
+                        header(track)
+                            .frame(width: width)
+                            .contentShape(Rectangle())
+                            .gesture(dismissDrag)
 
-                    artwork(track)
+                        Spacer(minLength: 8)
 
-                    Spacer(minLength: 16)
+                        artwork(track, side: artSide)
+                            .frame(width: width)
 
-                    titleRow(track)
-                        .padding(.horizontal, 28)
+                        Spacer(minLength: 8)
 
-                    scrubber
-                        .padding(.horizontal, 28)
-                        .padding(.top, 18)
-
-                    controls
-                        .padding(.top, 14)
-                        .padding(.horizontal, 22)
-
-                    bottomBar
-                        .padding(.horizontal, 32)
-                        .padding(.top, 18)
-                        .padding(.bottom, 24)
+                        VStack(spacing: 18) {
+                            titleRow(track)
+                            Scrubber(clock: player.clock) { player.seek(to: $0) }
+                            controls
+                            VolumeRow()
+                                .frame(height: 34)
+                            bottomBar
+                        }
+                        .padding(.horizontal, 24)
+                        .frame(width: width)
+                        .padding(.bottom, max(12, proxy.safeAreaInsets.bottom > 0 ? 4 : 16))
+                    }
+                    .frame(width: width, height: proxy.size.height)
+                } else {
+                    EmptyStateView(icon: "music.note", title: "Çalan bir şey yok", message: "Kitaplıktan bir şarkı seç.")
                 }
-            } else {
-                EmptyStateView(icon: "music.note", title: "Çalan bir şey yok", message: "Kitaplıktan bir şarkı seç.")
             }
+            .frame(width: width, height: proxy.size.height)
         }
-        .presentationDragIndicator(.visible)
+        .offset(y: dragY)
+        .background(Color.boxBackground.opacity(dragY > 0 ? 0 : 1).ignoresSafeArea())
         .sheet(isPresented: $showQueue) {
             QueueView()
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showSleep) {
+            SleepTimerSheet()
+                .presentationDetents([.height(470)])
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: player.current) { newValue in
             if newValue == nil { dismiss() }
         }
+        .statusBarHidden(false)
     }
+
+    // MARK: Parçalar
 
     private var background: some View {
         ZStack {
             Color.boxBackground
-
-            if let image = player.currentArtwork {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .blur(radius: 60)
-                    .opacity(0.55)
-                    .clipped()
-            }
-
             LinearGradient(
-                colors: [Color.black.opacity(0.2), Color.boxBackground.opacity(0.92), Color.boxBackground],
+                colors: [
+                    Color(player.artworkColor ?? UIColor(red: 0.12, green: 0.2, blue: 0.17, alpha: 1)),
+                    Color(player.artworkColor ?? UIColor(red: 0.12, green: 0.2, blue: 0.17, alpha: 1)).opacity(0.55),
+                    Color.boxBackground,
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .animation(.easeInOut(duration: 0.6), value: player.artworkColor)
         }
         .ignoresSafeArea()
     }
 
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                dragY = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                if value.translation.height > 140 || value.predictedEndTranslation.height > 320 {
+                    dismiss()
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragY = 0 }
+                }
+            }
+    }
+
     private func header(_ track: Track) -> some View {
-        HStack {
+        HStack(spacing: 0) {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 20, weight: .semibold))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel("Kapat")
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Text("ŞİMDİ ÇALIYOR")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundColor(.boxSecondaryText)
-                Text(track.album.isEmpty ? "Box" : track.album)
-                    .font(.system(.footnote, design: .rounded).weight(.semibold))
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.4)
+                    .foregroundColor(.white.opacity(0.6))
+                Text(track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album)
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
             }
+            .frame(maxWidth: .infinity)
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            TrackMenu(track: track)
-                .frame(width: 44, height: 44)
+            TrackMenu(track: track, iconColor: .white)
+                .frame(width: 48, height: 48)
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
     }
 
-    private func artwork(_ track: Track) -> some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width - 56, proxy.size.height)
-            ArtworkView(url: track.url, size: side, cornerRadius: 18)
-                .shadow(color: Color.neon.opacity(player.isPlaying ? 0.35 : 0.1), radius: player.isPlaying ? 30 : 12)
-                .scaleEffect(player.isPlaying ? 1 : 0.88)
-                .animation(.spring(response: 0.45, dampingFraction: 0.72), value: player.isPlaying)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxHeight: 380)
+    private func artwork(_ track: Track, side: CGFloat) -> some View {
+        ArtworkView(url: track.url, size: side, cornerRadius: 10)
+            .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
+            .scaleEffect(player.isPlaying ? 1 : 0.9)
+            .animation(.spring(response: 0.45, dampingFraction: 0.78), value: player.isPlaying)
+            .offset(x: swipeX)
+            .opacity(1 - min(abs(swipeX) / 400, 0.5))
+            .id(track.id)
+            .transition(.opacity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        if abs(value.translation.width) > abs(value.translation.height) {
+                            swipeX = value.translation.width
+                        } else {
+                            dragY = max(0, value.translation.height)
+                        }
+                    }
+                    .onEnded { value in
+                        let horizontal = abs(value.translation.width) > abs(value.translation.height)
+                        if horizontal {
+                            if value.translation.width < -90 { player.next(); Haptics.tap() }
+                            else if value.translation.width > 90 { player.previous(); Haptics.tap() }
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 }
+                        } else if value.translation.height > 140 || value.predictedEndTranslation.height > 320 {
+                            dismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragY = 0 }
+                        }
+                    }
+            )
+            .onTapGesture(count: 2) {
+                if !library.isFavorite(track) { library.toggleFavorite(track); Haptics.success() }
+            }
     }
 
     private func titleRow(_ track: Track) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.title)
-                    .font(.system(.title2, design: .rounded).weight(.bold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                MarqueeText(text: track.title, font: .system(size: 23, weight: .bold))
+                    .frame(height: 30)
                 Text(track.displayArtist)
-                    .font(.system(.body, design: .rounded))
-                    .foregroundColor(.boxSecondaryText)
+                    .font(.system(size: 17))
+                    .foregroundColor(.white.opacity(0.66))
                     .lineLimit(1)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
                 library.toggleFavorite(track)
+                Haptics.tap()
             } label: {
                 Image(systemName: library.isFavorite(track) ? "heart.fill" : "heart")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(library.isFavorite(track) ? .neon : .white)
-                    .shadow(color: library.isFavorite(track) ? .neon.opacity(0.8) : .clear, radius: 8)
+                    .foregroundColor(library.isFavorite(track) ? .accent : .white)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel(library.isFavorite(track) ? "Beğenilerden çıkar" : "Beğen")
         }
         .foregroundColor(.white)
-    }
-
-    private var scrubber: some View {
-        let maxValue = max(player.duration, 1)
-
-        return VStack(spacing: 6) {
-            Slider(
-                value: Binding(
-                    get: { scrubbing ? scrubValue : min(player.currentTime, maxValue) },
-                    set: { scrubValue = $0 }
-                ),
-                in: 0...maxValue,
-                onEditingChanged: { editing in
-                    if editing {
-                        scrubValue = player.currentTime
-                        scrubbing = true
-                    } else {
-                        player.seek(to: scrubValue)
-                        scrubbing = false
-                    }
-                }
-            )
-            .tint(.neon)
-
-            HStack {
-                Text(Formatters.time(scrubbing ? scrubValue : player.currentTime))
-                Spacer()
-                Text("-" + Formatters.time(max(player.duration - (scrubbing ? scrubValue : player.currentTime), 0)))
-            }
-            .font(.system(.caption, design: .monospaced))
-            .foregroundColor(.boxSecondaryText)
-        }
     }
 
     private var controls: some View {
-        HStack {
-            Button {
-                player.toggleShuffle()
-            } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(player.isShuffled ? .neon : .white.opacity(0.7))
-                    .frame(width: 44, height: 44)
-            }
-
-            Spacer()
-
-            Button {
-                player.previous()
-            } label: {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 30, weight: .bold))
-                    .frame(width: 56, height: 56)
-            }
-
-            Spacer()
+        HStack(spacing: 0) {
+            controlButton("shuffle", size: 19, active: player.isShuffled) { player.toggleShuffle() }
+            Spacer(minLength: 0)
+            controlButton("backward.end.fill", size: 28) { player.previous() }
+            Spacer(minLength: 0)
 
             Button {
                 player.togglePlayPause()
+                Haptics.tap()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(Color.neon)
-                        .frame(width: 78, height: 78)
-                        .shadow(color: .neon.opacity(0.7), radius: player.isPlaying ? 18 : 8)
+                    Circle().fill(Color.white).frame(width: 74, height: 74)
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 32, weight: .black))
+                        .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.black)
-                        .offset(x: player.isPlaying ? 0 : 3)
+                        .offset(x: player.isPlaying ? 0 : 2)
                 }
             }
+            .buttonStyle(PressableStyle(scale: 0.92))
+            .accessibilityLabel(player.isPlaying ? "Duraklat" : "Çal")
 
-            Spacer()
-
-            Button {
-                player.next()
-            } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 30, weight: .bold))
-                    .frame(width: 56, height: 56)
-            }
-
-            Spacer()
-
-            Button {
-                player.cycleRepeat()
-            } label: {
-                Image(systemName: player.repeatMode.symbol)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(player.repeatMode == .off ? .white.opacity(0.7) : .neon)
-                    .frame(width: 44, height: 44)
-            }
+            Spacer(minLength: 0)
+            controlButton("forward.end.fill", size: 28) { player.next() }
+            Spacer(minLength: 0)
+            controlButton(player.repeatMode.symbol, size: 19, active: player.repeatMode != .off) { player.cycleRepeat() }
         }
         .foregroundColor(.white)
     }
 
+    private func controlButton(_ symbol: String, size: CGFloat, active: Bool? = nil, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            Haptics.tap()
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.system(size: size, weight: .semibold))
+                    .foregroundColor(active == true ? .accent : (active == false ? .white.opacity(0.75) : .white))
+                if active != nil {
+                    Circle().fill(active == true ? Color.accent : .clear).frame(width: 4, height: 4)
+                }
+            }
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle(scale: 0.88))
+    }
+
     private var bottomBar: some View {
-        HStack {
+        HStack(spacing: 0) {
             AirPlayButton()
                 .frame(width: 44, height: 44)
 
-            Spacer()
+            Spacer(minLength: 0)
+
+            Button {
+                showSleep = true
+            } label: {
+                SleepBadge()
+            }
+
+            Spacer(minLength: 0)
+
+            Menu {
+                Picker("Hız", selection: Binding(get: { player.playbackRate }, set: { player.setRate($0) })) {
+                    ForEach([Float(0.5), 0.75, 1, 1.25, 1.5, 2], id: \.self) { rate in
+                        Text(rateLabel(rate)).tag(rate)
+                    }
+                }
+            } label: {
+                Text(rateLabel(player.playbackRate))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(player.playbackRate == 1 ? .white.opacity(0.8) : .accent)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Çalma hızı")
+
+            Spacer(minLength: 0)
 
             Button {
                 showQueue = true
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
                     .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Sıra")
+        }
+    }
+
+    private func rateLabel(_ rate: Float) -> String {
+        rate == Float(Int(rate)) ? "\(Int(rate))x" : String(format: "%gx", rate)
+    }
+}
+
+/// Uyku zamanlayıcısı düğmesi: etkinse kalan süreyi gösterir.
+private struct SleepBadge: View {
+    @EnvironmentObject private var player: PlayerManager
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            HStack(spacing: 6) {
+                Image(systemName: player.sleepTimer.isActive ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 18, weight: .semibold))
+                if let remaining = player.sleepRemaining {
+                    Text(player.sleepTimer == .endOfTrack ? "Şarkı sonu" : Formatters.time(remaining))
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                }
+            }
+            .foregroundColor(player.sleepTimer.isActive ? .accent : .white.opacity(0.85))
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .accessibilityLabel("Uyku zamanlayıcısı")
+    }
+}
+
+// MARK: - İlerleme çubuğu
+
+struct Scrubber: View {
+    @ObservedObject var clock: PlaybackClock
+    let onSeek: (Double) -> Void
+
+    @State private var dragging = false
+    @State private var dragValue: Double = 0
+
+    private var shown: Double { dragging ? dragValue : clock.currentTime }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                let fraction = clock.duration > 0 ? min(max(shown / clock.duration, 0), 1) : 0
+
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.2))
+                        .frame(height: dragging ? 7 : 4)
+                    Capsule().fill(Color.white)
+                        .frame(width: max(0, width * fraction), height: dragging ? 7 : 4)
+                    Circle().fill(Color.white)
+                        .frame(width: dragging ? 18 : 12, height: dragging ? 18 : 12)
+                        .offset(x: width * fraction - (dragging ? 9 : 6))
+                }
+                .frame(height: 24)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard clock.duration > 0 else { return }
+                            if !dragging { Haptics.soft() }
+                            dragging = true
+                            dragValue = min(max(value.location.x / width, 0), 1) * clock.duration
+                        }
+                        .onEnded { _ in
+                            if dragging { onSeek(dragValue) }
+                            dragging = false
+                        }
+                )
+                .animation(.easeOut(duration: 0.15), value: dragging)
+            }
+            .frame(height: 24)
+
+            HStack {
+                Text(Formatters.time(shown))
+                Spacer()
+                Text("-" + Formatters.time(max(clock.duration - shown, 0)))
+            }
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .foregroundColor(.white.opacity(dragging ? 0.95 : 0.6))
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Konum")
+        .accessibilityValue(Formatters.time(shown))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onSeek(clock.currentTime + 10)
+            case .decrement: onSeek(clock.currentTime - 10)
+            @unknown default: break
             }
         }
     }
 }
 
+/// Sığmayan başlığı yavaşça kaydırır.
+struct MarqueeText: View {
+    let text: String
+    let font: Font
+
+    @State private var textWidth: CGFloat = 0
+    @State private var animate = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let overflow = textWidth > proxy.size.width + 1
+            let gap: CGFloat = 48
+
+            ZStack(alignment: .leading) {
+                HStack(spacing: gap) {
+                    label
+                    if overflow { label }
+                }
+                .fixedSize()
+                .offset(x: overflow && animate ? -(textWidth + gap) : 0)
+                .animation(
+                    overflow && animate
+                        ? .linear(duration: Double(textWidth + gap) / 32).delay(2).repeatForever(autoreverses: false)
+                        : .default,
+                    value: animate
+                )
+            }
+            .frame(width: proxy.size.width, alignment: .leading)
+            .clipped()
+            .mask(
+                HStack(spacing: 0) {
+                    Rectangle()
+                    if overflow {
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                    }
+                }
+            )
+            .onAppear { animate = overflow }
+            .onChange(of: overflow) { animate = $0 }
+        }
+        .id(text)
+        .accessibilityLabel(text)
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize()
+            .background(
+                GeometryReader { inner in
+                    Color.clear.onAppear { textWidth = inner.size.width }
+                }
+            )
+    }
+}
+
+// MARK: - Ses ve AirPlay
+
+private struct VolumeRow: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.6))
+            SystemVolumeSlider()
+                .frame(height: 34)
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.6))
+        }
+    }
+}
+
+private struct SystemVolumeSlider: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let view = MPVolumeView(frame: .zero)
+        view.tintColor = .white
+        if let slider = view.subviews.compactMap({ $0 as? UISlider }).first {
+            slider.minimumTrackTintColor = .white
+            slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.2)
+            slider.setThumbImage(Self.thumb, for: .normal)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+
+    private static let thumb: UIImage = {
+        let size = CGSize(width: 12, height: 12)
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            UIColor.white.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+        }
+    }()
+}
+
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
-        view.tintColor = UIColor.white.withAlphaComponent(0.8)
-        view.activeTintColor = UIColor(red: 0.36, green: 1.0, blue: 0.18, alpha: 1)
+        view.tintColor = UIColor.white.withAlphaComponent(0.85)
+        view.activeTintColor = UIColor(red: 0.243, green: 0.890, blue: 0.604, alpha: 1)
         view.prioritizesVideoDevices = false
         return view
     }
 
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
+
+// MARK: - Uyku zamanlayıcısı
+
+struct SleepTimerSheet: View {
+    @EnvironmentObject private var player: PlayerManager
+    @Environment(\.dismiss) private var dismiss
+
+    private let options = [5, 10, 15, 30, 45, 60, 90]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if player.sleepTimer.isActive {
+                    Section {
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            HStack {
+                                Image(systemName: "moon.zzz.fill").foregroundColor(.accent)
+                                Text(player.sleepTimer == .endOfTrack
+                                     ? "Bu şarkı bitince duracak"
+                                     : "Müzik \(Formatters.time(player.sleepRemaining ?? 0)) sonra duracak")
+                                    .font(.subheadline.weight(.semibold))
+                                    .monospacedDigit()
+                                Spacer()
+                            }
+                        }
+                        Button(role: .destructive) {
+                            player.cancelSleepTimer()
+                            dismiss()
+                        } label: {
+                            Text("Zamanlayıcıyı kapat")
+                        }
+                    }
+                    .listRowBackground(Color.boxSurface2)
+                }
+
+                Section {
+                    ForEach(options, id: \.self) { minutes in
+                        Button {
+                            player.setSleepTimer(minutes: minutes)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text(minutes < 60 ? "\(minutes) dakika" : (minutes == 60 ? "1 saat" : "1,5 saat"))
+                                    .foregroundColor(.white)
+                                Spacer()
+                            }
+                        }
+                    }
+                    Button {
+                        player.setSleepAtEndOfTrack()
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text("Bu şarkının sonunda").foregroundColor(.white)
+                            Spacer()
+                            if player.sleepTimer == .endOfTrack {
+                                Image(systemName: "checkmark").foregroundColor(.accent)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Son 10 saniyede ses yavaşça kısılır. Ekran kilitliyken de çalışır.")
+                }
+                .listRowBackground(Color.boxSurface2)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.boxSurface.ignoresSafeArea())
+            .navigationTitle("Uyku zamanlayıcısı")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+// MARK: - Sıra
 
 struct QueueView: View {
     @EnvironmentObject private var player: PlayerManager
@@ -350,19 +686,24 @@ struct QueueView: View {
         NavigationStack {
             List {
                 if let current = player.current {
-                    Section("Şimdi çalıyor") {
+                    Section {
                         TrackRow(track: current, showMenu: false)
+                    } header: {
+                        Text("Şimdi çalıyor")
                     }
+                    .listRowBackground(Color.clear)
                 }
 
-                Section("Sıradakiler") {
+                Section {
                     if player.upNext.isEmpty {
                         Text("Sırada şarkı yok")
                             .foregroundColor(.boxSecondaryText)
+                            .listRowBackground(Color.clear)
                     }
 
                     ForEach(Array(player.upNext.enumerated()), id: \.offset) { offset, track in
                         TrackRow(track: track, showMenu: false)
+                            .listRowBackground(Color.clear)
                             .onTapGesture {
                                 if let index = player.currentIndex {
                                     player.jump(to: index + 1 + offset)
@@ -371,11 +712,19 @@ struct QueueView: View {
                     }
                     .onDelete { player.removeFromQueue(at: $0) }
                     .onMove { player.moveInQueue(from: $0, to: $1) }
+                } header: {
+                    HStack {
+                        Text("Sıradakiler")
+                        Spacer()
+                        if !player.upNext.isEmpty {
+                            Text("\(player.upNext.count) şarkı • \(Formatters.longDuration(player.upNext.reduce(0) { $0 + $1.duration }))")
+                        }
+                    }
                 }
-                .listRowBackground(Color.boxCard)
             }
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .boxScreenBackground()
+            .background(Color.boxSurface.ignoresSafeArea())
             .navigationTitle("Sıra")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -384,6 +733,7 @@ struct QueueView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Bitti") { dismiss() }
+                        .fontWeight(.semibold)
                 }
             }
         }

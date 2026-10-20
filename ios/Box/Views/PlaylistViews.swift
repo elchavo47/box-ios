@@ -3,6 +3,12 @@ import SwiftUI
 enum PlaylistSource: Hashable {
     case playlist(UUID)
     case favorites
+    case tracks(title: String, icon: String, tracks: [Track])
+
+    var isEditable: Bool {
+        if case .playlist = self { return true }
+        return false
+    }
 }
 
 struct PlaylistDetailView: View {
@@ -26,6 +32,7 @@ struct PlaylistDetailView: View {
         switch source {
         case .favorites: return "Beğenilenler"
         case .playlist: return playlist?.name ?? "Liste"
+        case .tracks(let title, _, _): return title
         }
     }
 
@@ -33,6 +40,17 @@ struct PlaylistDetailView: View {
         switch source {
         case .favorites: return library.favoriteTracks
         case .playlist: return playlist.map { library.tracks(for: $0) } ?? []
+        case .tracks(_, _, let tracks):
+            // Kitaplık değiştiyse güncel kopyaları kullan.
+            return tracks.compactMap { library.track(forPath: $0.relativePath) }
+        }
+    }
+
+    private var icon: String {
+        switch source {
+        case .favorites: return "heart.fill"
+        case .playlist: return "music.note.list"
+        case .tracks(_, let icon, _): return icon
         }
     }
 
@@ -55,7 +73,7 @@ struct PlaylistDetailView: View {
                         title: "Liste boş",
                         message: source == .favorites
                             ? "Çalarken kalbe dokunduğun şarkılar burada görünür."
-                            : "Sağ üstteki + ile şarkı ekle."
+                            : (source.isEditable ? "Sağ üstteki menüden şarkı ekle." : "Burada henüz şarkı yok.")
                     )
                     .listRowBackground(Color.clear)
                 }
@@ -67,8 +85,8 @@ struct PlaylistDetailView: View {
                             player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
                         }
                 }
-                .onDelete(perform: delete)
-                .onMove(perform: move)
+                .onDelete(perform: source.isEditable || source == .favorites ? delete : nil)
+                .onMove(perform: source.isEditable ? move : nil)
             }
         }
         .listStyle(.plain)
@@ -130,15 +148,16 @@ struct PlaylistDetailView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 14) {
-            PlaylistCover(tracks: tracks, icon: source == .favorites ? "heart.fill" : "music.note.list", size: 200)
-                .shadow(color: .neon.opacity(0.25), radius: 24)
+        VStack(spacing: 16) {
+            PlaylistCover(tracks: tracks, icon: icon, size: 210, cornerRadius: 10)
+                .shadow(color: .black.opacity(0.5), radius: 22, y: 12)
 
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Text(title)
-                    .font(.system(.title, design: .rounded).weight(.bold))
+                    .font(.system(size: 26, weight: .bold))
                     .multilineTextAlignment(.center)
-                Text("\(tracks.count) şarkı • \(Formatters.time(totalDuration))")
+                    .lineLimit(2)
+                Text("\(tracks.count) şarkı • \(Formatters.longDuration(totalDuration))")
                     .font(.subheadline)
                     .foregroundColor(.boxSecondaryText)
             }
@@ -149,16 +168,17 @@ struct PlaylistDetailView: View {
                 } label: {
                     Label("Çal", systemImage: "play.fill")
                 }
-                .buttonStyle(NeonButtonStyle())
+                .buttonStyle(PrimaryButtonStyle())
 
                 Button {
                     player.play(tracks, startAt: 0, shuffled: true)
                 } label: {
                     Label("Karıştır", systemImage: "shuffle")
                 }
-                .buttonStyle(NeonButtonStyle(filled: false))
+                .buttonStyle(PrimaryButtonStyle(filled: false))
             }
             .disabled(tracks.isEmpty)
+            .opacity(tracks.isEmpty ? 0.5 : 1)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -172,6 +192,8 @@ struct PlaylistDetailView: View {
             }
         case .playlist(let id):
             library.removeTracks(at: offsets, from: id)
+        case .tracks:
+            break
         }
     }
 
@@ -214,7 +236,7 @@ struct TrackPickerView: View {
                         TrackRow(track: track, showMenu: false)
                         Image(systemName: selected.contains(track.id) ? "checkmark.circle.fill" : "circle")
                             .font(.title3)
-                            .foregroundColor(selected.contains(track.id) ? .neon : .boxSecondaryText)
+                            .foregroundColor(selected.contains(track.id) ? .accent : .boxSecondaryText)
                     }
                 }
                 .listRowBackground(Color.clear)

@@ -83,6 +83,7 @@ struct FolderView: View {
         .onChange(of: library.tracks) { _ in reload() }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if isRoot { AccountButton() }
                 if !audioItems.isEmpty {
                     Button {
                         playFolder(startingWith: nil, shuffled: true)
@@ -182,11 +183,11 @@ struct FolderView: View {
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
-                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.black)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.boxCardHighlight))
-                    .overlay(Capsule().stroke(Color.neon.opacity(0.5)))
+                    .background(Capsule().fill(Color.white))
                     .padding(.bottom, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -201,15 +202,14 @@ struct FolderView: View {
             NavigationLink(value: item.url) {
                 HStack(spacing: 12) {
                     Image(systemName: item.name == AppConfig.downloadsFolderName ? "arrow.down.circle.fill" : "folder.fill")
-                        .font(.system(size: 26))
-                        .foregroundColor(.neon)
-                        .shadow(color: .neon.opacity(0.5), radius: 6)
-                        .frame(width: 50, height: 50)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.neonDim))
+                        .font(.system(size: 24))
+                        .foregroundColor(.accent)
+                        .frame(width: 52, height: 52)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.boxSurface2))
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(item.name)
-                            .font(.system(.body, design: .rounded).weight(.semibold))
+                            .font(.system(size: 16, weight: .medium))
                             .lineLimit(1)
                         Text("\(item.childCount) öğe")
                             .font(.subheadline)
@@ -226,11 +226,11 @@ struct FolderView: View {
                     .font(.system(size: 22))
                     .foregroundColor(.boxSecondaryText)
                     .frame(width: 50, height: 50)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.boxCard))
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.boxSurface2))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.name)
-                        .font(.system(.body, design: .rounded))
+                        .font(.system(size: 16))
                         .lineLimit(1)
                     Text(Formatters.bytes(item.size))
                         .font(.subheadline)

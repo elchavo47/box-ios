@@ -3,7 +3,7 @@ import Combine
 import MediaPlayer
 import UIKit
 
-enum RepeatMode {
+enum RepeatMode: String, Codable {
     case off, all, one
 
     var next: RepeatMode {
@@ -19,28 +19,60 @@ enum RepeatMode {
     }
 }
 
+enum SleepTimer: Equatable {
+    case off
+    case at(Date)
+    case endOfTrack
+
+    var isActive: Bool { self != .off }
+}
+
+/// Saniyede birkaç kez değişen süre bilgisi ayrı tutulur; böylece yalnızca
+/// ilerleme çubuğu gibi küçük görünümler yeniden çizilir.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+
+    var progress: Double {
+        duration > 0 ? min(max(currentTime / duration, 0), 1) : 0
+    }
+}
+
 @MainActor
 final class PlayerManager: ObservableObject {
     @Published private(set) var queue: [Track] = []
     @Published private(set) var currentIndex: Int?
     @Published private(set) var isPlaying = false
-    @Published private(set) var currentTime: Double = 0
-    @Published private(set) var duration: Double = 0
     @Published private(set) var isShuffled = false
-    @Published var repeatMode: RepeatMode = .off
+    @Published var repeatMode: RepeatMode = .off { didSet { saveState() } }
     @Published var showFullPlayer = false
     @Published private(set) var currentArtwork: UIImage?
+    @Published private(set) var artworkColor: UIColor?
+    @Published private(set) var sleepTimer: SleepTimer = .off
+    @Published private(set) var playbackRate: Float = 1
+
+    let clock = PlaybackClock()
+
+    /// Yeni bir şarkı çalmaya başladığında (geçmiş için).
+    var onTrackStart: ((Track) -> Void)?
 
     private let player = AVPlayer()
     private var originalQueue: [Track] = []
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var isSeeking = false
+    private var lastStateSave = Date.distantPast
+    private var restored = false
+    private let stateKey = "box.playerState"
 
     var current: Track? {
         guard let currentIndex, queue.indices.contains(currentIndex) else { return nil }
         return queue[currentIndex]
     }
+
+    var currentTime: Double { clock.currentTime }
+    var duration: Double { clock.duration }
 
     var upNext: [Track] {
         guard let currentIndex else { return [] }
@@ -53,6 +85,10 @@ final class PlayerManager: ObservableObject {
         configureRemoteCommands()
         observeTime()
         observeInterruptions()
+
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.saveState(force: true) }
+        }
     }
 
     // MARK: - Oynatma
@@ -65,7 +101,7 @@ final class PlayerManager: ObservableObject {
 
         if shuffled {
             var rest = tracks
-            let first = rest.remove(at: shuffled && index == 0 ? Int.random(in: 0..<tracks.count) : safeIndex)
+            let first = rest.remove(at: index == 0 ? Int.random(in: 0..<tracks.count) : safeIndex)
             rest.shuffle()
             queue = [first] + rest
             currentIndex = 0
@@ -86,6 +122,8 @@ final class PlayerManager: ObservableObject {
         }
         queue.insert(track, at: currentIndex + 1)
         originalQueue.append(track)
+        Haptics.success()
+        saveState(force: true)
     }
 
     func addToQueue(_ track: Track) {
@@ -95,6 +133,8 @@ final class PlayerManager: ObservableObject {
         }
         queue.append(track)
         originalQueue.append(track)
+        Haptics.success()
+        saveState(force: true)
     }
 
     func jump(to index: Int) {
@@ -105,7 +145,6 @@ final class PlayerManager: ObservableObject {
 
     func removeFromQueue(at offsets: IndexSet) {
         guard let currentIndex else { return }
-        // Sıradakiler listesindeki konumları gerçek kuyruk konumlarına çevir.
         let absolute = offsets.map { $0 + currentIndex + 1 }.filter { queue.indices.contains($0) }
         for index in absolute.sorted(by: >) {
             let removed = queue.remove(at: index)
@@ -113,6 +152,7 @@ final class PlayerManager: ObservableObject {
                 originalQueue.remove(at: originalIndex)
             }
         }
+        saveState(force: true)
     }
 
     func moveInQueue(from source: IndexSet, to destination: Int) {
@@ -120,14 +160,11 @@ final class PlayerManager: ObservableObject {
         var upcoming = Array(queue.dropFirst(currentIndex + 1))
         upcoming.move(fromOffsets: source, toOffset: destination)
         queue = Array(queue.prefix(currentIndex + 1)) + upcoming
+        saveState(force: true)
     }
 
     func togglePlayPause() {
-        if isPlaying {
-            pause()
-        } else {
-            resume()
-        }
+        if isPlaying { pause() } else { resume() }
     }
 
     func resume() {
@@ -137,7 +174,8 @@ final class PlayerManager: ObservableObject {
             return
         }
         try? AVAudioSession.sharedInstance().setActive(true)
-        player.play()
+        player.volume = 1
+        player.playImmediately(atRate: playbackRate)
         isPlaying = true
         updateNowPlaying()
     }
@@ -146,6 +184,7 @@ final class PlayerManager: ObservableObject {
         player.pause()
         isPlaying = false
         updateNowPlaying()
+        saveState(force: true)
     }
 
     func next() {
@@ -155,7 +194,7 @@ final class PlayerManager: ObservableObject {
     func previous() {
         guard let currentIndex else { return }
 
-        if currentTime > 3 || currentIndex == 0 {
+        if clock.currentTime > 3 || currentIndex == 0 {
             seek(to: 0)
             return
         }
@@ -165,15 +204,20 @@ final class PlayerManager: ObservableObject {
     }
 
     func seek(to seconds: Double) {
-        let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        let clamped = max(0, min(seconds, clock.duration > 0 ? clock.duration - 0.25 : seconds))
+        let target = CMTime(seconds: clamped, preferredTimescale: 600)
         isSeeking = true
-        currentTime = max(0, seconds)
+        clock.currentTime = clamped
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor in
                 self?.isSeeking = false
                 self?.updateNowPlaying()
             }
         }
+    }
+
+    func skip(by seconds: Double) {
+        seek(to: clock.currentTime + seconds)
     }
 
     func toggleShuffle() {
@@ -196,11 +240,62 @@ final class PlayerManager: ObservableObject {
             currentIndex = 0
             isShuffled = true
         }
+        saveState(force: true)
     }
 
     func cycleRepeat() {
         repeatMode = repeatMode.next
     }
+
+    func setRate(_ rate: Float) {
+        playbackRate = rate
+        player.defaultRate = rate
+        if isPlaying { player.rate = rate }
+        updateNowPlaying()
+    }
+
+    // MARK: - Uyku zamanlayıcısı
+
+    func setSleepTimer(minutes: Int) {
+        sleepTimer = .at(Date().addingTimeInterval(TimeInterval(minutes * 60)))
+        player.volume = 1
+        Haptics.success()
+    }
+
+    func setSleepAtEndOfTrack() {
+        sleepTimer = .endOfTrack
+        player.volume = 1
+        Haptics.success()
+    }
+
+    func cancelSleepTimer() {
+        sleepTimer = .off
+        player.volume = 1
+    }
+
+    /// Kalan süre (saniye); bitiş zamanı yoksa nil.
+    var sleepRemaining: TimeInterval? {
+        switch sleepTimer {
+        case .at(let date): return max(0, date.timeIntervalSinceNow)
+        case .endOfTrack: return max(0, clock.duration - clock.currentTime)
+        case .off: return nil
+        }
+    }
+
+    private func checkSleepTimer() {
+        guard case .at(let date) = sleepTimer else { return }
+        let remaining = date.timeIntervalSinceNow
+        if remaining <= 0 {
+            sleepTimer = .off
+            pause()
+            player.volume = 1
+        } else if remaining < 10, isPlaying {
+            // Son 10 saniyede sesi yavaşça kıs.
+            player.volume = Float(max(0.05, remaining / 10))
+        }
+    }
+
+    // MARK: - Kitaplık değişikliği
 
     /// Dosya silindiğinde ya da taşındığında kuyruğu temizler.
     func handleLibraryChange(validPaths: Set<String>) {
@@ -226,11 +321,66 @@ final class PlayerManager: ObservableObject {
         originalQueue = []
         currentIndex = nil
         isPlaying = false
-        currentTime = 0
-        duration = 0
+        clock.currentTime = 0
+        clock.duration = 0
         currentArtwork = nil
+        artworkColor = nil
         showFullPlayer = false
+        sleepTimer = .off
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        UserDefaults.standard.removeObject(forKey: stateKey)
+    }
+
+    // MARK: - Kaldığı yerden devam
+
+    private struct SavedState: Codable {
+        var paths: [String]
+        var original: [String]
+        var index: Int
+        var time: Double
+        var shuffled: Bool
+        var repeatMode: RepeatMode
+    }
+
+    private func saveState(force: Bool = false) {
+        guard restored || force else { return }
+        guard let currentIndex, !queue.isEmpty else { return }
+        if !force, Date().timeIntervalSince(lastStateSave) < 5 { return }
+        lastStateSave = Date()
+        let state = SavedState(
+            paths: queue.map(\.relativePath),
+            original: originalQueue.map(\.relativePath),
+            index: currentIndex,
+            time: clock.currentTime,
+            shuffled: isShuffled,
+            repeatMode: repeatMode
+        )
+        if let data = try? JSONEncoder().encode(state) {
+            UserDefaults.standard.set(data, forKey: stateKey)
+        }
+    }
+
+    /// Uygulama açılırken son çalınan kuyruğu duraklatılmış olarak geri yükler.
+    func restoreIfNeeded(tracks: [Track]) {
+        guard !restored else { return }
+        restored = true
+        guard current == nil,
+              let data = UserDefaults.standard.data(forKey: stateKey),
+              let state = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
+
+        let index = Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { a, _ in a })
+        let restoredQueue = state.paths.compactMap { index[$0] }
+        guard state.paths.indices.contains(state.index),
+              let currentTrack = index[state.paths[state.index]],
+              let newIndex = restoredQueue.firstIndex(of: currentTrack) else { return }
+
+        queue = restoredQueue
+        originalQueue = state.original.compactMap { index[$0] }
+        if originalQueue.isEmpty { originalQueue = restoredQueue }
+        isShuffled = state.shuffled
+        repeatMode = state.repeatMode
+        currentIndex = newIndex
+        loadCurrent(autoplay: false, startAt: state.time, record: false)
     }
 
     // MARK: - İç işleyiş
@@ -238,9 +388,16 @@ final class PlayerManager: ObservableObject {
     private func advance(userInitiated: Bool) {
         guard let currentIndex else { return }
 
+        if !userInitiated, sleepTimer == .endOfTrack {
+            sleepTimer = .off
+            pause()
+            seek(to: 0)
+            return
+        }
+
         if !userInitiated, repeatMode == .one {
             seek(to: 0)
-            player.play()
+            player.playImmediately(atRate: playbackRate)
             return
         }
 
@@ -249,14 +406,14 @@ final class PlayerManager: ObservableObject {
             loadCurrent(autoplay: true)
         } else if repeatMode == .all || userInitiated {
             self.currentIndex = 0
-            loadCurrent(autoplay: repeatMode == .all || userInitiated)
+            loadCurrent(autoplay: true)
         } else {
             pause()
             seek(to: 0)
         }
     }
 
-    private func loadCurrent(autoplay: Bool) {
+    private func loadCurrent(autoplay: Bool, startAt: Double = 0, record: Bool = true) {
         guard let track = current else { return }
 
         if let endObserver {
@@ -264,10 +421,11 @@ final class PlayerManager: ObservableObject {
         }
 
         let item = AVPlayerItem(url: track.url)
+        item.audioTimePitchAlgorithm = .timeDomain
         player.replaceCurrentItem(with: item)
-        currentTime = 0
-        duration = track.duration
-        currentArtwork = nil
+        clock.currentTime = startAt
+        clock.duration = track.duration
+        player.volume = 1
 
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -279,21 +437,29 @@ final class PlayerManager: ObservableObject {
             }
         }
 
+        if startAt > 1 {
+            player.seek(to: CMTime(seconds: startAt, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+
         if autoplay {
             try? AVAudioSession.sharedInstance().setActive(true)
-            player.play()
+            player.playImmediately(atRate: playbackRate)
             isPlaying = true
+            if record { onTrackStart?(track) }
         } else {
             isPlaying = false
         }
 
         updateNowPlaying()
+        saveState(force: true)
 
         let url = track.url
         Task { @MainActor [weak self] in
             let image = await ArtworkCache.shared.image(for: url)
+            let color = await ArtworkCache.shared.dominantColor(for: url)
             guard let self, self.current?.url == url else { return }
             self.currentArtwork = image
+            self.artworkColor = color
             self.updateNowPlaying()
         }
     }
@@ -304,20 +470,23 @@ final class PlayerManager: ObservableObject {
     }
 
     private func observeTime() {
-        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             let seconds = time.seconds
             Task { @MainActor in
-                guard let self, !self.isSeeking else { return }
-                if seconds.isFinite {
-                    self.currentTime = seconds
+                guard let self else { return }
+                self.checkSleepTimer()
+                guard !self.isSeeking else { return }
+                if seconds.isFinite, abs(seconds - self.clock.currentTime) >= 0.2 {
+                    self.clock.currentTime = seconds
                 }
                 if let itemDuration = self.player.currentItem?.duration.seconds,
                    itemDuration.isFinite, itemDuration > 0,
-                   abs(itemDuration - self.duration) > 0.5 {
-                    self.duration = itemDuration
+                   abs(itemDuration - self.clock.duration) > 0.5 {
+                    self.clock.duration = itemDuration
                     self.updateNowPlaying()
                 }
+                if self.isPlaying { self.saveState() }
             }
         }
     }
@@ -409,9 +578,10 @@ final class PlayerManager: ObservableObject {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.displayArtist,
-            MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPMediaItemPropertyPlaybackDuration: clock.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: clock.currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackRate) : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: Double(playbackRate),
         ]
 
         if !track.album.isEmpty {

@@ -80,7 +80,7 @@ final class DownloadManager: ObservableObject {
 
         do {
             let link: DownloadLinkResponse = try await APIClient.shared.send(
-                "download_link",
+                "download",
                 query: ["video_id": result.id, "title": result.title],
                 token: token
             )
@@ -105,7 +105,7 @@ final class DownloadManager: ObservableObject {
             let baseName = FileService.sanitize(result.title)
             let destination = FileService.uniqueURL(for: baseName + ".m4a", in: folder)
 
-            let artwork = await Self.fetchArtwork(result.thumbnailURL)
+            let artwork = await Self.fetchArtwork(result)
             let tagged = await Self.writeMetadata(
                 source: tempFile,
                 destination: destination,
@@ -130,22 +130,15 @@ final class DownloadManager: ObservableObject {
 
     // MARK: - Kapak ve etiket
 
-    private static func fetchArtwork(_ url: URL?) async -> Data? {
-        guard let url,
-              let response = try? await URLSession.shared.data(from: url),
-              let image = UIImage(data: response.0) else { return nil }
-
-        // YouTube kapakları 16:9/4:3; ortadan kare kırp.
-        let side = min(image.size.width, image.size.height)
-        let origin = CGPoint(x: (image.size.width - side) / 2, y: (image.size.height - side) / 2)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-
-        let square = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
-            image.draw(at: CGPoint(x: -origin.x, y: -origin.y))
+    private static func fetchArtwork(_ result: SearchResult) async -> Data? {
+        // Önce bantsız yüksek çözünürlüklü kapak, olmazsa arama küçük resmi.
+        for url in [result.maxResURL, result.thumbnailURL].compactMap({ $0 }) {
+            guard let (data, response) = try? await URLSession.shared.data(from: url),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let image = UIImage(data: data), image.size.width > 200 else { continue }
+            return ArtworkCache.prepare(image).jpegData(compressionQuality: 0.88)
         }
-
-        return square.jpegData(compressionQuality: 0.85)
+        return nil
     }
 
     /// İndirilen m4a dosyasına başlık, sanatçı ve kapak yazar (yeniden kodlama yapmadan).

@@ -65,11 +65,32 @@ struct AuthResponse: Decodable {
 
 struct UserResponse: Decodable {
     let user: BoxUser
+    let quota: Quota?
+}
+
+struct Quota: Decodable, Equatable {
+    let downloadsLimit: Int
+    let downloadsUsed: Int
+    let downloadsLeft: Int?
+    let searchesLimit: Int
+    let searchesUsed: Int
+    let searchesLeft: Int?
+}
+
+struct RemoteConfig: Decodable {
+    struct Maintenance: Decodable { let on: Bool; let message: String }
+    struct Announcement: Decodable { let title: String; let body: String; let id: String }
+
+    let maintenance: Maintenance
+    let minAppVersion: String
+    let registrationOpen: Bool
+    let announcement: Announcement?
+    let supportEmail: String?
 }
 
 struct EmptyResponse: Decodable {}
 
-struct SearchResult: Decodable, Identifiable, Hashable {
+struct SearchResult: Codable, Identifiable, Hashable {
     let id: String
     let title: String
     let channel: String
@@ -78,6 +99,11 @@ struct SearchResult: Decodable, Identifiable, Hashable {
 
     var thumbnailURL: URL? {
         thumbnail.flatMap(URL.init(string:))
+    }
+
+    /// Siyah bantsız, yüksek çözünürlüklü kapak.
+    var maxResURL: URL? {
+        URL(string: "https://i.ytimg.com/vi/\(id)/maxresdefault.jpg")
     }
 }
 

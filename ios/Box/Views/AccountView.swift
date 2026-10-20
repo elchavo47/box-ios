@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthStore
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -12,9 +13,17 @@ struct AccountView: View {
                     AuthFormView()
                 }
             }
-            .boxScreenBackground()
+            .background(Color.boxSurface.ignoresSafeArea())
             .navigationTitle("Hesap")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Bitti") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
         }
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -22,6 +31,7 @@ struct AccountView: View {
 
 private struct AuthFormView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var server: ServerState
 
     @State private var isRegister = false
     @State private var name = ""
@@ -39,18 +49,13 @@ private struct AuthFormView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 22) {
-                Image("BoxLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 110, height: 110)
-                    .blendMode(.screen)
-                    .shadow(color: .neon.opacity(0.7), radius: 18)
-                    .padding(.top, 20)
+                BoxMark(size: 64)
+                    .padding(.top, 24)
 
                 VStack(spacing: 6) {
                     Text(isRegister ? "Box'a katıl" : "Tekrar hoş geldin")
-                        .font(.system(.title, design: .rounded).weight(.bold))
-                    Text("Listelerin ve ayrıcalıkların hesabına bağlı kalsın.")
+                        .font(.system(size: 26, weight: .bold))
+                    Text(isRegister && !server.registrationOpen ? "Yeni kayıtlar şu an kapalı." : "Premium ayrıcalıkların hesabına bağlı kalsın.")
                         .font(.subheadline)
                         .foregroundColor(.boxSecondaryText)
                         .multilineTextAlignment(.center)
@@ -104,7 +109,7 @@ private struct AuthFormView: View {
                         Text(isRegister ? "Hesap oluştur" : "Giriş yap")
                     }
                 }
-                .buttonStyle(NeonButtonStyle())
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(!canSubmit)
                 .opacity(canSubmit ? 1 : 0.5)
             }
@@ -122,8 +127,8 @@ private struct AuthFormView: View {
             TextField(placeholder, text: text)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxCard))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.boxSurface2))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.boxStroke))
     }
 
     private func secureField(_ placeholder: String, text: Binding<String>) -> some View {
@@ -134,8 +139,8 @@ private struct AuthFormView: View {
             SecureField(placeholder, text: text)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxCard))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.boxSurface2))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.boxStroke))
     }
 
     private func submit() {
@@ -176,20 +181,15 @@ private struct ProfileView: View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.neonDim)
-                            .frame(width: 64, height: 64)
-                            .overlay(Circle().stroke(Color.neon, lineWidth: 1.5))
-                            .shadow(color: .neon.opacity(0.5), radius: 10)
-                        Text(String(user.name.prefix(1)).uppercased())
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundColor(.neon)
-                    }
+                    Text(String(user.name.prefix(1)).uppercased())
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 62, height: 62)
+                        .background(Circle().fill(Color.accentDeep))
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(user.name)
-                            .font(.system(.title3, design: .rounded).weight(.bold))
+                            .font(.system(size: 20, weight: .bold))
                         Text(user.email)
                             .font(.subheadline)
                             .foregroundColor(.boxSecondaryText)
@@ -198,7 +198,15 @@ private struct ProfileView: View {
                 }
                 .padding(.vertical, 6)
             }
-            .listRowBackground(Color.boxCard)
+            .listRowBackground(Color.boxSurface2)
+
+            if user.premium, let quota = auth.quota {
+                Section("Bugünkü kullanım") {
+                    stat("İndirme", quota.downloadsLimit > 0 ? "\(quota.downloadsUsed) / \(quota.downloadsLimit)" : "\(quota.downloadsUsed)", icon: "arrow.down.circle")
+                    stat("Arama", quota.searchesLimit > 0 ? "\(quota.searchesUsed) / \(quota.searchesLimit)" : "\(quota.searchesUsed)", icon: "magnifyingglass")
+                }
+                .listRowBackground(Color.boxSurface2)
+            }
 
             Section("Kitaplığın") {
                 stat("Şarkı", "\(library.tracks.count)", icon: "music.note")
@@ -206,7 +214,7 @@ private struct ProfileView: View {
                 stat("Beğenilen", "\(library.favorites.count)", icon: "heart.fill")
                 stat("Kullanılan alan", Formatters.bytes(library.totalSize), icon: "internaldrive")
             }
-            .listRowBackground(Color.boxCard)
+            .listRowBackground(Color.boxSurface2)
 
             Section("Hesap") {
                 Button {
@@ -229,15 +237,13 @@ private struct ProfileView: View {
                     Label("Hesabı sil", systemImage: "trash")
                 }
             }
-            .listRowBackground(Color.boxCard)
+            .listRowBackground(Color.boxSurface2)
 
             Section {
                 HStack {
                     Spacer()
                     VStack(spacing: 4) {
-                        Text("Box")
-                            .font(.system(.footnote, design: .rounded).weight(.bold))
-                            .foregroundColor(.neon)
+                        BoxWordmark(markSize: 18)
                         Text("Sürüm \(AppConfig.appVersion) • AYD Works")
                             .font(.caption2)
                             .foregroundColor(.boxSecondaryText)
@@ -299,15 +305,14 @@ private struct ProfileView: View {
                 Image(systemName: "bolt.fill")
                 Text(premiumText)
             }
-            .font(.system(.caption, design: .rounded).weight(.bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundColor(.black)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(Color.neon))
-            .shadow(color: .neon.opacity(0.6), radius: 6)
+            .background(Capsule().fill(Color.accent))
         } else {
             Text("Ücretsiz plan")
-                .font(.system(.caption, design: .rounded).weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.boxSecondaryText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
@@ -329,7 +334,7 @@ private struct ProfileView: View {
             Spacer()
             Text(value)
                 .foregroundColor(.boxSecondaryText)
-                .font(.system(.body, design: .rounded))
+                
         }
     }
 }

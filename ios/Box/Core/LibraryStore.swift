@@ -8,6 +8,10 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playlists: [Playlist] = []
     @Published private(set) var favorites: Set<String> = []
     @Published private(set) var isScanning = false
+    @Published private(set) var hasScanned = false
+    /// Son çalınanlar (en yeni başta, en fazla 60).
+    @Published private(set) var recentPaths: [String] = []
+    @Published private(set) var playCounts: [String: Int] = [:]
 
     let documents: URL
     private let supportDirectory: URL
@@ -17,6 +21,12 @@ final class LibraryStore: ObservableObject {
     private var playlistsFile: URL { supportDirectory.appendingPathComponent("playlists.json") }
     private var favoritesFile: URL { supportDirectory.appendingPathComponent("favorites.json") }
     private var metadataFile: URL { supportDirectory.appendingPathComponent("metadata-cache.json") }
+    private var historyFile: URL { supportDirectory.appendingPathComponent("history.json") }
+
+    private struct History: Codable {
+        var recent: [String]
+        var counts: [String: Int]
+    }
 
     init() {
         let fm = FileManager.default
@@ -33,6 +43,10 @@ final class LibraryStore: ObservableObject {
         playlists = Self.load([Playlist].self, from: playlistsFile) ?? []
         favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
+        if let history = Self.load(History.self, from: historyFile) {
+            recentPaths = history.recent
+            playCounts = history.counts
+        }
     }
 
     // MARK: - Tarama
@@ -44,7 +58,7 @@ final class LibraryStore: ObservableObject {
         }
 
         isScanning = true
-        defer { isScanning = false }
+        defer { isScanning = false; hasScanned = true }
 
         repeat {
             rescanRequested = false
@@ -158,7 +172,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func tracks(for playlist: Playlist) -> [Track] {
-        let index = Dictionary(uniqueKeysWithValues: tracks.map { ($0.relativePath, $0) })
+        let index = trackIndex
         return playlist.paths.compactMap { index[$0] }
     }
 
@@ -168,6 +182,66 @@ final class LibraryStore: ObservableObject {
 
     var recentlyAdded: [Track] {
         Array(tracks.sorted { $0.addedAt > $1.addedAt }.prefix(12))
+    }
+
+    // MARK: - Dinleme geçmişi
+
+    func recordPlay(_ track: Track) {
+        let path = track.relativePath
+        recentPaths.removeAll { $0 == path }
+        recentPaths.insert(path, at: 0)
+        if recentPaths.count > 60 { recentPaths.removeLast(recentPaths.count - 60) }
+        playCounts[path, default: 0] += 1
+        saveHistory()
+    }
+
+    var recentlyPlayed: [Track] {
+        let index = trackIndex
+        return recentPaths.compactMap { index[$0] }
+    }
+
+    /// Ana sayfadaki "Hızlı seçimler": en çok dinlenenler, yoksa son eklenenler.
+    var quickPicks: [Track] {
+        let played = tracks.filter { (playCounts[$0.relativePath] ?? 0) > 0 }
+            .sorted { (playCounts[$0.relativePath] ?? 0) > (playCounts[$1.relativePath] ?? 0) }
+        var picks = Array(played.prefix(16))
+        if picks.count < 16 {
+            let have = Set(picks.map(\.relativePath))
+            picks += recentlyAdded.filter { !have.contains($0.relativePath) }.prefix(16 - picks.count)
+        }
+        return picks
+    }
+
+    var downloadedTracks: [Track] {
+        let prefix = AppConfig.downloadsFolderName + "/"
+        return tracks.filter { $0.relativePath.hasPrefix(prefix) }.sorted { $0.addedAt > $1.addedAt }
+    }
+
+    struct TrackGroup: Identifiable, Hashable {
+        let name: String
+        let tracks: [Track]
+        var id: String { name }
+        var duration: Double { tracks.reduce(0) { $0 + $1.duration } }
+    }
+
+    var artists: [TrackGroup] {
+        Dictionary(grouping: tracks, by: \.displayArtist)
+            .map { TrackGroup(name: $0.key, tracks: $0.value) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var albums: [TrackGroup] {
+        Dictionary(grouping: tracks.filter { !$0.album.isEmpty }, by: \.album)
+            .map { TrackGroup(name: $0.key, tracks: $0.value) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var trackIndex: [String: Track] {
+        Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private func saveHistory() {
+        Self.save(History(recent: recentPaths, counts: playCounts), to: historyFile)
     }
 
     var totalSize: Int64 {
@@ -262,6 +336,9 @@ final class LibraryStore: ObservableObject {
             return copy
         }
         favorites = Set(favorites.map(remap))
+        recentPaths = recentPaths.map(remap)
+        playCounts = Dictionary(playCounts.map { (remap($0.key), $0.value) }, uniquingKeysWith: +)
+        saveHistory()
 
         var newCache: [String: CachedMetadata] = [:]
         for (key, value) in metadataCache {
@@ -287,6 +364,9 @@ final class LibraryStore: ObservableObject {
             return copy
         }
         favorites = favorites.filter(keep)
+        recentPaths = recentPaths.filter(keep)
+        playCounts = playCounts.filter { keep($0.key) }
+        saveHistory()
 
         savePlaylists()
         Self.save(Array(favorites), to: favoritesFile)
