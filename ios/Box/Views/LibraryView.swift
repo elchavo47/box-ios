@@ -14,6 +14,13 @@ struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var router: AppRouter
+    @State private var exportSelection: ExportSelection?
+
+    struct ExportSelection: Identifiable {
+        let id = UUID()
+        let items: Set<ExportItem>
+    }
 
     @State private var path = NavigationPath()
     @State private var showImport = false
@@ -101,6 +108,7 @@ struct LibraryView: View {
                                 Button { showImport = true } label: { Label("YouTube listesini içe aktar", systemImage: "square.and.arrow.down.on.square") }
                             }
                             Button { showListFile = true } label: { Label("Liste dosyası aç (.boxlist)", systemImage: "doc.badge.plus") }
+                            Button { exportSelection = ExportSelection(items: []) } label: { Label("Listeleri dışa aktar", systemImage: "square.and.arrow.up") }
                         } label: {
                             Image(systemName: "plus")
                         }
@@ -117,12 +125,21 @@ struct LibraryView: View {
             }
             .fileImporter(isPresented: $showListFile, allowedContentTypes: [.boxPlaylist, .json]) { result in
                 guard case .success(let url) = result else { return }
-                if let shared = BackupService.read(SharedPlaylist.self, from: url), shared.kind == "box.playlist" {
-                    let playlist = library.importShared(shared)
-                    path.append(HomeRoute.playlist(playlist.id))
+                if let lists = SharedListFile.read(from: url), !lists.isEmpty {
+                    router.importRequest = ImportRequest(lists: lists)
                 } else {
                     importMessage = "Bu dosya bir Box listesi değil."
                 }
+            }
+            .sheet(item: $exportSelection) { selection in
+                ListExportView(preselected: selection.items)
+            }
+            .onChange(of: router.openPlaylist) { id in
+                guard let id else { return }
+                router.openPlaylist = nil
+                section = .playlists
+                path = NavigationPath()
+                path.append(HomeRoute.playlist(id))
             }
             .alert("İçe aktarma", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
                 Button("Tamam", role: .cancel) {}
@@ -206,6 +223,14 @@ struct LibraryView: View {
                 } label: {
                     Label("Sil", systemImage: "trash")
                 }
+            }
+            .swipeActions(edge: .leading) {
+                Button {
+                    exportSelection = ExportSelection(items: [.playlist(playlist.id)])
+                } label: {
+                    Label("Dışa aktar", systemImage: "square.and.arrow.up")
+                }
+                .tint(.accentDeep)
             }
         }
         .onMove { from, to in

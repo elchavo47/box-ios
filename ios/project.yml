@@ -75,6 +75,7 @@ targets:
             UTTypeConformsTo: [public.json, public.data]
             UTTypeTagSpecification:
               public.filename-extension: [boxlist]
+              public.mime-type: [application/x-boxlist]
           - UTTypeIdentifier: com.aydworks.box.backup
             UTTypeDescription: Box kitaplık yedeği
             UTTypeConformsTo: [public.json, public.data]

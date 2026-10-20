@@ -25,7 +25,7 @@ struct PlaylistDetailView: View {
     @State private var quotaPrompt: [SearchResult]?
     @State private var refreshing = false
     @State private var shareURL: URL?
-    @State private var shareNote: String?
+    @State private var showExport = false
     @State private var refreshError: String?
 
     private var missing: [SearchResult] { tracks.compactMap(\.remote) }
@@ -153,9 +153,12 @@ struct PlaylistDetailView: View {
             ShareSheet(items: [item.url])
                 .presentationDetents([.medium, .large])
         }
-        .alert("Paylaşım", isPresented: Binding(get: { shareNote != nil && shareURL == nil }, set: { if !$0 { shareNote = nil } })) {
-            Button("Tamam", role: .cancel) {}
-        } message: { Text(shareNote ?? "") }
+        .sheet(isPresented: $showExport) {
+            switch source {
+            case .playlist(let id): ListExportView(preselected: [.playlist(id)])
+            default: ListExportView(preselected: [.favorites])
+            }
+        }
         .confirmationDialog(
             "Bugünlük indirme hakkın yetmiyor",
             isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
@@ -189,6 +192,18 @@ struct PlaylistDetailView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !tracks.isEmpty, !source.isEditable {
+                    Button {
+                        if source == .favorites {
+                            showExport = true
+                        } else {
+                            shareURL = SharedListFile.write([library.shared(tracks, name: title)])
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Listeyi paylaş")
+                }
                 if case .playlist = source {
                     EditButton()
                     Menu {
@@ -224,12 +239,9 @@ struct PlaylistDetailView: View {
                             Label("Kapak resmini değiştir", systemImage: "photo")
                         }
                         Button {
-                            guard let playlist else { return }
-                            let (shared, skipped) = library.sharedPlaylist(for: playlist)
-                            shareNote = skipped > 0 ? "\(skipped) şarkı kendi dosyan olduğu için listeye eklenemedi; diğerleri paylaşıldı." : nil
-                            shareURL = BackupService.write(shared, name: playlist.name, ext: "boxlist")
+                            showExport = true
                         } label: {
-                            Label("Listeyi paylaş", systemImage: "square.and.arrow.up")
+                            Label("Dışa aktar / paylaş", systemImage: "square.and.arrow.up")
                         }
                         if playlist?.coverFile != nil, case .playlist(let id) = source {
                             Button {
@@ -324,6 +336,20 @@ struct PlaylistDetailView: View {
                     Label("Karıştır", systemImage: "shuffle")
                 }
                 .buttonStyle(PrimaryButtonStyle(filled: false))
+
+                if source.isEditable {
+                    Button {
+                        showExport = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 46, height: 46)
+                            .background(Circle().fill(Color.white.opacity(0.1)))
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("Dışa aktar")
+                }
 
                 if !missing.isEmpty || activeDownloads > 0 {
                     Button {

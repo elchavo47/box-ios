@@ -8,12 +8,14 @@ $u['avatar_url'] = boxAvatarUrl($u);
 $q = boxQuota($u);
 $devices = q('SELECT device,created_at,last_used_at,expires_at FROM tokens WHERE user_id=? AND expires_at>NOW() ORDER BY COALESCE(last_used_at,created_at) DESC', [$uid])->fetchAll();
 $dls = q('SELECT * FROM downloads WHERE user_id=? ORDER BY id DESC LIMIT 50', [$uid])->fetchAll();
+$lib = boxLibSummary($uid);
 $plog = q('SELECT p.*,a.username admin_name FROM premium_log p LEFT JOIN admins a ON a.id=p.admin_id WHERE p.user_id=? ORDER BY p.id DESC LIMIT 20', [$uid])->fetchAll();
 $facts = [
     ['Üyelik', $isPrem ? 'Premium' : 'Ücretsiz'], ['Premium bitişi', $isPrem ? ($u['premium_until'] ? nbDate($u['premium_until']) : 'Süresiz') : '—'],
     ['Toplam indirme', nbNum((int)q('SELECT COUNT(*) FROM downloads WHERE user_id=?', [$uid])->fetchColumn())], ['Bugün', $q['downloads_used'] . ' indirme · ' . $q['searches_used'] . ' arama'],
     ['Giriş yöntemi', !empty($u['apple_sub']) ? ((int)($u['has_password'] ?? 1) === 1 ? 'E-posta + Apple' : 'Apple') : 'E-posta'],
     ['Bildirim', ($pushN = (int)q('SELECT COUNT(*) FROM push_devices WHERE user_id=?', [$uid])->fetchColumn()) ? $pushN . ' cihaz' : 'Kapalı'],
+    ['Kitaplık', count($lib['playlists']) . ' liste · ' . nbNum($lib['favorites']) . ' beğeni'],
     ['Kayıt', nbDate($u['created_at'], 'd.m.Y')], ['Son giriş', nbAgo($u['last_login_at'])], ['Son görülme', nbAgo($u['last_seen_at'])], ['Uygulama', $u['app_version'] ?: '—'],
 ];
 $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 'revoke' => 'Premium kapatıldı', 'trial' => 'Deneme verildi', 'expire' => 'Süresi doldu'];
@@ -56,6 +58,12 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
   tableView(['Şarkı', 'Zaman'], $dls, function ($r) {
       echo '<td><a class="track" href="https://www.youtube.com/watch?v=' . h($r['video_id']) . '" target="_blank" rel="noopener noreferrer"><img src="https://i.ytimg.com/vi/' . h($r['video_id']) . '/default.jpg" alt="" loading="lazy"><b>' . h($r['title'] !== '' ? $r['title'] : $r['video_id']) . '</b></a></td><td class="nowrap">' . h(nbDate($r['created_at'])) . '</td>';
   }, 'Henüz indirme yok.');
+  cardEnd(); ?>
+  <?php card('Çalma listeleri', count($lib['playlists']) . ' liste · hesaba kayıtlı');
+  tableView(['Liste', 'Şarkı', 'Son değişiklik'], $lib['playlists'], function ($p) {
+      $cover = $p['cover'] ? '<img class="sq" src="' . h($p['cover']) . '" alt="" loading="lazy">' : '<span class="track-ph">' . icon('list') . '</span>';
+      echo '<td><span class="track">' . $cover . '<b>' . h($p['name']) . '</b></span></td><td class="nowrap">' . nbNum($p['count']) . ($p['remote'] ? ' <small class="muted">' . nbNum($p['remote']) . ' internetten</small>' : '') . '</td><td class="nowrap">' . h($p['updated_at'] ? nbAgo(date('Y-m-d H:i:s', (int)floor($p['updated_at'] / 1000))) : '—') . '</td>';
+  }, 'Hesaba kayıtlı liste yok. Uygulama güncellenince listeler otomatik yüklenir.');
   cardEnd(); ?>
   <div class="stack">
     <?php card('Cihazlar', count($devices) . ' açık oturum');

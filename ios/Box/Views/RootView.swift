@@ -57,6 +57,12 @@ struct RootView: View {
             .sheet(isPresented: $router.showInbox) {
                 InboxView()
             }
+            .sheet(item: $router.importRequest) { request in
+                ListImportView(request: request) { playlist in
+                    router.tab = .library
+                    if let playlist { router.openPlaylist = playlist.id }
+                }
+            }
 
 
             Color.clear

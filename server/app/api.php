@@ -319,6 +319,31 @@ switch ($route) {
         if ($top = boxTopArtist($q)) $out['artist'] = $top;
         jsonOut($out);
 
+    case 'match':
+        // Paylaşılan listedeki (bu cihazda olmayan) şarkıları YouTube Music'te bul. Arama hakkından düşmez.
+        $need('POST');
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('match:' . $u['id'], 20, 600);
+        $items = is_array(body()['items'] ?? null) ? array_slice(body()['items'], 0, 25) : [];
+        $out = [];
+        foreach ($items as $i => $item) {
+            $title = is_array($item) ? mb_substr(trim((string)($item['title'] ?? '')), 0, 150) : '';
+            $artist = is_array($item) ? mb_substr(trim((string)($item['artist'] ?? '')), 0, 100) : '';
+            $duration = is_array($item) ? (int)($item['duration'] ?? 0) : 0;
+            if ($title === '') { $out[] = null; continue; }
+            try { $found = boxSearch(trim($title . ' ' . $artist), true, 5, 7 * 86400); }
+            catch (RuntimeException $e) { $out[] = null; continue; }
+            $best = null;
+            foreach ($found as $r) {
+                // Süresi çok farklıysa (canlı kayıt, uzun versiyon) başka sonucu tercih et.
+                if ($duration > 0 && !empty($r['duration']) && abs((int)$r['duration'] - $duration) > max(8, (int)($duration * 0.08))) { $best ??= $r; continue; }
+                $best = $r; break;
+            }
+            $out[] = $best;
+        }
+        jsonOut(['ok' => true, 'results' => $out]);
+
     case 'artist':
         // Sanatçı sayfası (YouTube Music): ?id=… ya da ?name=…
         $u = boxApiUser();

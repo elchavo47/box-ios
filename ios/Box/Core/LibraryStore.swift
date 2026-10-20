@@ -471,25 +471,70 @@ final class LibraryStore: ObservableObject {
         return added
     }
 
-    /// Paylaşmak için: listedeki şarkıların YouTube kimlikleri. Kimliği bilinmeyen yerel dosyalar atlanır.
-    func sharedPlaylist(for playlist: Playlist) -> (SharedPlaylist, skipped: Int) {
+    /// Paylaşmak için: internet / Box'a indirilmiş şarkılar YouTube kimliğiyle, kendi dosyaların adıyla.
+    func shared(_ list: [Track], name: String) -> SharedPlaylist {
         var items: [SearchResult] = []
-        var skipped = 0
-        for track in tracks(for: playlist) {
+        var locals: [SharedLocal] = []
+        var seen = Set<String>()
+        for track in list {
             if let remote = track.remote {
-                items.append(remote)
+                if seen.insert(remote.id).inserted { items.append(remote) }
             } else if let id = videoID(forPath: track.relativePath) {
-                items.append(remoteMeta["yt:" + id] ?? SearchResult(id: id, title: track.title, channel: track.displayArtist, thumbnail: nil, duration: Int(track.duration)))
+                if seen.insert(id).inserted {
+                    items.append(remoteMeta["yt:" + id] ?? SearchResult(id: id, title: track.title, channel: track.artist, thumbnail: nil, duration: Int(track.duration)))
+                }
             } else {
-                skipped += 1
+                locals.append(SharedLocal(title: track.title, artist: track.artist, album: track.album.isEmpty ? nil : track.album, duration: Int(track.duration.rounded()), file: track.url.lastPathComponent))
             }
         }
-        return (SharedPlaylist(name: playlist.name, items: items), skipped)
+        return SharedPlaylist(name: name, items: items, locals: locals.isEmpty ? nil : locals)
     }
 
+    func sharedPlaylist(for playlist: Playlist) -> SharedPlaylist {
+        shared(tracks(for: playlist), name: playlist.name)
+    }
+
+    /// Paylaşılan listedeki kendi dosyalarını bu cihazdaki kitaplıkla eşleştirir.
+    /// Dönen: eşleşen yollar ve bulunamayanlar.
+    func matchLocals(_ locals: [SharedLocal]) -> (paths: [String], missing: [SharedLocal]) {
+        func norm(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "tr_TR"))
+                .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        var byFile: [String: Track] = [:]
+        var byTitleArtist: [String: Track] = [:]
+        var byTitle: [String: [Track]] = [:]
+        for track in tracks {
+            byFile[track.url.lastPathComponent.lowercased()] = byFile[track.url.lastPathComponent.lowercased()] ?? track
+            byTitleArtist[norm(track.title) + "|" + norm(track.artist)] = byTitleArtist[norm(track.title) + "|" + norm(track.artist)] ?? track
+            byTitle[norm(track.title), default: []].append(track)
+        }
+        var paths: [String] = []
+        var missing: [SharedLocal] = []
+        for item in locals {
+            var found: Track?
+            if let file = item.file?.lowercased(), let t = byFile[file] { found = t }
+            if found == nil { found = byTitleArtist[norm(item.title) + "|" + norm(item.artist)] }
+            if found == nil, let candidates = byTitle[norm(item.title)] {
+                let close = candidates.filter { abs(Int($0.duration.rounded()) - item.duration) <= 3 }
+                if close.count == 1 { found = close[0] }
+            }
+            if let found, !paths.contains(found.relativePath) { paths.append(found.relativePath) }
+            else if found == nil { missing.append(item) }
+        }
+        return (paths, missing)
+    }
+
+    /// Paylaşılan listeyi kitaplığa ekler. `extra`: YouTube'da bulunan (dosyası olmayan) şarkılar.
     @discardableResult
-    func importShared(_ shared: SharedPlaylist) -> Playlist {
-        importPlaylist(YouTubePlaylist(id: "shared-" + UUID().uuidString, title: shared.name, channel: "Paylaşılan liste", thumbnail: nil, items: shared.items))
+    func importShared(_ shared: SharedPlaylist, localPaths: [String]? = nil, extra: [SearchResult] = []) -> Playlist {
+        let paths = localPaths ?? matchLocals(shared.locals ?? []).paths
+        var items = shared.items
+        for item in extra where !items.contains(where: { $0.id == item.id }) { items.append(item) }
+        let playlist = Playlist(name: shared.name.isEmpty ? "Paylaşılan liste" : shared.name, paths: paths, remote: items.isEmpty ? nil : items)
+        playlists.append(playlist)
+        savePlaylists()
+        return playlist
     }
 
     // MARK: - Liste kapakları

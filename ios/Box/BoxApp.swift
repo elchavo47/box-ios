@@ -111,9 +111,10 @@ struct BoxApp: App {
                     guard url.isFileURL else { return }
                     switch url.pathExtension.lowercased() {
                     case "boxlist":
-                        if let shared = BackupService.read(SharedPlaylist.self, from: url) {
-                            library.importShared(shared)
-                            router.tab = .library
+                        if let lists = SharedListFile.read(from: url), !lists.isEmpty {
+                            router.importRequest = ImportRequest(lists: lists)
+                        } else {
+                            router.show("Bu dosya bir Box listesi değil.", icon: "exclamationmark.triangle.fill")
                         }
                         return
                     case "boxbackup":
@@ -217,6 +218,10 @@ final class AppRouter: ObservableObject {
     /// Sanatçı / albüm sayfası (her yerden açılır, kendi gezinme yığınıyla).
     @Published var musicPage: MusicPage?
     @Published var showInbox = false
+    /// Açılan .boxlist dosyası (içe aktarma ekranı).
+    @Published var importRequest: ImportRequest?
+    /// İçe aktarılan listeyi Kitaplık'ta aç.
+    @Published var openPlaylist: UUID?
 
     /// Tam ekran oynatıcı açıksa önce kapatıp sonra sayfayı açar (iki sayfa aynı anda açılamaz).
     func openMusic(_ page: MusicPage, player: PlayerManager? = nil) {
