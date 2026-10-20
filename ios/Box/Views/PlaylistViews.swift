@@ -21,8 +21,51 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var stream: StreamCache
     @Environment(\.dismiss) private var dismiss
 
+    @EnvironmentObject private var auth: AuthStore
+    @State private var quotaPrompt: [SearchResult]?
+    @State private var refreshing = false
+    @State private var refreshError: String?
+
     private var missing: [SearchResult] { tracks.compactMap(\.remote) }
     private var activeDownloads: Int { missing.filter { downloads.state(for: $0.id)?.isActive == true }.count }
+
+    /// Liste genelinde indirme ilerlemesi (inenlerin yüzdeleri dahil).
+    private var listProgress: Double? {
+        let active = missing.compactMap { downloads.state(for: $0.id) }.filter(\.isActive)
+        guard !active.isEmpty else { return nil }
+        let total = Double(tracks.count)
+        let partial = active.reduce(0.0) { sum, state in
+            if case .downloading(let p) = state { return sum + p }
+            return sum
+        }
+        return min(1, (Double(tracks.count - missing.count) + partial) / max(total, 1))
+    }
+
+    private func downloadAll() {
+        let list = missing.filter { downloads.state(for: $0.id)?.isActive != true }
+        guard !list.isEmpty else { return }
+        if let left = auth.quota?.downloadsLeft, list.count > left {
+            quotaPrompt = list
+            return
+        }
+        downloads.download(all: list)
+        Haptics.success()
+    }
+
+    private func refreshFromYouTube() {
+        guard let source = playlist?.sourceID, let token = auth.token else { return }
+        refreshing = true
+        Task {
+            defer { refreshing = false }
+            do {
+                let response: PlaylistResponse = try await APIClient.shared.send("playlist", query: ["url": source], token: token)
+                library.importPlaylist(response.playlist)
+                Haptics.success()
+            } catch {
+                refreshError = (error as? LocalizedError)?.errorDescription ?? "Liste yenilenemedi."
+            }
+        }
+    }
 
     @State private var showPicker = false
     @State private var showRename = false
@@ -103,6 +146,27 @@ struct PlaylistDetailView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: missing.count) { stream.warm(missing, limit: 8) }
+        .task { if auth.isPremium { await auth.refresh() } }
+        .confirmationDialog(
+            "Bugünlük indirme hakkın yetmiyor",
+            isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let list = quotaPrompt, let left = auth.quota?.downloadsLeft, left > 0 {
+                Button("İlk \(left) şarkıyı indir") {
+                    downloads.download(all: Array(list.prefix(left)))
+                    quotaPrompt = nil
+                }
+            }
+            Button("Vazgeç", role: .cancel) { quotaPrompt = nil }
+        } message: {
+            Text("\(quotaPrompt?.count ?? 0) şarkı indirilecek ama bugün \(auth.quota?.downloadsLeft ?? 0) hakkın kaldı. Kalanlar internetten çalmaya devam eder; yarın indirebilirsin.")
+        }
+        .alert("Liste yenilenemedi", isPresented: Binding(get: { refreshError != nil }, set: { if !$0 { refreshError = nil } })) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(refreshError ?? "")
+        }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { item in
             guard let item, case .playlist(let id) = source else { return }
@@ -119,13 +183,20 @@ struct PlaylistDetailView: View {
                 if case .playlist = source {
                     EditButton()
                     Menu {
-                        if let remote = tracks.compactMap(\.remote) as [SearchResult]?, !remote.isEmpty {
+                        if !missing.isEmpty {
                             Button {
-                                downloads.download(all: remote)
-                                Haptics.success()
+                                downloadAll()
                             } label: {
-                                Label("İndirilmemiş \(remote.count) şarkıyı indir", systemImage: "arrow.down.circle")
+                                Label("İndirilmemiş \(missing.count) şarkıyı indir", systemImage: "arrow.down.circle")
                             }
+                        }
+                        if playlist?.sourceID != nil {
+                            Button {
+                                refreshFromYouTube()
+                            } label: {
+                                Label(refreshing ? "Yenileniyor…" : "YouTube'dan yenile", systemImage: "arrow.clockwise")
+                            }
+                            .disabled(refreshing)
                         }
                         Button {
                             showPicker = true
@@ -239,18 +310,11 @@ struct PlaylistDetailView: View {
 
                 if !missing.isEmpty || activeDownloads > 0 {
                     Button {
-                        downloads.download(all: missing)
-                        Haptics.success()
+                        downloadAll()
                     } label: {
                         ZStack {
                             Circle().fill(Color.white.opacity(0.1))
-                            if activeDownloads > 0 {
-                                ProgressView().tint(.white)
-                            } else {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
+                            DownloadFillIcon(progress: listProgress ?? (activeDownloads > 0 ? nil : 0), size: 26, done: missing.isEmpty)
                         }
                         .frame(width: 46, height: 46)
                     }

@@ -32,7 +32,8 @@ _cache: dict[str, tuple[str, float]] = {}
 FORMATS = {
     "audio": "140/bestaudio[ext=m4a]/bestaudio",
     # Sesli ve görüntülü tek dosya (Range ile oynatılabilir); çoğunlukla 360p.
-    "video": "18/b[ext=mp4][vcodec!=none][acodec!=none]",
+    # Sessiz H.264 görüntü (ses uygulamadaki ana oynatıcıdan gelir). 360p → 480p → 720p.
+    "video": "134/135/136/18/bv*[vcodec^=avc1][height<=720]",
 }
 _locks: dict[str, asyncio.Lock] = {}
 

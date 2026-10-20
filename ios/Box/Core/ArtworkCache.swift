@@ -38,11 +38,40 @@ actor ArtworkCache {
         return full
     }
 
+    /// İnternet şarkısının kapağı (YouTube küçük resmi, bantsız kare).
+    func remoteArtwork(for videoID: String) async -> UIImage? {
+        let key = ("yt:" + videoID) as NSString
+        if let cached = large.object(forKey: key) { return cached }
+        for name in ["maxresdefault", "hqdefault", "mqdefault"] {
+            guard let url = URL(string: "https://i.ytimg.com/vi/\(videoID)/\(name).jpg"),
+                  let (data, response) = try? await URLSession.shared.data(from: url),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let decoded = UIImage(data: data), decoded.size.width > 150 else { continue }
+            let prepared = Self.prepare(decoded)
+            large.setObject(prepared, forKey: key)
+            return prepared
+        }
+        return nil
+    }
+
+    func dominantColor(of image: UIImage, key: String) async -> UIColor? {
+        if let cached = colors.object(forKey: key as NSString) { return cached }
+        guard let color = averageColor(Self.downscale(image, maxSide: 120)) else { return nil }
+        colors.setObject(color, forKey: key as NSString)
+        return color
+    }
+
     /// Kapaktan oynatıcı arka planı için baskın renk.
     func dominantColor(for url: URL) async -> UIColor? {
         let key = url.path as NSString
         if let cached = colors.object(forKey: key) { return cached }
-        guard let image = await image(for: url, maxSide: 200), let cg = image.cgImage else { return nil }
+        guard let image = await image(for: url, maxSide: 200), let color = averageColor(image) else { return nil }
+        colors.setObject(color, forKey: key)
+        return color
+    }
+
+    private func averageColor(_ image: UIImage) -> UIColor? {
+        guard let cg = image.cgImage else { return nil }
 
         let input = CIImage(cgImage: cg)
         guard let filter = CIFilter(name: "CIAreaAverage", parameters: [
@@ -57,9 +86,7 @@ actor ArtworkCache {
         UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
             .getHue(&hue, saturation: &sat, brightness: &bri, alpha: &alpha)
         // Okunaklı kalması için koyu ve doygun tut.
-        let color = UIColor(hue: hue, saturation: min(max(sat, 0.25) * 1.15, 0.85), brightness: min(max(bri, 0.28), 0.48), alpha: 1)
-        colors.setObject(color, forKey: key)
-        return color
+        return UIColor(hue: hue, saturation: min(max(sat, 0.25) * 1.15, 0.85), brightness: min(max(bri, 0.28), 0.48), alpha: 1)
     }
 
     func invalidate(_ url: URL) {

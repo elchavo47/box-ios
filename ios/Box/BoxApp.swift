@@ -75,6 +75,8 @@ struct BoxApp: App {
                         return try await stream.videoURL(id)
                     }
                     player.videoIDFor = { [weak library] track in library?.videoID(forPath: track.relativePath) }
+                    player.onStreamCached = { [weak stream] result, temp in stream?.store(result, temp: temp) }
+                    player.onRemoteSeen = { [weak library] result in library?.remember(result) }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()

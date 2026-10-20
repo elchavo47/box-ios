@@ -45,14 +45,7 @@ struct RootView: View {
             .sheet(isPresented: $router.showAccount) {
                 AccountView()
             }
-            .alert(
-                server.announcement?.title ?? "",
-                isPresented: Binding(get: { server.announcement != nil && !showSplash }, set: { if !$0 { server.dismissAnnouncement() } })
-            ) {
-                Button("Tamam", role: .cancel) { server.dismissAnnouncement() }
-            } message: {
-                Text(server.announcement?.body ?? "")
-            }
+
 
             Color.clear
                 .alert("Şarkı açılamadı", isPresented: Binding(
@@ -65,6 +58,14 @@ struct RootView: View {
                     Text(player.errorMessage ?? "")
                 }
                 .allowsHitTesting(false)
+
+            if let announcement = server.announcement, !showSplash {
+                AnnouncementCard(announcement: announcement) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { server.dismissAnnouncement() }
+                }
+                .zIndex(1)
+                .transition(.opacity)
+            }
 
             if server.updateRequired {
                 UpdateRequiredView()
@@ -182,5 +183,95 @@ private struct UpdateRequiredView: View {
                 .padding(.top, 6)
             }
         }
+    }
+}
+
+
+/// Box tasarımında, alttan açılan duyuru kartı.
+private struct AnnouncementCard: View {
+    let announcement: RemoteConfig.Announcement
+    let onClose: () -> Void
+
+    @State private var shown = false
+    @State private var dragY: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(shown ? 0.55 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { close() }
+
+            VStack(alignment: .leading, spacing: 16) {
+                Capsule().fill(Color.white.opacity(0.25)).frame(width: 40, height: 5)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 2)
+
+                HStack(spacing: 12) {
+                    BoxMark(size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("BOX DUYURU")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundColor(.accent)
+                        Text(announcement.title)
+                            .font(.system(size: 21, weight: .bold))
+                            .foregroundColor(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                ScrollView {
+                    Text(announcement.body)
+                        .font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.78))
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 260)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: close) {
+                    Text("Tamam")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 12)
+            .padding(.bottom, 26)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.boxSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    )
+                    .overlay(alignment: .top) {
+                        LinearGradient(colors: [Color.accent.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 120)
+                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+            )
+            .padding(.horizontal, 8)
+            .offset(y: shown ? max(0, dragY) : 600)
+            .gesture(
+                DragGesture()
+                    .onChanged { dragY = $0.translation.height }
+                    .onEnded { value in
+                        if value.translation.height > 110 { close() }
+                        else { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 } }
+                    }
+            )
+        }
+        .onAppear {
+            Haptics.soft()
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) { shown = true }
+        }
+    }
+
+    private func close() {
+        withAnimation(.easeIn(duration: 0.22)) { shown = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { onClose() }
     }
 }

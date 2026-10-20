@@ -127,7 +127,7 @@ struct TrackRow: View {
 
     private var subtitle: String {
         if case .failed = downloadState { return "İndirilemedi • tekrar denemek için menüyü aç" }
-        if case .downloading(let p) = downloadState { return "İndiriliyor %\(Int(p * 100))" }
+        if case .downloading(let p) = downloadState { return "İndiriliyor • %\(Int(p * 100))" }
         if case .preparing = downloadState { return "İndirme sırada…" }
         return track.displayArtist + (track.duration > 0 ? " • " + Formatters.time(track.duration) : "")
     }
@@ -139,9 +139,10 @@ struct TrackRow: View {
     @ViewBuilder
     private var statusIcon: some View {
         if let state = downloadState, state.isActive {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.accent)
+            DownloadFillIcon(progress: {
+                if case .downloading(let p) = state { return p }
+                return nil
+            }(), size: 14)
         } else if case .failed = downloadState {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 12))
@@ -188,13 +189,6 @@ struct TrackRow: View {
                 }
                 .font(.system(size: 14))
                 .foregroundColor(.boxSecondaryText)
-
-                if let progress = downloadProgress {
-                    ProgressView(value: progress)
-                        .tint(.accent)
-                        .frame(height: 3)
-                        .padding(.top, 2)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -497,5 +491,52 @@ struct PlaylistArtwork: View {
         } else {
             PlaylistCover(tracks: tracks, icon: "music.note.list", size: size, cornerRadius: cornerRadius)
         }
+    }
+}
+
+/// Bardak dolar gibi alttan yukarı dolan indirme ikonu; bitince ✓ olur.
+struct DownloadFillIcon: View {
+    /// 0...1; nil ise sırada / hazırlanıyor (hafif nabız).
+    let progress: Double?
+    var size: CGFloat = 22
+    var done = false
+
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            if done {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: size))
+                    .foregroundColor(.accent)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                Circle()
+                    .stroke(Color.white.opacity(0.35), lineWidth: max(1.5, size / 14))
+                GeometryReader { proxy in
+                    let level = CGFloat(progress ?? (pulse ? 0.12 : 0.04))
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Rectangle()
+                            .fill(Color.accent)
+                            .frame(height: proxy.size.height * level)
+                    }
+                }
+                .clipShape(Circle())
+                .padding(max(1.5, size / 14))
+                .animation(.easeOut(duration: 0.35), value: progress)
+                Image(systemName: "arrow.down")
+                    .font(.system(size: size * 0.45, weight: .bold))
+                    .foregroundColor(.white)
+                    .blendMode(.normal)
+            }
+        }
+        .frame(width: size, height: size)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: done)
+        .onAppear {
+            guard progress == nil else { return }
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
+        }
+        .accessibilityLabel(done ? "İndirildi" : progress.map { "İndiriliyor yüzde \(Int($0 * 100))" } ?? "İndirme sırada")
     }
 }

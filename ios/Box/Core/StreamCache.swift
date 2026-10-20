@@ -133,6 +133,23 @@ final class StreamCache: ObservableObject {
         Task { _ = try? await resolve(result) }
     }
 
+    /// Akışla dinlenip tamamen inen dosyayı önbelleğe alır.
+    func store(_ result: SearchResult, temp: URL) {
+        let target = Self.fileURL(for: result.id)
+        try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: target.path) {
+            try? FileManager.default.removeItem(at: temp)
+            return
+        }
+        do {
+            try FileManager.default.moveItem(at: temp, to: target)
+            objectWillChange.send()
+            trim()
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+        }
+    }
+
     var totalSize: Int64 {
         let files = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
         return files.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }

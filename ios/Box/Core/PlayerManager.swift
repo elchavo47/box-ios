@@ -70,9 +70,19 @@ final class PlayerManager: ObservableObject {
     var videoURLFor: ((String) async throws -> URL)?
     /// Yerel (indirilmiş) şarkının YouTube kimliği; videosu varsa izlenebilir.
     var videoIDFor: ((Track) -> String?)?
+    /// Akışla çalınan şarkı tamamen inince önbelleğe almak için.
+    var onStreamCached: ((SearchResult, URL) -> Void)?
+    /// İnternet şarkısını hatırlamak için (geçmiş, beğeni, sıra).
+    var onRemoteSeen: ((SearchResult) -> Void)?
+    /// Son akış hatası (teşhis için Hesap ekranında görünür).
+    @Published private(set) var lastStreamError: String?
 
-    /// Video katmanı için.
-    var avPlayer: AVPlayer { player }
+    /// Video katmanı için (sessiz; ses ana oynatıcıdan gelir).
+    let videoPlayer = AVPlayer()
+    var avPlayer: AVPlayer { videoPlayer }
+    private var progressive: ProgressiveAsset?
+    private var videoProgressive: ProgressiveAsset?
+    private var videoObservers: Set<AnyCancellable> = []
 
     var currentVideoID: String? {
         guard let current else { return nil }
@@ -105,6 +115,8 @@ final class PlayerManager: ObservableObject {
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
+        videoPlayer.isMuted = true
+        videoPlayer.automaticallyWaitsToMinimizeStalling = false
         configureAudioSession()
         configureRemoteCommands()
         observeTime()
@@ -114,9 +126,12 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.saveState(force: true)
-                // Arka planda video oynamaz: kaldığı yerden sese geç.
-                if self.videoMode { await self.setVideoMode(false) }
+                // Arka planda görüntü durur, ses ana oynatıcıdan kesintisiz devam eder.
+                if self.videoMode { self.videoPlayer.pause() }
             }
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.syncVideo(force: true) }
         }
     }
 
@@ -208,6 +223,7 @@ final class PlayerManager: ObservableObject {
         player.playImmediately(atRate: playbackRate)
         isPlaying = true
         updateNowPlaying()
+        syncVideo(force: true)
     }
 
     func pause() {
@@ -216,6 +232,7 @@ final class PlayerManager: ObservableObject {
         isPlaying = false
         updateNowPlaying()
         saveState(force: true)
+        videoPlayer.pause()
     }
 
     func next() {
@@ -243,6 +260,7 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in
                 self?.isSeeking = false
                 self?.updateNowPlaying()
+                self?.syncVideo(force: true)
             }
         }
     }
@@ -283,6 +301,7 @@ final class PlayerManager: ObservableObject {
         player.defaultRate = rate
         if isPlaying { player.rate = rate }
         updateNowPlaying()
+        syncVideo(force: true)
     }
 
     // MARK: - Uyku zamanlayıcısı
@@ -348,6 +367,9 @@ final class PlayerManager: ObservableObject {
     func stop() {
         loadToken += 1
         isBuffering = false
+        stopVideo()
+        progressive?.cancel()
+        progressive = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
         queue = []
@@ -373,6 +395,7 @@ final class PlayerManager: ObservableObject {
         var time: Double
         var shuffled: Bool
         var repeatMode: RepeatMode
+        var remotes: [SearchResult]? = nil
     }
 
     private func saveState(force: Bool = false) {
@@ -386,7 +409,8 @@ final class PlayerManager: ObservableObject {
             index: currentIndex,
             time: clock.currentTime,
             shuffled: isShuffled,
-            repeatMode: repeatMode
+            repeatMode: repeatMode,
+            remotes: Array(Set(queue.compactMap(\.remote) + originalQueue.compactMap(\.remote)))
         )
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: stateKey)
@@ -401,7 +425,10 @@ final class PlayerManager: ObservableObject {
               let data = UserDefaults.standard.data(forKey: stateKey),
               let state = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
 
-        let index = Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { a, _ in a })
+        var index = Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { a, _ in a })
+        for remote in state.remotes ?? [] where index["yt:" + remote.id] == nil {
+            index["yt:" + remote.id] = .remote(remote)
+        }
         let restoredQueue = state.paths.compactMap { index[$0] }
         guard state.paths.indices.contains(state.index),
               let currentTrack = index[state.paths[state.index]],
@@ -448,36 +475,94 @@ final class PlayerManager: ObservableObject {
 
     // MARK: - Video
 
+    /// Şarkı ile Video arasında geçiş. Ses hiç durmaz; görüntü sesin saniyesine kilitlenir.
     func setVideoMode(_ on: Bool) async {
-        guard let track = current, on != videoMode || videoLoading else { return }
-        let time = clock.currentTime
-        let wasPlaying = isPlaying
         if on {
-            guard let id = currentVideoID, let resolver = videoURLFor else { return }
-            videoLoading = true
-            do {
-                let url = try await resolver(id)
-                guard current?.id == track.id else { videoLoading = false; return }
-                loadToken += 1
-                isPlaying = wasPlaying
-                videoMode = true
-                videoLoading = false
-                startItem(track: track, url: url, autoplay: wasPlaying, startAt: time, record: false, streaming: true, video: true)
-            } catch {
-                videoLoading = false
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Video açılamadı."
-            }
+            guard !videoMode || videoProgressive == nil else { return }
+            videoMode = true
+            await loadVideoForCurrent()
         } else {
             videoMode = false
+            stopVideo()
+        }
+    }
+
+    private func loadVideoForCurrent() async {
+        guard videoMode, let track = current else { return }
+        guard let id = currentVideoID, let resolver = videoURLFor else {
+            stopVideo()
+            videoMode = false
+            return
+        }
+        stopVideo()
+        videoLoading = true
+        do {
+            let url = try await resolver(id)
+            guard videoMode, current?.id == track.id else { videoLoading = false; return }
+            let loader = ProgressiveAsset(remoteURL: url, kind: .video)
+            videoProgressive = loader
+            let item = AVPlayerItem(asset: loader.asset)
+            item.preferredForwardBufferDuration = 4
+            videoPlayer.replaceCurrentItem(with: item)
+            item.publisher(for: \.status)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] status in
+                    guard let self, self.videoProgressive === loader else { return }
+                    if status == .readyToPlay {
+                        self.videoLoading = false
+                        self.syncVideo(force: true)
+                    } else if status == .failed {
+                        self.videoLoading = false
+                        self.videoMode = false
+                        self.stopVideo()
+                        self.errorMessage = "Bu şarkının videosu açılamadı."
+                    }
+                }
+                .store(in: &videoObservers)
+            loader.onError = { [weak self] message in
+                guard let self, self.videoProgressive === loader else { return }
+                self.lastStreamError = "Video: " + message
+            }
+            syncVideo(force: true)
+        } catch {
             videoLoading = false
-            loadCurrent(autoplay: wasPlaying, startAt: time, record: false)
+            videoMode = false
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Video açılamadı."
+        }
+    }
+
+    private func stopVideo() {
+        videoObservers.removeAll()
+        videoPlayer.pause()
+        videoPlayer.replaceCurrentItem(with: nil)
+        videoProgressive?.cancel()
+        videoProgressive = nil
+        videoLoading = false
+    }
+
+    /// Görüntüyü sesin konumuna ve hızına eşitler.
+    private func syncVideo(force: Bool = false) {
+        guard videoMode, let item = videoPlayer.currentItem, item.status == .readyToPlay else { return }
+        guard UIApplication.shared.applicationState != .background else { return }
+        let audioTime = player.currentTime().seconds
+        guard audioTime.isFinite else { return }
+        let videoTime = videoPlayer.currentTime().seconds
+        if force || !videoTime.isFinite || abs(videoTime - audioTime) > 0.3 {
+            videoPlayer.seek(to: CMTime(seconds: audioTime, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        if isPlaying && !isBuffering {
+            if videoPlayer.rate != playbackRate { videoPlayer.playImmediately(atRate: playbackRate) }
+        } else if videoPlayer.rate != 0 {
+            videoPlayer.pause()
         }
     }
 
     private func loadCurrent(autoplay: Bool, startAt: Double = 0, record: Bool = true) {
         guard let track = current else { return }
-        if record { videoMode = false; videoLoading = false }
         loadToken += 1
+        progressive?.cancel()
+        progressive = nil
+        if let remote = track.remote { onRemoteSeen?(remote) }
         let token = loadToken
 
         if let endObserver {
@@ -499,12 +584,30 @@ final class PlayerManager: ObservableObject {
             updateNowPlaying()
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if let live = self.liveRemote, let url = try? await live(remote), token == self.loadToken {
-                    self.startItem(track: track, url: url, autoplay: self.isPlaying, startAt: startAt, record: record, streaming: true)
-                    return
+                do {
+                    guard let live = self.liveRemote else { throw APIError(message: "Akış ayarlı değil.", status: 0) }
+                    let url = try await live(remote)
+                    guard token == self.loadToken else { return }
+                    // Uygulama şarkıyı kendisi indirir, ilk baytlar gelir gelmez oynatıcıya verir.
+                    let loader = ProgressiveAsset(remoteURL: url, kind: .audio)
+                    self.progressive = loader
+                    loader.onComplete = { [weak self] temp in
+                        self?.onStreamCached?(remote, temp)
+                    }
+                    loader.onError = { [weak self] message in
+                        guard let self else { return }
+                        self.lastStreamError = message
+                        // Hiç çalmaya başlayamadıysa dosyayı indirip çal.
+                        if token == self.loadToken, self.clock.currentTime < 1 {
+                            Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: startAt, record: false) }
+                        }
+                    }
+                    self.startItem(track: track, item: AVPlayerItem(asset: loader.asset), autoplay: self.isPlaying, startAt: startAt, record: record, streaming: true)
+                } catch {
+                    guard token == self.loadToken else { return }
+                    self.lastStreamError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    await self.fallbackToFile(track: track, remote: remote, token: token, startAt: startAt, record: record)
                 }
-                guard token == self.loadToken else { return }
-                await self.fallbackToFile(track: track, remote: remote, token: token, startAt: startAt, record: record)
             }
             return
         }
@@ -530,10 +633,13 @@ final class PlayerManager: ObservableObject {
         }
     }
 
-    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool, streaming: Bool = false, video: Bool = false) {
-        let item = AVPlayerItem(url: url)
+    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool) {
+        startItem(track: track, item: AVPlayerItem(url: url), autoplay: autoplay, startAt: startAt, record: record, artworkURL: url)
+    }
+
+    private func startItem(track: Track, item: AVPlayerItem, autoplay: Bool, startAt: Double, record: Bool, streaming: Bool = false, artworkURL: URL? = nil) {
         item.audioTimePitchAlgorithm = .timeDomain
-        item.preferredForwardBufferDuration = streaming ? 8 : 0
+        item.preferredForwardBufferDuration = streaming ? 4 : 0
         player.replaceCurrentItem(with: item)
         isBuffering = streaming
 
@@ -543,11 +649,11 @@ final class PlayerManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
                 guard let self, token == self.loadToken else { return }
-                if status == .failed {
-                    if video {
-                        self.errorMessage = "Video oynatılamadı, şarkıya dönülüyor."
-                        Task { await self.setVideoMode(false) }
-                    } else if streaming, let remote = track.remote {
+                if status == .readyToPlay {
+                    self.syncVideo(force: true)
+                } else if status == .failed {
+                    if streaming { self.lastStreamError = item.error?.localizedDescription ?? "Oynatıcı akışı açamadı." }
+                    if streaming, let remote = track.remote {
                         self.itemObservers.removeAll()
                         Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: self.clock.currentTime, record: false) }
                     } else {
@@ -565,6 +671,7 @@ final class PlayerManager: ObservableObject {
                 if status == .playing { self.isBuffering = false }
                 else if status == .waitingToPlayAtSpecifiedRate, streaming { self.isBuffering = true }
                 else if status == .paused { self.isBuffering = false }
+                self.syncVideo()
             }
             .store(in: &itemObservers)
 
@@ -600,9 +707,23 @@ final class PlayerManager: ObservableObject {
         }
         if !autoplay { isBuffering = false }
 
+        // Sonraki şarkıya geçildiyse video modu açık kalır: yeni şarkının videosunu getir.
+        if videoMode, record {
+            Task { await self.loadVideoForCurrent() }
+        }
+
         Task { @MainActor [weak self] in
-            let image = await ArtworkCache.shared.image(for: url)
-            let color = await ArtworkCache.shared.dominantColor(for: url)
+            var image: UIImage?
+            var color: UIColor?
+            if let artworkURL {
+                image = await ArtworkCache.shared.image(for: artworkURL)
+                color = await ArtworkCache.shared.dominantColor(for: artworkURL)
+            }
+            // İnternet şarkısı: dosyada kapak yok, YouTube küçük resmini kullan (kilit ekranı için de).
+            if image == nil, let remote = track.remote {
+                image = await ArtworkCache.shared.remoteArtwork(for: remote.id)
+                if let image { color = await ArtworkCache.shared.dominantColor(of: image, key: "yt:" + remote.id) }
+            }
             guard let self, self.current?.id == track.id else { return }
             self.currentArtwork = image
             self.artworkColor = color
@@ -633,6 +754,7 @@ final class PlayerManager: ObservableObject {
                     self.updateNowPlaying()
                 }
                 if self.isPlaying { self.saveState() }
+                if self.videoMode { self.syncVideo() }
             }
         }
     }

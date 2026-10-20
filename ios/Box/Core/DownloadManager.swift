@@ -107,12 +107,17 @@ final class DownloadManager: ObservableObject {
         let folder = library.documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let destination = FileService.uniqueURL(for: FileService.sanitize(result.title) + ".m4a", in: folder)
-        do {
-            try FileManager.default.copyItem(at: cached, to: destination)
-        } catch {
-            return false
+        // Önbellekteki dosyaya başlık, sanatçı ve kapak yazarak kopyala.
+        let artwork = await Self.fetchArtwork(result)
+        let tagged = await Self.writeMetadata(source: cached, destination: destination, title: result.title, artist: result.channel, artwork: artwork)
+        if !tagged {
+            do {
+                try FileManager.default.copyItem(at: cached, to: destination)
+            } catch {
+                return false
+            }
         }
-        await library.refresh()
+        await library.addFile(destination)
         let path = library.relativePath(for: destination)
         library.setDownloadedPath(path, for: result.id)
         update(result.id, .done(path))
@@ -203,7 +208,7 @@ final class DownloadManager: ObservableObject {
                 try? FileManager.default.removeItem(at: tempFile)
             }
 
-            await library.refresh()
+            await library.addFile(destination)
             let path = library.relativePath(for: destination)
             library.setDownloadedPath(path, for: id)
             update(id, .done(path))

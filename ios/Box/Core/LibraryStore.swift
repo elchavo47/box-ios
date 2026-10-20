@@ -14,6 +14,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playCounts: [String: Int] = [:]
     /// YouTube video kimliği → kitaplıktaki dosya yolu.
     @Published private(set) var videoPaths: [String: String] = [:]
+    /// Dinlenen / beğenilen internet şarkılarının bilgileri ("yt:ID" → sonuç).
+    @Published private(set) var remoteMeta: [String: SearchResult] = [:]
 
     let documents: URL
     private let supportDirectory: URL
@@ -25,6 +27,7 @@ final class LibraryStore: ObservableObject {
     private var metadataFile: URL { supportDirectory.appendingPathComponent("metadata-cache.json") }
     private var historyFile: URL { supportDirectory.appendingPathComponent("history.json") }
     private var videoPathsFile: URL { supportDirectory.appendingPathComponent("video-paths.json") }
+    private var remoteMetaFile: URL { supportDirectory.appendingPathComponent("remote-meta.json") }
 
     private struct History: Codable {
         var recent: [String]
@@ -47,6 +50,7 @@ final class LibraryStore: ObservableObject {
         favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
         videoPaths = Self.load([String: String].self, from: videoPathsFile) ?? [:]
+        remoteMeta = Self.load([String: SearchResult].self, from: remoteMetaFile) ?? [:]
         if let history = Self.load(History.self, from: historyFile) {
             recentPaths = history.recent
             playCounts = history.counts
@@ -126,6 +130,34 @@ final class LibraryStore: ObservableObject {
         Self.save(metadataCache, to: metadataFile)
 
         tracks = found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Tek bir yeni dosyayı tüm kitaplığı taramadan ekler (toplu indirmede kasmasın).
+    func addFile(_ url: URL) async {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey, .fileSizeKey]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return await refresh() }
+        let path = relativePath(for: url)
+        let modified = values.contentModificationDate ?? Date()
+        let size = Int64(values.fileSize ?? 0)
+        let meta = await Self.readMetadata(url: url, modified: modified, size: size)
+        metadataCache[path] = meta
+        let track = Track(relativePath: path, url: url, title: meta.title, artist: meta.artist, album: meta.album, duration: meta.duration, addedAt: values.creationDate ?? modified, fileSize: size)
+        var updated = tracks.filter { $0.relativePath != path }
+        let insertAt = updated.firstIndex { $0.title.localizedCaseInsensitiveCompare(track.title) == .orderedDescending } ?? updated.count
+        updated.insert(track, at: insertAt)
+        tracks = updated
+        scheduleMetadataSave()
+    }
+
+    private var metadataSaveTask: Task<Void, Never>?
+
+    private func scheduleMetadataSave() {
+        metadataSaveTask?.cancel()
+        metadataSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            Self.save(self.metadataCache, to: self.metadataFile)
+        }
     }
 
     private static func readMetadata(url: URL, modified: Date, size: Int64) async -> CachedMetadata {
@@ -271,7 +303,12 @@ final class LibraryStore: ObservableObject {
     }
 
     var favoriteTracks: [Track] {
-        tracks.filter { favorites.contains($0.relativePath) }
+        var result = tracks.filter { favorites.contains($0.relativePath) }
+        let have = Set(result.map(\.relativePath))
+        for path in favorites where path.hasPrefix("yt:") {
+            if let track = resolve(path: path), !have.contains(track.relativePath) { result.append(track) }
+        }
+        return result
     }
 
     var recentlyAdded: [Track] {
@@ -280,8 +317,27 @@ final class LibraryStore: ObservableObject {
 
     // MARK: - Dinleme geçmişi
 
+    /// İnternet şarkısını hatırlar (geçmiş, beğeni ve öneriler için).
+    func remember(_ result: SearchResult) {
+        let key = "yt:" + result.id
+        guard remoteMeta[key] != result else { return }
+        remoteMeta[key] = result
+        if remoteMeta.count > 400 {
+            let keep = Set(recentPaths).union(favorites)
+            remoteMeta = remoteMeta.filter { keep.contains($0.key) }
+        }
+        Self.save(remoteMeta, to: remoteMetaFile)
+    }
+
+    /// Yol (yerel ya da "yt:ID") → çalınabilir şarkı. İndirilmişse yerel dosya döner.
+    func resolve(path: String) -> Track? {
+        if let local = track(forPath: path) { return local }
+        guard let meta = remoteMeta[path] else { return nil }
+        return localTrack(for: meta) ?? .remote(meta)
+    }
+
     func recordPlay(_ track: Track) {
-        guard !track.isRemote else { return }
+        if let remote = track.remote { remember(remote) }
         let path = track.relativePath
         recentPaths.removeAll { $0 == path }
         recentPaths.insert(path, at: 0)
@@ -291,8 +347,8 @@ final class LibraryStore: ObservableObject {
     }
 
     var recentlyPlayed: [Track] {
-        let index = trackIndex
-        return recentPaths.compactMap { index[$0] }
+        var seen = Set<String>()
+        return recentPaths.compactMap { resolve(path: $0) }.filter { seen.insert($0.relativePath).inserted }
     }
 
     /// Ana sayfadaki "Hızlı seçimler": en çok dinlenenler, yoksa son eklenenler.
@@ -346,10 +402,19 @@ final class LibraryStore: ObservableObject {
     // MARK: - Favoriler
 
     func isFavorite(_ track: Track) -> Bool {
-        favorites.contains(track.relativePath)
+        if favorites.contains(track.relativePath) { return true }
+        // İnternetten beğenilip sonra indirilen şarkı da beğenili sayılır.
+        if !track.isRemote, let id = videoID(forPath: track.relativePath) { return favorites.contains("yt:" + id) }
+        return false
     }
 
     func toggleFavorite(_ track: Track) {
+        if let remote = track.remote { remember(remote) }
+        if !track.isRemote, let id = videoID(forPath: track.relativePath), favorites.contains("yt:" + id) {
+            favorites.remove("yt:" + id)
+            Self.save(Array(favorites), to: favoritesFile)
+            return
+        }
         if favorites.contains(track.relativePath) {
             favorites.remove(track.relativePath)
         } else {

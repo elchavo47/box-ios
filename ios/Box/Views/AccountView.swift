@@ -170,6 +170,7 @@ private struct ProfileView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var stream: StreamCache
+    @EnvironmentObject private var player: PlayerManager
 
     @State private var showRename = false
     @State private var cacheSize: Int64 = 0
@@ -232,6 +233,12 @@ private struct ProfileView: View {
                         Label("Önbelleği temizle", systemImage: "trash")
                     }
                     .disabled(cacheSize == 0)
+                    if let error = player.lastStreamError {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Son akış hatası").font(.footnote.weight(.semibold))
+                            Text(error).font(.caption).foregroundColor(.boxSecondaryText).textSelection(.enabled)
+                        }
+                    }
                 } footer: {
                     Text("İndirmeden dinlediğin şarkılar tekrar beklememen için burada tutulur, kitaplıkta görünmez. Yer azalınca en eskileri kendiliğinden silinir.")
                 }

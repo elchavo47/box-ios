@@ -147,7 +147,7 @@ struct FullPlayerView: View {
                                     .frame(width: width, height: width * 9 / 16)
                                     .background(Color.black)
                                     .overlay {
-                                        if player.isBuffering { ProgressView().tint(.white).scaleEffect(1.3) }
+                                        if player.videoLoading || player.isBuffering { ProgressView().tint(.white).scaleEffect(1.3) }
                                     }
                             } else {
                                 artwork(track, side: artSide)

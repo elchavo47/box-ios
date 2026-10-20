@@ -108,9 +108,7 @@ struct DownloadIndicator: View {
     var body: some View {
         ZStack {
             if downloaded {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.accent)
+                DownloadFillIcon(progress: 1, size: 24, done: true)
             } else {
                 switch state {
                 case .none:
@@ -122,18 +120,11 @@ struct DownloadIndicator: View {
                         .font(.system(size: 25, weight: .light))
                         .foregroundColor(.orange)
                 case .preparing, .processing:
-                    ProgressView().tint(.white)
+                    DownloadFillIcon(progress: nil, size: 24)
                 case .downloading(let progress):
-                    Circle().stroke(Color.white.opacity(0.15), lineWidth: 2.5)
-                    Circle()
-                        .trim(from: 0, to: max(0.02, progress))
-                        .stroke(Color.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 0.2), value: progress)
+                    DownloadFillIcon(progress: progress, size: 24)
                 case .done:
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.accent)
+                    DownloadFillIcon(progress: 1, size: 24, done: true)
                 }
             }
         }
