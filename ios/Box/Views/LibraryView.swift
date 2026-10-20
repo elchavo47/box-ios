@@ -298,7 +298,7 @@ struct LibraryView: View {
         ForEach(shown) { group in
             NavigationLink(value: HomeRoute.group(kind: kind, name: group.name)) {
                 HStack(spacing: 14) {
-                    ArtworkView(url: group.tracks.first?.url, size: 56, cornerRadius: kind == .artist ? 28 : 6)
+                    ArtworkView(url: group.tracks.first?.url, size: 56, cornerRadius: kind == .artist ? 28 : 6, fallback: group.tracks.first?.artworkFallback)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(group.name)
                             .font(.system(size: 16, weight: .medium))

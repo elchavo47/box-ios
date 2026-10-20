@@ -9,6 +9,8 @@ final class StreamCache: ObservableObject {
     private weak var auth: AuthStore?
     private var tasks: [String: Task<URL, Error>] = [:]
     private let maxBytes: Int64 = 1_200_000_000
+    /// Önbellekteki şarkıların kimlikleri. Listelerde her satır için diske bakmamak için bellekte tutulur.
+    private var cachedIDs: Set<String> = []
 
     nonisolated static var folder: URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -22,10 +24,19 @@ final class StreamCache: ObservableObject {
     func attach(auth: AuthStore) {
         self.auth = auth
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        reloadIndex()
     }
 
     func isCached(_ videoID: String) -> Bool {
-        FileManager.default.fileExists(atPath: Self.fileURL(for: videoID).path)
+        cachedIDs.contains(videoID)
+    }
+
+    private func reloadIndex() {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: Self.folder.path)) ?? []
+        cachedIDs = Set(files.compactMap { name -> String? in
+            guard name.hasSuffix(".m4a"), !name.contains(".part") else { return nil }
+            return String(name.dropLast(4))
+        })
     }
 
     /// Dosya hazırsa hemen, değilse sunucudan alıp döner.
@@ -33,6 +44,7 @@ final class StreamCache: ObservableObject {
         let target = Self.fileURL(for: result.id)
         if FileManager.default.fileExists(atPath: target.path) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: target.path)
+            cachedIDs.insert(result.id)
             return target
         }
         if let task = tasks[result.id] { return try await task.value }
@@ -68,6 +80,8 @@ final class StreamCache: ObservableObject {
             preparing.remove(result.id)
         }
         let url = try await task.value
+        cachedIDs.insert(result.id)
+        objectWillChange.send()
         trim()
         return url
     }
@@ -143,6 +157,7 @@ final class StreamCache: ObservableObject {
         }
         do {
             try FileManager.default.moveItem(at: temp, to: target)
+            cachedIDs.insert(result.id)
             objectWillChange.send()
             trim()
         } catch {
@@ -158,6 +173,7 @@ final class StreamCache: ObservableObject {
     func clear() {
         try? FileManager.default.removeItem(at: Self.folder)
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        cachedIDs.removeAll()
         objectWillChange.send()
     }
 
@@ -177,6 +193,7 @@ final class StreamCache: ObservableObject {
             try? FileManager.default.removeItem(at: file)
             total -= size
         }
+        reloadIndex()
     }
 }
 

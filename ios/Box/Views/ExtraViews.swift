@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - İlk açılış tanıtımı
 
@@ -213,7 +214,9 @@ struct OfflineBanner: View {
 
 // MARK: - Akan arka plan
 
-/// Kapağın renkleriyle yavaşça akan arka plan (Apple Music benzeri). Hareket azaltma açıksa durağan.
+/// Kapağın renkleriyle yavaşça akan arka plan (Apple Music benzeri).
+/// Hareketi Core Animation yürütür: ana iş parçacığında kare kare çizim yoktur, kasmaz.
+/// Hareket azaltma açıksa durağan.
 struct FlowingBackground: View {
     let colors: [Color]
     var playing: Bool = true
@@ -221,30 +224,142 @@ struct FlowingBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !playing)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas { context, size in
-                let palette = colors.isEmpty ? [Color(red: 0.12, green: 0.24, blue: 0.19)] : colors
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(palette[0].opacity(0.9)))
-                let radius = max(size.width, size.height) * 0.75
-                for (index, color) in palette.enumerated() {
-                    let speed = 0.05 + Double(index) * 0.017
-                    let phase = Double(index) * 2.1
-                    let x = size.width * (0.5 + 0.38 * cos(t * speed + phase))
-                    let y = size.height * (0.32 + 0.28 * sin(t * speed * 1.3 + phase))
-                    let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
-                    context.fill(
-                        Path(ellipseIn: rect),
-                        with: .radialGradient(Gradient(colors: [color.opacity(0.95), color.opacity(0)]), center: CGPoint(x: x, y: y), startRadius: 0, endRadius: radius)
-                    )
-                }
-            }
+        FlowingLayerView(colors: colors.map { UIColor($0) }, moving: !reduceMotion)
+            .overlay(
+                LinearGradient(colors: [.clear, Color.black.opacity(0.35), Color.boxBackground.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+    }
+}
+
+private struct FlowingLayerView: UIViewRepresentable {
+    let colors: [UIColor]
+    let moving: Bool
+
+    func makeUIView(context: Context) -> FlowingBackgroundView {
+        FlowingBackgroundView()
+    }
+
+    func updateUIView(_ view: FlowingBackgroundView, context: Context) {
+        view.apply(colors: colors)
+        view.setMoving(moving)
+    }
+}
+
+final class FlowingBackgroundView: UIView {
+    private let base = CALayer()
+    private var blobs: [CAGradientLayer] = []
+    private var palette: [UIColor] = []
+    private var moving = true
+    private var observer: NSObjectProtocol?
+
+    /// Her lekenin dolaştığı elips (oranlar) ve tur süresi.
+    private let orbits: [(cx: CGFloat, cy: CGFloat, rx: CGFloat, ry: CGFloat, duration: CFTimeInterval, reversed: Bool)] = [
+        (0.50, 0.28, 0.36, 0.20, 46, false),
+        (0.42, 0.46, 0.30, 0.24, 61, true),
+        (0.58, 0.22, 0.40, 0.16, 77, false),
+    ]
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        layer.addSublayer(base)
+        for _ in orbits {
+            let blob = CAGradientLayer()
+            blob.type = .radial
+            blob.startPoint = CGPoint(x: 0.5, y: 0.5)
+            blob.endPoint = CGPoint(x: 1, y: 1)
+            layer.addSublayer(blob)
+            blobs.append(blob)
         }
-        .overlay(
-            LinearGradient(colors: [.clear, Color.black.opacity(0.35), Color.boxBackground.opacity(0.92)], startPoint: .top, endPoint: .bottom)
-        )
-        .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.8), value: colors.count)
+        apply(colors: [])
+        // Uygulama arka plandan dönünce animasyonları yeniden başlat.
+        observer = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.restartMotion(force: true)
+        }
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        base.frame = bounds
+        let radius = max(bounds.width, bounds.height) * 0.75
+        for (index, blob) in blobs.enumerated() {
+            blob.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
+            blob.position = startPoint(index)
+        }
+        CATransaction.commit()
+        restartMotion(force: true)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { restartMotion(force: false) }
+    }
+
+    func apply(colors: [UIColor]) {
+        let next = colors.isEmpty ? [UIColor(red: 0.12, green: 0.24, blue: 0.19, alpha: 1)] : colors
+        guard next != palette else { return }
+        let animated = !palette.isEmpty
+        palette = next
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        CATransaction.setAnimationDuration(0.9)
+        base.backgroundColor = next[0].withAlphaComponent(0.9).cgColor
+        for (index, blob) in blobs.enumerated() {
+            let color = next[index % next.count]
+            blob.colors = [color.withAlphaComponent(0.95).cgColor, color.withAlphaComponent(0).cgColor]
+            blob.opacity = index < next.count ? 1 : 0
+        }
+        CATransaction.commit()
+    }
+
+    func setMoving(_ on: Bool) {
+        guard on != moving else { return }
+        moving = on
+        restartMotion(force: true)
+    }
+
+    private func startPoint(_ index: Int) -> CGPoint {
+        let orbit = orbits[index]
+        return CGPoint(x: bounds.width * (orbit.cx + orbit.rx), y: bounds.height * orbit.cy)
+    }
+
+    private func restartMotion(force: Bool) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        for (index, blob) in blobs.enumerated() {
+            if !moving {
+                blob.removeAnimation(forKey: "flow")
+                continue
+            }
+            if !force, blob.animation(forKey: "flow") != nil { continue }
+            let orbit = orbits[index]
+            let rect = CGRect(
+                x: bounds.width * (orbit.cx - orbit.rx),
+                y: bounds.height * (orbit.cy - orbit.ry),
+                width: bounds.width * orbit.rx * 2,
+                height: bounds.height * orbit.ry * 2
+            )
+            var path = UIBezierPath(ovalIn: rect)
+            if orbit.reversed { path = path.reversing() }
+            let animation = CAKeyframeAnimation(keyPath: "position")
+            animation.path = path.cgPath
+            animation.calculationMode = .paced
+            animation.duration = orbit.duration
+            animation.repeatCount = .infinity
+            animation.timeOffset = orbit.duration * Double(index) / 3
+            animation.isRemovedOnCompletion = false
+            blob.add(animation, forKey: "flow")
+        }
     }
 }
 

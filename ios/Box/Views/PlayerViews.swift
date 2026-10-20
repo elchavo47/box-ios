@@ -223,10 +223,7 @@ struct FullPlayerView: View {
                     : player.artworkPalette.map { Color($0) },
                 playing: player.isPlaying
             )
-            .id(player.current?.id)
-            .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.6), value: player.current?.id)
         .ignoresSafeArea()
     }
 

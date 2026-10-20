@@ -777,9 +777,9 @@ final class PlayerManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
                 guard let self, token == self.loadToken else { return }
-                if status == .playing { self.isBuffering = false }
-                else if status == .waitingToPlayAtSpecifiedRate, streaming { self.isBuffering = true }
-                else if status == .paused { self.isBuffering = false }
+                // Aynı değeri tekrar yazmak bile ekranları yeniden çizdirir; yalnızca değişince yaz.
+                let buffering = status == .waitingToPlayAtSpecifiedRate && streaming
+                if self.isBuffering != buffering { self.isBuffering = buffering }
                 self.syncVideo()
             }
             .store(in: &itemObservers)

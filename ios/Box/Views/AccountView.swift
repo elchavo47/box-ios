@@ -186,6 +186,25 @@ private struct ProfileView: View {
     @State private var errorMessage: String?
     @State private var photoItem: PhotosPickerItem?
     @State private var uploading = false
+    @State private var cropping: CropItem?
+
+    private struct CropItem: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
+
+    private func upload(_ image: UIImage) {
+        Task {
+            uploading = true
+            defer { uploading = false }
+            do {
+                try await auth.uploadAvatar(image)
+                Haptics.success()
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Fotoğraf yüklenemedi."
+            }
+        }
+    }
 
     var body: some View {
         List {
@@ -325,13 +344,23 @@ private struct ProfileView: View {
             Task {
                 uploading = true
                 defer { uploading = false; photoItem = nil }
-                guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { return }
-                do {
-                    try await auth.uploadAvatar(image)
-                    Haptics.success()
-                } catch {
-                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Fotoğraf yüklenemedi."
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
+                    errorMessage = "Fotoğraf açılamadı."
+                    return
                 }
+                // Büyük fotoğrafı belleği yormadan küçült, sonra ayarlama ekranını aç.
+                let image = await Task.detached(priority: .userInitiated) { ImageDownsampler.image(from: data, maxPixel: 2048) }.value
+                guard let image else {
+                    errorMessage = "Fotoğraf açılamadı."
+                    return
+                }
+                cropping = CropItem(image: image)
+            }
+        }
+        .fullScreenCover(item: $cropping) { item in
+            AvatarCropView(image: item.image, onCancel: { cropping = nil }) { result in
+                cropping = nil
+                upload(result)
             }
         }
         .refreshable { await auth.refresh() }

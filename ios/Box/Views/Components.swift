@@ -34,7 +34,7 @@ struct ArtworkFill: View {
                     .scaledToFill()
                     .transition(.opacity)
             } else if let fallback {
-                RemoteThumb(url: fallback)
+                RemoteThumb(url: fallback, maxSide: maxSide)
             } else {
                 ArtworkPlaceholder()
             }
@@ -141,7 +141,7 @@ struct TrackRow: View {
     }
 
     private var isDownloadedLocal: Bool {
-        !track.isRemote && (track.relativePath.hasPrefix(AppConfig.downloadsFolderName + "/") || library.videoPaths.values.contains(track.relativePath))
+        !track.isRemote && library.isDownloadedFile(track.relativePath)
     }
 
     @ViewBuilder

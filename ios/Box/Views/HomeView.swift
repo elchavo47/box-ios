@@ -144,7 +144,7 @@ struct HomeView: View {
                                     player.play(library.recentlyAdded, startAt: library.recentlyAdded.firstIndex(of: track) ?? 0)
                                 } label: {
                                     CoverCard(title: track.title, subtitle: track.displayArtist) {
-                                        ArtworkFill(url: track.url, maxSide: 450)
+                                        ArtworkFill(url: track.url, maxSide: 450, fallback: track.artworkFallback)
                                     }
                                 }
                                 .buttonStyle(PressableStyle())
@@ -166,7 +166,7 @@ struct HomeView: View {
                             ForEach(library.artists.sorted { $0.tracks.count > $1.tracks.count }.prefix(15)) { group in
                                 NavigationLink(value: HomeRoute.group(kind: .artist, name: group.name)) {
                                     VStack(spacing: 8) {
-                                        ArtworkView(url: group.tracks.first?.url, size: 112, cornerRadius: 56)
+                                        ArtworkView(url: group.tracks.first?.url, size: 112, cornerRadius: 56, fallback: group.tracks.first?.artworkFallback)
                                         Text(group.name)
                                             .font(.system(size: 14, weight: .semibold))
                                             .foregroundColor(.white)
@@ -188,39 +188,9 @@ struct HomeView: View {
     }
 
     /// Premium: dinleme geçmişine göre öneriler ve türler.
+    /// Sıra: Sana özel karışık → Ruh haline göre → diğer öneriler.
     @ViewBuilder
     private var forYou: some View {
-        if !feed.genres.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Ruh haline göre", subtitle: "Keşfet")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHGrid(rows: [GridItem(.fixed(44), spacing: 10), GridItem(.fixed(44), spacing: 10)], spacing: 10) {
-                        ForEach(Array(feed.genres.enumerated()), id: \.element.id) { index, genre in
-                            NavigationLink(value: HomeRoute.genre(genre)) {
-                                HStack(spacing: 0) {
-                                    Rectangle()
-                                        .fill(Self.genreColors[index % Self.genreColors.count])
-                                        .frame(width: 5)
-                                    Text(genre.title)
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 14)
-                                    Spacer(minLength: 0)
-                                }
-                                .frame(width: 168, height: 44)
-                                .background(Color.boxSurface2)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            }
-                            .buttonStyle(PressableStyle())
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .frame(height: 98)
-            }
-        }
-
         if feed.sections.isEmpty && !feed.isLoading, let error = feed.errorMessage {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Sana özel")
@@ -258,21 +228,60 @@ struct HomeView: View {
             }
         }
 
-        ForEach(feed.sections) { section in
+        ForEach(feed.sections.filter { $0.id == "mix" }) { section in
+            feedSection(section)
+        }
+
+        if !feed.genres.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: section.title, subtitle: section.subtitle, action: {
-                    player.play(library.playable(section.items), startAt: 0)
-                }, actionTitle: "Dinle")
+                SectionHeader(title: "Ruh haline göre", subtitle: "Keşfet")
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 14) {
-                        ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
-                            RemoteCard(result: item) {
-                                player.play(library.playable(section.items), startAt: index)
+                    LazyHGrid(rows: [GridItem(.fixed(44), spacing: 10), GridItem(.fixed(44), spacing: 10)], spacing: 10) {
+                        ForEach(Array(feed.genres.enumerated()), id: \.element.id) { index, genre in
+                            NavigationLink(value: HomeRoute.genre(genre)) {
+                                HStack(spacing: 0) {
+                                    Rectangle()
+                                        .fill(Self.genreColors[index % Self.genreColors.count])
+                                        .frame(width: 5)
+                                    Text(genre.title)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 14)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(width: 168, height: 44)
+                                .background(Color.boxSurface2)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
+                            .buttonStyle(PressableStyle())
                         }
                     }
                     .padding(.horizontal, 16)
                 }
+                .frame(height: 98)
+            }
+        }
+
+        ForEach(feed.sections.filter { $0.id != "mix" }) { section in
+            feedSection(section)
+        }
+    }
+
+    private func feedSection(_ section: FeedSection) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: section.title, subtitle: section.subtitle, action: {
+                player.play(library.playable(section.items), startAt: 0)
+            }, actionTitle: "Dinle")
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 14) {
+                    ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                        RemoteCard(result: item) {
+                            player.play(library.playable(section.items), startAt: index)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
             }
         }
     }
@@ -343,7 +352,7 @@ struct HomeView: View {
                             player.play(items, startAt: items.firstIndex(of: track) ?? 0)
                         } label: {
                             ZStack(alignment: .bottomLeading) {
-                                ArtworkFill(url: track.url, maxSide: 450)
+                                ArtworkFill(url: track.url, maxSide: 450, fallback: track.artworkFallback)
                                 LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
                                 Text(track.title)
                                     .font(.system(size: 14, weight: .bold))

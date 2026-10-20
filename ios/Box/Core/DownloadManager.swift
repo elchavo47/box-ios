@@ -332,12 +332,23 @@ final class FileDownloader: NSObject, URLSessionDownloadDelegate {
         }
     }
 
+    /// Son bildirilen yüzde. URLSession saniyede onlarca kez haber verir; her birini
+    /// arayüze iletmek listeleri sürekli yeniden çizdirip kasmaya yol açıyordu.
+    private var lastPercent = -1
+    private var lastReport = Date.distantPast
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else {
-            onProgress(0)
+            if lastPercent < 0 { lastPercent = 0; onProgress(0) }
             return
         }
-        onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let percent = Int(fraction * 100)
+        let now = Date()
+        guard percent != lastPercent, percent >= 100 || now.timeIntervalSince(lastReport) >= 0.25 else { return }
+        lastPercent = percent
+        lastReport = now
+        onProgress(fraction)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {

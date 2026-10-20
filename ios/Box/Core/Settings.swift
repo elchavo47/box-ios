@@ -68,8 +68,9 @@ final class NetworkMonitor: ObservableObject {
             let online = path.status == .satisfied
             let expensive = path.isExpensive
             Task { @MainActor in
-                self?.isOnline = online
-                self?.isExpensive = expensive
+                guard let self else { return }
+                if self.isOnline != online { self.isOnline = online }
+                if self.isExpensive != expensive { self.isExpensive = expensive }
             }
         }
         monitor.start(queue: DispatchQueue(label: "box.network"))

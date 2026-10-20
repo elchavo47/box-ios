@@ -434,17 +434,12 @@ struct SearchView: View {
 
 struct RemoteThumb: View {
     let url: URL?
+    /// Piksel cinsinden en uzun kenar.
+    var maxSide: CGFloat = 480
 
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            default:
-                ArtworkPlaceholder()
-            }
-        }
-        .clipped()
+        CachedRemoteImage(url: url, maxSide: maxSide) { ArtworkPlaceholder() }
+            .clipped()
     }
 }
 

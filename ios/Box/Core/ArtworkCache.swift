@@ -27,8 +27,14 @@ actor ArtworkCache {
         if wantsSmall, let cached = small.object(forKey: key) { return cached }
         if !wantsSmall, let cached = large.object(forKey: key) { return cached }
         if missing.contains(url.path) { return nil }
+        if wantsSmall, let big = large.object(forKey: key) {
+            let thumb = Self.downscale(big, maxSide: 200)
+            small.setObject(thumb, forKey: key)
+            return thumb
+        }
 
-        guard let full = await loadFull(url) else { return nil }
+        // Liste küçük resimleri için büyük kopyayı saklama: oynatıcının kapağını önbellekten atmasın.
+        guard let full = await loadFull(url, keepLarge: !wantsSmall) else { return nil }
 
         if wantsSmall {
             let thumb = Self.downscale(full, maxSide: 200)
@@ -115,17 +121,17 @@ actor ArtworkCache {
         overrides = map
     }
 
-    private func loadFull(_ url: URL) async -> UIImage? {
+    private func loadFull(_ url: URL, keepLarge: Bool = true) async -> UIImage? {
         if let custom = overrides[url.standardizedFileURL.path], let image = UIImage(contentsOfFile: custom.path) {
             let prepared = Self.prepare(image)
-            large.setObject(prepared, forKey: url.path as NSString)
+            if keepLarge { large.setObject(prepared, forKey: url.path as NSString) }
             return prepared
         }
         let key = url.path
         if let cached = large.object(forKey: key as NSString) { return cached }
         if let task = inFlight[key] { return await task.value }
 
-        let task = Task.detached(priority: .userInitiated) { () -> UIImage? in
+        let task = Task.detached(priority: keepLarge ? .userInitiated : .utility) { () -> UIImage? in
             let asset = AVURLAsset(url: url)
             guard let items = try? await asset.load(.commonMetadata) else { return nil }
             for item in items where item.commonKey == .commonKeyArtwork {
@@ -140,7 +146,7 @@ actor ArtworkCache {
         inFlight[key] = nil
 
         if let image {
-            large.setObject(image, forKey: key as NSString)
+            if keepLarge { large.setObject(image, forKey: key as NSString) }
         } else {
             missing.insert(key)
         }

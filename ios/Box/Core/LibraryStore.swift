@@ -4,7 +4,7 @@ import UIKit
 
 @MainActor
 final class LibraryStore: ObservableObject {
-    @Published private(set) var tracks: [Track] = []
+    @Published private(set) var tracks: [Track] = [] { didSet { tracksChanged() } }
     @Published private(set) var playlists: [Playlist] = []
     @Published private(set) var favorites: Set<String> = []
     @Published private(set) var isScanning = false
@@ -13,12 +13,36 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recentPaths: [String] = []
     @Published private(set) var playCounts: [String: Int] = [:]
     /// YouTube video kimliği → kitaplıktaki dosya yolu.
-    @Published private(set) var videoPaths: [String: String] = [:]
+    @Published private(set) var videoPaths: [String: String] = [:] { didSet { rebuildVideoIndex() } }
     /// Dinlenen / beğenilen internet şarkılarının bilgileri ("yt:ID" → sonuç).
     @Published private(set) var remoteMeta: [String: SearchResult] = [:]
     /// Kullanıcının düzelttiği şarkı bilgileri (dosyaya dokunmadan).
     @Published private(set) var tagOverrides: [String: TagOverride] = [:]
-    @Published private(set) var stats = ListenStats()
+    /// Dinleme istatistikleri. Saniyede birkaç kez güncellendiği için yayınlanmaz;
+    /// yayınlansaydı kitaplığı izleyen bütün ekranlar sürekli yeniden çizilirdi (kasma).
+    private(set) var stats = ListenStats()
+
+    /// Hızlı arama tabloları (her satırda tüm kitaplığı taramamak için).
+    private var trackByPath: [String: Track] = [:]
+    private var pathToVideoID: [String: String] = [:]
+    private var derived = Derived()
+
+    private struct Derived {
+        var artists: [TrackGroup]?
+        var albums: [TrackGroup]?
+        var downloaded: [Track]?
+        var recent: [Track]?
+        var totalSize: Int64?
+    }
+
+    private func tracksChanged() {
+        trackByPath = Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
+        derived = Derived()
+    }
+
+    private func rebuildVideoIndex() {
+        pathToVideoID = Dictionary(videoPaths.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
+    }
 
     struct TagOverride: Codable, Equatable {
         var title: String?
@@ -47,7 +71,7 @@ final class LibraryStore: ObservableObject {
     private var remoteMetaFile: URL { supportDirectory.appendingPathComponent("remote-meta.json") }
     private var tagsFile: URL { supportDirectory.appendingPathComponent("tag-overrides.json") }
     private var statsFile: URL { supportDirectory.appendingPathComponent("listen-stats.json") }
-    private var statsSaveTask: Task<Void, Never>?
+    private var lastStatsSave = Date()
 
     private struct History: Codable {
         var recent: [String]
@@ -70,6 +94,7 @@ final class LibraryStore: ObservableObject {
         favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
         videoPaths = Self.load([String: String].self, from: videoPathsFile) ?? [:]
+        rebuildVideoIndex()
         remoteMeta = Self.load([String: SearchResult].self, from: remoteMetaFile) ?? [:]
         tagOverrides = Self.load([String: TagOverride].self, from: tagsFile) ?? [:]
         stats = Self.load(ListenStats.self, from: statsFile) ?? ListenStats()
@@ -229,7 +254,12 @@ final class LibraryStore: ObservableObject {
     }
 
     func track(forPath path: String) -> Track? {
-        tracks.first { $0.relativePath == path }
+        trackByPath[path]
+    }
+
+    /// Box'a YouTube'dan indirilmiş yerel dosya mı?
+    func isDownloadedFile(_ path: String) -> Bool {
+        path.hasPrefix(AppConfig.downloadsFolderName + "/") || pathToVideoID[path] != nil
     }
 
     func tracks(for playlist: Playlist) -> [Track] {
@@ -318,11 +348,10 @@ final class LibraryStore: ObservableObject {
         stats.byArtist[track.displayArtist, default: 0] += seconds
         stats.byTrack[track.relativePath, default: 0] += seconds
         if stats.titles[track.relativePath] == nil { stats.titles[track.relativePath] = track.title }
-        statsSaveTask?.cancel()
-        statsSaveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 20_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            Self.save(self.stats, to: self.statsFile)
+        // Diske en fazla 20 saniyede bir yaz (arka plana geçerken de yazılır).
+        if Date().timeIntervalSince(lastStatsSave) > 20 {
+            lastStatsSave = Date()
+            Self.save(stats, to: statsFile)
         }
     }
 
@@ -330,11 +359,16 @@ final class LibraryStore: ObservableObject {
         Self.save(stats, to: statsFile)
     }
 
-    static func dayKey(_ date: Date) -> String {
+    private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        return f
+    }()
+
+    static func dayKey(_ date: Date) -> String {
+        dayFormatter.string(from: date)
     }
 
     // MARK: - Akıllı listeler
@@ -484,7 +518,7 @@ final class LibraryStore: ObservableObject {
 
     /// İndirilmiş dosyanın YouTube kimliği (videosunu açmak için).
     func videoID(forPath path: String) -> String? {
-        videoPaths.first { $0.value == path }?.key
+        pathToVideoID[path]
     }
 
     func setDownloadedPath(_ path: String, for videoID: String) {
@@ -517,7 +551,10 @@ final class LibraryStore: ObservableObject {
     }
 
     var recentlyAdded: [Track] {
-        Array(tracks.sorted { $0.addedAt > $1.addedAt }.prefix(12))
+        if let cached = derived.recent { return cached }
+        let value = Array(tracks.sorted { $0.addedAt > $1.addedAt }.prefix(12))
+        derived.recent = value
+        return value
     }
 
     // MARK: - Dinleme geçmişi
@@ -569,8 +606,11 @@ final class LibraryStore: ObservableObject {
     }
 
     var downloadedTracks: [Track] {
+        if let cached = derived.downloaded { return cached }
         let prefix = AppConfig.downloadsFolderName + "/"
-        return tracks.filter { $0.relativePath.hasPrefix(prefix) }.sorted { $0.addedAt > $1.addedAt }
+        let value = tracks.filter { $0.relativePath.hasPrefix(prefix) }.sorted { $0.addedAt > $1.addedAt }
+        derived.downloaded = value
+        return value
     }
 
     struct TrackGroup: Identifiable, Hashable {
@@ -581,27 +621,34 @@ final class LibraryStore: ObservableObject {
     }
 
     var artists: [TrackGroup] {
-        Dictionary(grouping: tracks, by: \.displayArtist)
+        if let cached = derived.artists { return cached }
+        let value = Dictionary(grouping: tracks, by: \.displayArtist)
             .map { TrackGroup(name: $0.key, tracks: $0.value) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        derived.artists = value
+        return value
     }
 
     var albums: [TrackGroup] {
-        Dictionary(grouping: tracks.filter { !$0.album.isEmpty }, by: \.album)
+        if let cached = derived.albums { return cached }
+        let value = Dictionary(grouping: tracks.filter { !$0.album.isEmpty }, by: \.album)
             .map { TrackGroup(name: $0.key, tracks: $0.value) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        derived.albums = value
+        return value
     }
 
-    private var trackIndex: [String: Track] {
-        Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
-    }
+    private var trackIndex: [String: Track] { trackByPath }
 
     private func saveHistory() {
         Self.save(History(recent: recentPaths, counts: playCounts), to: historyFile)
     }
 
     var totalSize: Int64 {
-        tracks.reduce(0) { $0 + $1.fileSize }
+        if let cached = derived.totalSize { return cached }
+        let value = tracks.reduce(Int64(0)) { $0 + $1.fileSize }
+        derived.totalSize = value
+        return value
     }
 
     // MARK: - Favoriler
@@ -674,7 +721,7 @@ final class LibraryStore: ObservableObject {
         playlists[index].paths.removeAll { toRemove.contains($0) }
         let remoteIDs = Set(chosen.compactMap { track -> String? in
             if let r = track.remote { return r.id }
-            return videoPaths.first { $0.value == track.relativePath }?.key
+            return pathToVideoID[track.relativePath]
         })
         playlists[index].remote?.removeAll { remoteIDs.contains($0.id) }
         savePlaylists()
