@@ -3,7 +3,7 @@ import Foundation
 enum AppConfig {
     /// Hostingdeki Box API adresi (backend/api/index.php).
     /// Backend'i başka bir klasöre koyarsan burayı değiştir.
-    static let apiBase = URL(string: "https://dev.aydworks.com.tr/box/api/index.php")!
+    static let apiBase = URL(string: "https://dev.aydworks.com.tr/box-api/index.php")!
 
     /// İndirilen şarkıların kaydedileceği klasör (Belgeler içinde).
     static let downloadsFolderName = "İndirilenler"

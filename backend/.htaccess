@@ -1,0 +1,14 @@
+# Box admin paneli (kök). Mevcut api.php ve config.php etkilenmez.
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Panelin iç dosyaları dışarıdan açılamaz
+    RewriteRule ^_inc/ - [F,L]
+</IfModule>
+
+# Gizli dosyalar, şema ve yedekler kapalı
+<FilesMatch "^\.|\.(sql|lock|log|bak|tmp|md)$">
+    Require all denied
+</FilesMatch>

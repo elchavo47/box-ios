@@ -15,12 +15,12 @@ ob_start();
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
-if (!is_file(__DIR__ . '/../../api/config.php')) {
-    header('Location: ../install/');
+if (!is_file(__DIR__ . '/../box-api/config.php')) {
+    header('Location: install/');
     exit;
 }
 
-require_once __DIR__ . '/../../api/lib.php';
+require_once __DIR__ . '/../box-api/lib.php';
 require_once __DIR__ . '/totp.php';
 
 /* ---------------- Güvenlik başlıkları ---------------- */

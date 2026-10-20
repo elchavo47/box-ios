@@ -170,3 +170,15 @@ legend{padding:0 8px;font-weight:800;font-size:13px;color:var(--neon);letter-spa
   .top h1{font-size:20px}
 }
 @media (max-width:520px){.g4{grid-template-columns:1fr 1fr}.stat b{font-size:21px}.stat>.ic{display:none}}
+
+/* ---------- Ek yardımcılar ---------- */
+.mt{margin-top:16px}
+.push{margin-left:auto}
+.card h2 .push{font-size:12.5px;font-weight:700}
+.block{display:block}
+.avatar.sm{width:34px;height:34px;border-radius:10px;font-size:13px}
+.list a.row{color:inherit}
+.list a.row:hover b{color:var(--neon)}
+.list .row small{display:block}
+.actions.start{justify-content:flex-start}
+.stack.sm{gap:10px}
