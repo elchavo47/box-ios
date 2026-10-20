@@ -553,33 +553,52 @@ struct HomeRouteView: View {
 }
 
 
-/// Ana sayfanın üstündeki renk geçişi. Çalan şarkının kapak renginden gelir;
-/// bir şey çalmıyorsa Box yeşili. Şarkı değişince yavaşça yeni renge döner.
+/// Ana sayfanın üstündeki renk geçişi (YouTube Music gibi): renkler kendi kendine sırayla döner.
+/// Her renk 8 sn kalır, 3 sn'de yumuşakça diğerine geçer. Geçişler yalnızca saydamlıkla yapılır, telefonu yormaz.
 private struct HomeGlow: View {
-    @EnvironmentObject private var player: PlayerManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = 0
 
-    private var tint: Color {
-        if let color = player.artworkColor { return Color(color) }
-        return .accentDeep
-    }
+    /// (üst renk, alttaki ikinci renk)
+    private static let palettes: [(Color, Color)] = [
+        (Color(red: 0.16, green: 0.30, blue: 0.85), Color(red: 0.05, green: 0.09, blue: 0.32)), // mavi → gece mavisi
+        (Color(red: 0.13, green: 0.62, blue: 0.40), Color(red: 0.02, green: 0.16, blue: 0.10)), // Box yeşili → siyah
+        (Color(red: 0.45, green: 0.18, blue: 0.82), Color(red: 0.62, green: 0.10, blue: 0.20)), // mor → kırmızı
+        (Color(red: 0.06, green: 0.55, blue: 0.62), Color(red: 0.05, green: 0.12, blue: 0.36)), // turkuaz → lacivert
+        (Color(red: 0.78, green: 0.20, blue: 0.55), Color(red: 0.25, green: 0.10, blue: 0.55)), // pembe → mor
+    ]
 
     var body: some View {
         ZStack(alignment: .top) {
-            LinearGradient(
-                stops: [
-                    .init(color: tint.opacity(0.62), location: 0),
-                    .init(color: tint.opacity(0.28), location: 0.45),
-                    .init(color: tint.opacity(0), location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            // Sol üstte hafif bir parlama: düz geçişten daha canlı durur.
-            RadialGradient(colors: [tint.opacity(0.45), .clear], center: .topLeading, startRadius: 0, endRadius: 360)
+            ForEach(Self.palettes.indices, id: \.self) { i in
+                layer(Self.palettes[i])
+                    .opacity(i == index ? 1 : 0)
+            }
         }
         .frame(height: 480)
         .frame(maxWidth: .infinity)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
-        .animation(.easeInOut(duration: 1.2), value: player.artworkColor)
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                withAnimation(.easeInOut(duration: 3)) { index = (index + 1) % Self.palettes.count }
+            }
+        }
+    }
+
+    private func layer(_ colors: (Color, Color)) -> some View {
+        ZStack(alignment: .top) {
+            LinearGradient(
+                stops: [
+                    .init(color: colors.0.opacity(0.62), location: 0),
+                    .init(color: colors.1.opacity(0.42), location: 0.42),
+                    .init(color: colors.1.opacity(0), location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            RadialGradient(colors: [colors.0.opacity(0.4), .clear], center: .topLeading, startRadius: 0, endRadius: 380)
+        }
     }
 }
