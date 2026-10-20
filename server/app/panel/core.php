@@ -53,6 +53,7 @@ function panelPages(): array {
         'stats' => ['chart', 'İstatistikler', 'Kullanıcılar', $all],
         'app' => ['sliders', 'Uygulama ayarları', 'Uygulama', ['admin']],
         'services' => ['server', 'Servisler', 'Uygulama', ['admin', 'viewer']],
+        'notify' => ['bell', 'Bildirimler', 'Uygulama', ['admin']],
         'health' => ['pulse', 'API sağlığı', 'Uygulama', ['admin', 'viewer']],
         'shield' => ['lock', 'Koruma ve yedek', 'Sistem', ['admin']],
         'team' => ['team', 'Ekip', 'Sistem', ['admin']],

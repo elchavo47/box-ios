@@ -36,6 +36,8 @@ function boxUserPublic(array $u): array {
         'premium_until' => !empty($u['premium_until']) ? date(DATE_ATOM, (int)strtotime((string)$u['premium_until'])) : null,
         'created_at' => date(DATE_ATOM, (int)strtotime((string)$u['created_at'])),
         'avatar_url' => boxAvatarUrl($u),
+        'apple_linked' => !empty($u['apple_sub']),
+        'has_password' => (int)($u['has_password'] ?? 1) === 1,
     ];
 }
 

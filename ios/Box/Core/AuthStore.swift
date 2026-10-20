@@ -39,6 +39,33 @@ final class AuthStore: ObservableObject {
         ])
     }
 
+    /// Apple ile giriş: hesap yoksa oluşturulur.
+    func signInWithApple(_ result: AppleSignInRequest.Result) async throws {
+        var body: [String: Any] = ["identity_token": result.identityToken, "nonce": result.nonce]
+        if let code = result.authorizationCode { body["authorization_code"] = code }
+        if let name = result.name { body["name"] = name }
+        try await authenticate(path: "auth/apple", body: body)
+    }
+
+    /// Var olan hesaba Apple ile girişi bağlar.
+    func linkApple(_ result: AppleSignInRequest.Result) async throws {
+        guard let token else { return }
+        isWorking = true
+        defer { isWorking = false }
+        var body: [String: Any] = ["identity_token": result.identityToken, "nonce": result.nonce]
+        if let code = result.authorizationCode { body["authorization_code"] = code }
+        let response: UserResponse = try await APIClient.shared.send("me/apple", method: "POST", body: body, token: token)
+        store(token: token, user: response.user)
+    }
+
+    func unlinkApple() async throws {
+        guard let token else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let response: UserResponse = try await APIClient.shared.send("me/apple", method: "POST", body: ["remove": true], token: token)
+        store(token: token, user: response.user)
+    }
+
     private func authenticate(path: String, body: [String: Any]) async throws {
         isWorking = true
         defer { isWorking = false }
@@ -94,18 +121,21 @@ final class AuthStore: ObservableObject {
 
     func logout() async {
         if let token {
+            await PushManager.shared.unregister(session: token)
             _ = try? await APIClient.shared.send("auth/logout", method: "POST", token: token, as: EmptyResponse.self)
         }
         clear()
     }
 
+    /// Şifresi olmayan (yalnızca Apple ile açılmış) hesaplarda şifre yerine onay gönderilir.
     func deleteAccount(password: String) async throws {
         guard let token else { return }
         isWorking = true
         defer { isWorking = false }
 
+        let body: [String: Any] = user?.hasPassword == false ? ["confirm": "SIL"] : ["password": password]
         _ = try await APIClient.shared.send(
-            "me/delete", method: "POST", body: ["password": password], token: token, as: EmptyResponse.self
+            "me/delete", method: "POST", body: body, token: token, as: EmptyResponse.self
         )
         clear()
     }

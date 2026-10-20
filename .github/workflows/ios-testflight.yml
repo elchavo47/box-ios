@@ -86,6 +86,43 @@ jobs:
           echo "IOS_PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "IOS_PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
 
+      - name: Refresh provisioning profile (App Store Connect API)
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_P8_BASE64: ${{ secrets.APPSTORE_KEY_P8_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+        run: |
+          # Yeni yetenekler (Apple ile giriş, bildirim) eklenince eski profil geçersiz olur.
+          # Burada sertifikayla eşleşen yeni bir profil üretilir. Olmazsa secret'taki profille devam edilir.
+          set -uo pipefail
+          umask 077
+          export APPSTORE_KEY_ID="$(printf '%s' "$APPSTORE_KEY_ID" | tr -d ' \r\n\t')"
+          export APPSTORE_ISSUER_ID="$(printf '%s' "$APPSTORE_ISSUER_ID" | tr -d ' \r\n\t')"
+          export APPSTORE_KEY_PATH="$RUNNER_TEMP/asc-key.p8"
+          printf '%s' "$APPSTORE_KEY_P8_BASE64" | tr -d ' \r\n' | base64 -D > "$APPSTORE_KEY_PATH"
+          P12_PASS="$(printf '%s' "$IOS_P12_PASSWORD" | tr -d '\r\n')"
+          SERIAL="$(openssl pkcs12 -in "$RUNNER_TEMP/distribution.p12" -clcerts -nokeys -passin pass:"$P12_PASS" 2>/dev/null | openssl x509 -noout -serial 2>/dev/null | cut -d= -f2)"
+          if [ -z "$SERIAL" ]; then
+            SERIAL="$(openssl pkcs12 -legacy -in "$RUNNER_TEMP/distribution.p12" -clcerts -nokeys -passin pass:"$P12_PASS" 2>/dev/null | openssl x509 -noout -serial 2>/dev/null | cut -d= -f2)"
+          fi
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet --user pyjwt cryptography
+          FRESH="$RUNNER_TEMP/box-fresh.mobileprovision"
+          if [ -n "$SERIAL" ] && python3 .github/scripts/refresh_profile.py "$APP_ID" "$SERIAL" "$FRESH"; then
+            PLIST="$RUNNER_TEMP/box-fresh.plist"
+            security cms -D -i "$FRESH" > "$PLIST"
+            UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PLIST")"
+            NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PLIST")"
+            cp "$FRESH" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+            echo "IOS_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+            echo "IOS_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+            echo "Yeni profil kullanılıyor: $NAME"
+            /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$PLIST" | grep -E "applesignin|aps-environment" || true
+          else
+            echo "::warning title=Profil::Yeni profil oluşturulamadı, secret'taki profil kullanılıyor."
+          fi
+          rm -f "$APPSTORE_KEY_PATH"
+
       - name: Create signed archive
         working-directory: ios
         run: |
@@ -197,5 +234,6 @@ jobs:
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$IOS_PROFILE_UUID.mobileprovision"
           fi
           security delete-keychain "$RUNNER_TEMP/box-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/asc-key.p8" "$RUNNER_TEMP/box-fresh.mobileprovision" "$RUNNER_TEMP/box-fresh.plist"
           rm -f "$RUNNER_TEMP/distribution.p12" "$RUNNER_TEMP/box.mobileprovision" \
                 "$RUNNER_TEMP/box-profile.plist" "$RUNNER_TEMP/BoxExportOptions.plist"

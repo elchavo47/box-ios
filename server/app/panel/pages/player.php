@@ -12,6 +12,8 @@ $plog = q('SELECT p.*,a.username admin_name FROM premium_log p LEFT JOIN admins 
 $facts = [
     ['Üyelik', $isPrem ? 'Premium' : 'Ücretsiz'], ['Premium bitişi', $isPrem ? ($u['premium_until'] ? nbDate($u['premium_until']) : 'Süresiz') : '—'],
     ['Toplam indirme', nbNum((int)q('SELECT COUNT(*) FROM downloads WHERE user_id=?', [$uid])->fetchColumn())], ['Bugün', $q['downloads_used'] . ' indirme · ' . $q['searches_used'] . ' arama'],
+    ['Giriş yöntemi', !empty($u['apple_sub']) ? ((int)($u['has_password'] ?? 1) === 1 ? 'E-posta + Apple' : 'Apple') : 'E-posta'],
+    ['Bildirim', ($pushN = (int)q('SELECT COUNT(*) FROM push_devices WHERE user_id=?', [$uid])->fetchColumn()) ? $pushN . ' cihaz' : 'Kapalı'],
     ['Kayıt', nbDate($u['created_at'], 'd.m.Y')], ['Son giriş', nbAgo($u['last_login_at'])], ['Son görülme', nbAgo($u['last_seen_at'])], ['Uygulama', $u['app_version'] ?: '—'],
 ];
 $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 'revoke' => 'Premium kapatıldı', 'trial' => 'Deneme verildi', 'expire' => 'Süresi doldu'];
@@ -22,6 +24,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <div>
       <h2><?=h($u['display_name'])?> <span class="muted">#<?=$uid?></span></h2>
       <p class="pills"><?=statusPill($isPrem ? 'premium' : 'free')?><?=pill($u['email'], 'neutral')?><?php if ((int)$u['is_banned']): ?><?=pill('Askıda', 'bad')?><?php endif ?></p>
+      <?php if ($pushN && canSee($GLOBALS['NB_ADMIN'], 'notify')): ?><p><a class="btn small ghost" href="/admin?p=notify&amp;user=<?=$uid?>"><?=icon('bell')?><span>Bildirim gönder</span></a></p><?php endif ?>
       <?php if ($u['ban_reason']): ?><p class="muted">Gerekçe: <?=h($u['ban_reason'])?></p><?php endif ?>
     </div>
   </div>

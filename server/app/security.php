@@ -268,6 +268,7 @@ function runCron(int $limit = 400): array {
     saveSite('cron_last_run', date('Y-m-d H:i:s'));
     saveSite('cron_real_run', date('Y-m-d H:i:s'));
     $expired = boxExpirePremiums();
+    try { boxNotifyExpiringPremiums(); } catch (Throwable $e) { error_log('push cron: ' . $e->getMessage()); }
     runDailyBackup();
     runSecurityCron();
     return ['expired_premiums' => $expired];

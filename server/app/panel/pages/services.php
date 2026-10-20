@@ -31,6 +31,22 @@ $cron = rtrim((string)cfg('app.url', ''), '/') . '/cron?key=' . site('cron_key')
       <?php formStart('services_test_search'); echo button('Deneme araması', 'ghost', ['icon' => 'search']); formEnd(); ?>
     </div>
     <?php cardEnd(); ?>
+    <?php card('Apple (giriş ve bildirim)', 'Apple Developer > Keys bölümünden oluşturduğun anahtar. Apple ile giriş anahtarsız da çalışır; anahtar bildirim göndermek ve hesap silinince Apple bağlantısını iptal etmek için gerekir.');
+    $apple = boxAppleConfig();
+    echo '<p class="pills">' . (boxAppleConfigured() ? pill('Tanımlı', 'good') : pill('Eksik', 'bad')) . (boxPushSupported() ? pill('Sunucu HTTP/2 destekliyor', 'good') : pill('Sunucuda HTTP/2 yok, bildirim gönderilemez', 'bad')) . pill(nbNum((int)q('SELECT COUNT(*) FROM push_devices')->fetchColumn()) . ' cihaz bildirime açık', 'neutral') . '</p>';
+    if ($edit = can('apple_save')) {
+        formStart('apple_save', 'stack');
+        echo '<div class="grid-2">';
+        field('Team ID', 'apple_team_id', $apple['team'], 'text', ['placeholder' => '10 karakter', 'maxlength' => 10, 'mono' => true, 'hint' => 'developer.apple.com sağ üstte, hesap adının altında.']);
+        field('Key ID', 'apple_key_id', $apple['key'], 'text', ['placeholder' => '10 karakter', 'maxlength' => 10, 'mono' => true, 'hint' => 'İndirdiğin AuthKey_XXXXXXXXXX.p8 dosyasının adındaki kod.']);
+        echo '</div>';
+        area('.p8 anahtarı', 'apple_p8', '', ['rows' => 5, 'mono' => true, 'placeholder' => $apple['p8'] !== '' ? '•••••••• (tanımlı, değiştirmek için yenisini yapıştır)' : "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----", 'hint' => 'Dosyayı Not Defteri ile aç, tamamını yapıştır. Şifreli saklanır ve bir daha gösterilmez.']);
+        passwordConfirm();
+        echo '<div class="row-actions">' . button('Kaydet') . '</div>';
+        formEnd();
+        formStart('apple_test'); echo '<div class="row-actions">' . button('Bağlantıyı dene', 'ghost', ['icon' => 'bell']) . '</div>'; formEnd();
+    }
+    cardEnd(); ?>
     <?php card('Zamanlanmış görevler', 'Hosting panelinde (cPanel > Cron) saatte bir çalışacak şekilde ekle. Eklemezsen panel açıldıkça çalışır.'); ?>
     <pre class="code" data-copy><?=h('curl -s "' . $cron . '" > /dev/null')?></pre>
     <p class="muted">Son çalışma: <?=h(nbAgo(site('cron_last_run') ?: null))?></p>

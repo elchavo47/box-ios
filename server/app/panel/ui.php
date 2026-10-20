@@ -188,6 +188,8 @@ function panelSearchIndex(array $admin): array {
         ['Duyuru yayınla', 'Uygulamada görünen duyuru', 'app', 'Duyuru', 'duyuru haber bilgilendirme mesaj'],
         ['Kotalar', 'Günlük indirme ve arama sınırı', 'app', 'Kotalar', 'kota limit sınır günlük indirme arama'],
         ['Kayıtları kapat', 'Yeni üyeliği durdur', 'app', 'Kayıt', 'kayıt üyelik kapat aç'],
+        ['Bildirim gönder', 'Uygulamaya anlık bildirim', 'notify', 'Bildirim', 'bildirim push mesaj gönder duyur'],
+        ['Apple ayarları', 'Apple ile giriş ve bildirim anahtarı', 'services', 'Apple', 'apple giriş p8 anahtar team key bildirim apns'],
         ['VDS ve YouTube', 'İndirme ve arama servisleri', 'services', '', 'vds yt-dlp youtube api anahtar imza servis sunucu kota'],
         ['API sağlığı', 'Yanıt süresi ve hata oranı', 'health', '', 'api sağlık hız yavaş hata 500 yanıt süresi'],
         ['Telegram ve yedek', 'Uyarılar ve günlük yedek', 'shield', 'Telegram', 'yedek backup telegram bot uyarı'],

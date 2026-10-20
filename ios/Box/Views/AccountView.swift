@@ -1,3 +1,4 @@
+import AuthenticationServices
 import PhotosUI
 import SwiftUI
 
@@ -43,6 +44,7 @@ private struct AuthFormView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage: String?
+    @State private var appleRequest = AppleSignInRequest()
     @FocusState private var focused: Field?
 
     enum Field { case name, email, password }
@@ -117,6 +119,25 @@ private struct AuthFormView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(!canSubmit)
                 .opacity(canSubmit ? 1 : 0.5)
+
+                HStack(spacing: 12) {
+                    Rectangle().fill(Color.boxStroke).frame(height: 1)
+                    Text("veya").font(.footnote).foregroundColor(.boxSecondaryText)
+                    Rectangle().fill(Color.boxStroke).frame(height: 1)
+                }
+
+                // Apple ile giriş: hesap yoksa kendiliğinden açılır, ayrıca kayıt gerekmez.
+                SignInWithAppleButton(.continue) { request in
+                    let fresh = AppleSignInRequest()
+                    appleRequest = fresh
+                    fresh.configure(request)
+                } onCompletion: { outcome in
+                    appleCompleted(outcome)
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 48)
+                .clipShape(Capsule())
+                .disabled(auth.isWorking)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 40)
@@ -146,6 +167,23 @@ private struct AuthFormView: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.boxSurface2))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.boxStroke))
+    }
+
+    private func appleCompleted(_ outcome: Result<ASAuthorization, Error>) {
+        errorMessage = nil
+        do {
+            guard let result = try appleRequest.result(from: outcome) else { return }
+            Task {
+                do {
+                    try await auth.signInWithApple(result)
+                    Haptics.success()
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple ile giriş yapılamadı."
+                }
+            }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple ile giriş yapılamadı."
+        }
     }
 
     private func submit() {
@@ -187,10 +225,48 @@ private struct ProfileView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var uploading = false
     @State private var cropping: CropItem?
+    @State private var appleRequest = AppleSignInRequest()
+    @State private var showUnlink = false
+    @ObservedObject private var push = PushManager.shared
 
     private struct CropItem: Identifiable {
         let id = UUID()
         let image: UIImage
+    }
+
+    @ViewBuilder
+    private var notificationsRow: some View {
+        Button {
+            switch push.status {
+            case .notDetermined: Task { await push.requestIfNeeded() }
+            default: push.openSettings()
+            }
+        } label: {
+            HStack {
+                Label("Bildirimler", systemImage: "bell")
+                    .foregroundColor(.white)
+                Spacer()
+                Text(push.status == .authorized || push.status == .provisional ? "Açık" : push.status == .notDetermined ? "Aç" : "Kapalı")
+                    .foregroundColor(push.status == .authorized || push.status == .provisional ? .accent : .boxSecondaryText)
+            }
+        }
+        .task { await push.refreshStatus() }
+    }
+
+    private func linkApple(_ outcome: Result<ASAuthorization, Error>) {
+        do {
+            guard let result = try appleRequest.result(from: outcome) else { return }
+            Task {
+                do {
+                    try await auth.linkApple(result)
+                    Haptics.success()
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple bağlanamadı."
+                }
+            }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple bağlanamadı."
+        }
     }
 
     private func upload(_ image: UIImage) {
@@ -256,6 +332,41 @@ private struct ProfileView: View {
                 } label: {
                     Label("Ayarlar", systemImage: "gearshape")
                 }
+                notificationsRow
+            }
+            .listRowBackground(Color.boxSurface2)
+
+            Section {
+                if user.appleLinked == true {
+                    HStack {
+                        Label("Apple ile giriş", systemImage: "apple.logo")
+                        Spacer()
+                        Text("Bağlı").foregroundColor(.accent)
+                    }
+                    if user.hasPassword != false {
+                        Button(role: .destructive) { showUnlink = true } label: {
+                            Label("Apple bağlantısını kaldır", systemImage: "link.badge.plus")
+                        }
+                    }
+                } else {
+                    SignInWithAppleButton(.continue) { request in
+                        let fresh = AppleSignInRequest()
+                        appleRequest = fresh
+                        fresh.configure(request)
+                    } onCompletion: { outcome in
+                        linkApple(outcome)
+                    }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 44)
+                    .clipShape(Capsule())
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                }
+            } header: {
+                Text("Giriş yöntemi")
+            } footer: {
+                Text(user.appleLinked == true
+                     ? (user.hasPassword == false ? "Bu hesap Apple ile açıldı." : "E-posta ve şifrenle ya da Apple ile giriş yapabilirsin.")
+                     : "Bağlarsan bir dahaki sefere şifre yazmadan Apple ile girersin.")
             }
             .listRowBackground(Color.boxSurface2)
 
@@ -383,8 +494,19 @@ private struct ProfileView: View {
                 Task { await auth.logout() }
             }
         }
+        .confirmationDialog("Apple bağlantısı kaldırılsın mı?", isPresented: $showUnlink, titleVisibility: .visible) {
+            Button("Kaldır", role: .destructive) {
+                Task {
+                    do { try await auth.unlinkApple() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
+                }
+            }
+        } message: {
+            Text("Sonra yalnızca e-posta ve şifrenle giriş yaparsın.")
+        }
         .alert("Hesabı sil", isPresented: $showDelete) {
-            SecureField("Şifren", text: $deletePassword)
+            if user.hasPassword != false {
+                SecureField("Şifren", text: $deletePassword)
+            }
             Button("Kalıcı olarak sil", role: .destructive) {
                 Task {
                     do {

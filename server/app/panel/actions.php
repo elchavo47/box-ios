@@ -261,6 +261,7 @@ function panelAction(array $admin): string|array {
                 if ($days < 0 || $days > 3650) throw new RuntimeException('Süre 0 (süresiz) ile 3650 gün arasında olmalı.');
                 $until = boxGrantPremium($uid, $days, (int)$admin['id'], boxIsPremium($u) ? 'extend' : 'grant');
                 logAdmin((int)$admin['id'], 'premium_grant', ['user_id' => $uid, 'days' => $days, 'until' => $until]);
+                if (site('push_auto_premium', '1') === '1') boxNotifyUser($uid, boxIsPremium($u) ? 'Premium\'un uzatıldı' : 'Premium\'un açıldı', $days ? 'Premium üyeliğin ' . nbDate($until, 'd.m.Y') . ' tarihine kadar açık. İyi dinlemeler!' : 'Süresiz premium üyeliğin açıldı. İyi dinlemeler!', ['box' => ['open' => 'search']]);
                 if ($days >= 365 || $days === 0) staffAlert('premium', "⚡ Premium verildi: {$who}\nSüre: " . ($days ? "$days gün" : 'süresiz') . "\nYapan: {$admin['username']}");
                 return $days ? "Premium " . (boxIsPremium($u) ? 'uzatıldı' : 'açıldı') . ': ' . nbDate($until, 'd.m.Y H:i') . ' tarihine kadar.' : 'Süresiz premium açıldı.';
             case 'premium_revoke':
@@ -306,6 +307,7 @@ function panelAction(array $admin): string|array {
             case 'user_delete':
                 requirePasswordConfirm($admin);
                 if (mb_strtolower(trim((string)($_POST['confirm_email'] ?? ''))) !== mb_strtolower((string)$u['email'])) throw new RuntimeException('Onay için kullanıcının e-postasını aynen yaz.');
+                boxAppleRevoke($u);
                 boxDeleteAvatarFile($u['avatar_file'] ?? null);
                 q('DELETE FROM users WHERE id=?', [$uid]);
                 logAdmin((int)$admin['id'], 'user_delete', ['user_id' => $uid, 'email' => $u['email']]);
@@ -369,6 +371,54 @@ function panelAction(array $admin): string|array {
         }
         logAdmin((int)$admin['id'], 'services_save', ['changed' => $changed]);
         return $changed ? 'Kaydedildi: ' . implode(', ', $changed) . '.' : 'Değişiklik yok.';
+    }
+    if ($action === 'apple_save') {
+        requirePasswordConfirm($admin);
+        $changed = [];
+        $team = strtoupper(trim((string)($_POST['apple_team_id'] ?? '')));
+        if ($team !== '' && $team !== site('apple_team_id')) { if (!preg_match('/^[A-Z0-9]{10}$/', $team)) throw new RuntimeException('Team ID 10 karakter olmalı (harf ve rakam).'); saveSite('apple_team_id', $team); $changed[] = 'Team ID'; }
+        $kid = strtoupper(trim((string)($_POST['apple_key_id'] ?? '')));
+        if ($kid !== '' && $kid !== site('apple_key_id')) { if (!preg_match('/^[A-Z0-9]{10}$/', $kid)) throw new RuntimeException('Key ID 10 karakter olmalı (harf ve rakam).'); saveSite('apple_key_id', $kid); $changed[] = 'Key ID'; }
+        $p8 = trim(str_replace("\r", '', (string)($_POST['apple_p8'] ?? '')));
+        if ($p8 !== '') {
+            if (!str_contains($p8, 'BEGIN PRIVATE KEY') || openssl_pkey_get_private($p8) === false) throw new RuntimeException('.p8 içeriği okunamadı. Dosyayı metin düzenleyiciyle açıp BEGIN ve END satırlarıyla birlikte yapıştır.');
+            saveSecretSetting('apple_p8', $p8 . "\n"); $changed[] = '.p8 anahtarı';
+        }
+        if ($changed) saveSite('apns_jwt', '');
+        logAdmin((int)$admin['id'], 'apple_save', ['changed' => $changed]);
+        return $changed ? 'Kaydedildi: ' . implode(', ', $changed) . '.' : 'Değişiklik yok.';
+    }
+    if ($action === 'apple_test') {
+        $msg = boxPushSelfTest();
+        logAdmin((int)$admin['id'], 'apple_test');
+        return $msg;
+    }
+    if ($action === 'push_send') {
+        $target = (string)($_POST['target'] ?? 'all');
+        if (!in_array($target, ['all', 'premium', 'free', 'user'], true)) throw new RuntimeException('Kime gönderileceğini seç.');
+        $title = mb_substr(trim((string)($_POST['title'] ?? '')), 0, 120);
+        $body = mb_substr(trim((string)($_POST['body'] ?? '')), 0, 400);
+        if ($title === '' || $body === '') throw new RuntimeException('Başlık ve metin gerekli.');
+        $uid = null; $label = $target;
+        if ($target === 'user') {
+            $who = trim((string)($_POST['user'] ?? ''));
+            $u = ctype_digit($who) ? boxFindUser((int)$who) : boxFindUserByEmail($who);
+            if (!$u) throw new RuntimeException('Kullanıcı bulunamadı. Numarasını ya da e-postasını yaz.');
+            $uid = (int)$u['id']; $label = 'user:' . $uid;
+        }
+        $devices = boxPushAudience($target, $uid);
+        if (!$devices) throw new RuntimeException('Bu kitlede bildirime izin vermiş cihaz yok.');
+        $r = boxPushSend($devices, $title, $body);
+        q('INSERT INTO push_log(admin_id,target,title,body,sent,failed,error) VALUES(?,?,?,?,?,?,?)', [(int)$admin['id'], $label, $title, $body, $r['sent'], $r['failed'], $r['error'] ? mb_substr($r['error'], 0, 120) : null]);
+        logAdmin((int)$admin['id'], 'push_send', ['target' => $label, 'sent' => $r['sent'], 'failed' => $r['failed']]);
+        if ($r['sent'] === 0) throw new RuntimeException('Gönderilemedi' . ($r['error'] ? ': ' . $r['error'] : '.'));
+        return $r['sent'] . ' cihaza gönderildi' . ($r['failed'] ? ', ' . $r['failed'] . ' başarısız' : '') . ($r['removed'] ? ' (' . $r['removed'] . ' eski cihaz kaydı silindi)' : '') . '.';
+    }
+    if ($action === 'push_auto_save') {
+        saveSite('push_auto_premium', isset($_POST['push_auto_premium']) ? '1' : '0');
+        saveSite('push_auto_expiring', isset($_POST['push_auto_expiring']) ? '1' : '0');
+        logAdmin((int)$admin['id'], 'push_auto_save');
+        return 'Otomatik bildirim ayarları kaydedildi.';
     }
     if ($action === 'services_check') {
         $h = boxVdsHealth();

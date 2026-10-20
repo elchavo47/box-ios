@@ -86,6 +86,10 @@ struct BoxUser: Codable, Equatable {
     let premiumUntil: String?
     let createdAt: String?
     let avatarUrl: String?
+    /// Apple ile giriş bağlı mı (eski sunucuda yok).
+    var appleLinked: Bool? = nil
+    /// Şifresi var mı; yalnızca Apple ile açılan hesaplarda false.
+    var hasPassword: Bool? = nil
 
     var avatarURL: URL? { avatarUrl.flatMap(URL.init(string:)) }
 

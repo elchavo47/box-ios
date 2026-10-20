@@ -7,7 +7,7 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "2.8"
+    MARKETING_VERSION: "2.9"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
 
@@ -29,6 +29,11 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: NO
         CODE_SIGN_STYLE: Automatic
+    entitlements:
+      path: Box/Box.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        aps-environment: production
     info:
       path: Box/Info.plist
       properties:

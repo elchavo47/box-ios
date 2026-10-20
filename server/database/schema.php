@@ -22,11 +22,16 @@ CREATE TABLE users (
   app_version VARCHAR(20) NULL DEFAULT NULL,
   daily_downloads INT UNSIGNED NULL DEFAULT NULL,
   avatar_file VARCHAR(64) NULL DEFAULT NULL,
+  has_password TINYINT(1) NOT NULL DEFAULT 1,
+  apple_sub VARCHAR(120) NULL DEFAULT NULL,
+  apple_refresh TEXT NULL,
+  expiry_notified_for DATETIME NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME NULL DEFAULT NULL,
   last_seen_at DATETIME NULL DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email),
+  UNIQUE KEY uq_users_apple (apple_sub),
   KEY idx_users_premium (is_premium, premium_until),
   KEY idx_users_seen (last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -63,6 +68,33 @@ CREATE TABLE downloads (
   KEY idx_downloads_user (user_id, created_at),
   KEY idx_downloads_time (created_at),
   CONSTRAINT fk_downloads_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE push_devices (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NOT NULL,
+  token VARCHAR(200) NOT NULL,
+  environment VARCHAR(12) NOT NULL DEFAULT 'production',
+  app_version VARCHAR(20) NULL DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_push_token (token),
+  KEY idx_push_user (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE push_log (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_id INT UNSIGNED NULL DEFAULT NULL,
+  target VARCHAR(40) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  body VARCHAR(400) NOT NULL,
+  sent INT UNSIGNED NOT NULL DEFAULT 0,
+  failed INT UNSIGNED NOT NULL DEFAULT 0,
+  error VARCHAR(120) NULL DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE search_terms (

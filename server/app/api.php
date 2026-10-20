@@ -141,6 +141,39 @@ switch ($route) {
         q('DELETE FROM login_attempts WHERE ip=?', [$ip]);
         jsonOut(['ok' => true, 'token' => boxIssueToken((int)$u['id'], (string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 'user' => boxUserPublic(boxFindUser((int)$u['id']))]);
 
+    case 'auth/apple':
+        // Apple ile giriş: hesap varsa açar, yoksa oluşturur.
+        $need('POST');
+        throttle('apple:' . clientIpHash(), 20, 600);
+        try { $apple = boxVerifyAppleToken((string)(body()['identity_token'] ?? ''), (string)(body()['nonce'] ?? '')); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 401); }
+        $u = q('SELECT * FROM users WHERE apple_sub=? LIMIT 1', [$apple['sub']])->fetch() ?: null;
+        $created = false;
+        if (!$u) {
+            if (!configBool('registration_open', true)) jsonOut(['ok' => false, 'error' => 'Yeni kayıtlar şu an kapalı.'], 403);
+            $email = $apple['email'];
+            if ($email !== null && boxFindUserByEmail($email)) {
+                // Otomatik birleştirme yok: aynı e-postayla şifreli hesap açıp bekleyen biri başkasının hesabını ele geçirmesin.
+                jsonOut(['ok' => false, 'code' => 'email_exists', 'error' => 'Bu e-postayla kayıtlı bir Box hesabın var. E-posta ve şifrenle giriş yap, sonra Profil > Apple\'ı bağla.'], 409);
+            }
+            if ($email === null) $email = 'apple-' . substr(hash('sha256', $apple['sub']), 0, 16) . '@apple.box';
+            $name = $str('name', 60);
+            if ($name === '') $name = $apple['private_email'] || str_ends_with($email, '@apple.box') ? 'Box dinleyicisi' : mb_substr(explode('@', $email)[0], 0, 60);
+            $refresh = boxAppleExchangeCode((string)(body()['authorization_code'] ?? ''));
+            q('INSERT INTO users(email,password_hash,has_password,apple_sub,apple_refresh,display_name,last_login_at,last_seen_at) VALUES(?,?,0,?,?,?,NOW(),NOW())',
+                [$email, password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT), $apple['sub'], $refresh ? encryptSecret($refresh) : null, $name]);
+            $id = (int)db()->lastInsertId();
+            $trial = (int)configValue('new_user_premium_days', 0);
+            if ($trial > 0) boxGrantPremium($id, $trial, null, 'trial');
+            $u = boxFindUser($id);
+            $created = true;
+        } else {
+            if ((int)$u['is_banned'] === 1) jsonOut(['ok' => false, 'error' => 'Hesabın askıya alındı.', 'reason' => (string)($u['ban_reason'] ?? '')], 403);
+            if (empty($u['apple_refresh']) && ($refresh = boxAppleExchangeCode((string)(body()['authorization_code'] ?? '')))) q('UPDATE users SET apple_refresh=? WHERE id=?', [encryptSecret($refresh), $u['id']]);
+            q('UPDATE users SET last_login_at=NOW(), last_seen_at=NOW() WHERE id=?', [$u['id']]);
+        }
+        jsonOut(['ok' => true, 'created' => $created, 'token' => boxIssueToken((int)$u['id'], (string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 'user' => boxUserPublic(boxFindUser((int)$u['id']))], $created ? 201 : 200);
+
     case 'auth/logout':
         $need('POST');
         if ($t = boxBearer()) q('DELETE FROM tokens WHERE token_hash=?', [hash('sha256', $t)]);
@@ -174,10 +207,49 @@ switch ($route) {
         }
         jsonOut(['ok' => true, 'user' => boxUserPublic(boxFindUser((int)$u['id']))]);
 
+    case 'me/apple':
+        // Var olan hesaba Apple ile girişi bağla ya da kaldır.
+        $need('POST');
+        $u = boxApiUser();
+        if ((body()['remove'] ?? false) === true) {
+            if ((int)($u['has_password'] ?? 1) !== 1) jsonOut(['ok' => false, 'error' => 'Bu hesap yalnızca Apple ile açılıyor; bağlantı kaldırılırsa giriş yapamazsın.'], 400);
+            boxAppleRevoke($u);
+            q('UPDATE users SET apple_sub=NULL, apple_refresh=NULL WHERE id=?', [$u['id']]);
+            jsonOut(['ok' => true, 'user' => boxUserPublic(boxFindUser((int)$u['id']))]);
+        }
+        throttle('apple-link:' . $u['id'], 10, 600);
+        try { $apple = boxVerifyAppleToken((string)(body()['identity_token'] ?? ''), (string)(body()['nonce'] ?? '')); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 401); }
+        $owner = q('SELECT id FROM users WHERE apple_sub=? LIMIT 1', [$apple['sub']])->fetchColumn();
+        if ($owner && (int)$owner !== (int)$u['id']) jsonOut(['ok' => false, 'error' => 'Bu Apple hesabı başka bir Box hesabına bağlı.'], 409);
+        $refresh = boxAppleExchangeCode((string)(body()['authorization_code'] ?? ''));
+        q('UPDATE users SET apple_sub=?, apple_refresh=COALESCE(?,apple_refresh) WHERE id=?', [$apple['sub'], $refresh ? encryptSecret($refresh) : null, $u['id']]);
+        jsonOut(['ok' => true, 'user' => boxUserPublic(boxFindUser((int)$u['id']))]);
+
+    case 'me/push':
+        // Bildirim için cihaz kaydı (ya da çıkışta silme).
+        $need('POST');
+        $u = boxApiUser();
+        $token = strtolower(preg_replace('/[^0-9a-fA-F]/', '', (string)(body()['token'] ?? '')));
+        if (strlen($token) < 32 || strlen($token) > 200) jsonOut(['ok' => false, 'error' => 'Geçersiz cihaz kimliği.'], 400);
+        if ((body()['remove'] ?? false) === true) {
+            q('DELETE FROM push_devices WHERE token=? AND user_id=?', [$token, $u['id']]);
+            jsonOut(['ok' => true]);
+        }
+        $env = (body()['environment'] ?? '') === 'sandbox' ? 'sandbox' : 'production';
+        $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
+        q('INSERT INTO push_devices(user_id,token,environment,app_version,last_seen_at) VALUES(?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), environment=VALUES(environment), app_version=VALUES(app_version), last_seen_at=NOW()', [$u['id'], $token, $env, $ver]);
+        jsonOut(['ok' => true]);
+
     case 'me/delete':
         $need('POST');
         $u = boxApiUser();
-        if (!password_verify((string)(body()['password'] ?? ''), (string)$u['password_hash'])) jsonOut(['ok' => false, 'error' => 'Şifre hatalı.'], 401);
+        if ((int)($u['has_password'] ?? 1) === 1) {
+            if (!password_verify((string)(body()['password'] ?? ''), (string)$u['password_hash'])) jsonOut(['ok' => false, 'error' => 'Şifre hatalı.'], 401);
+        } elseif ((body()['confirm'] ?? '') !== 'SIL') {
+            jsonOut(['ok' => false, 'error' => 'Silmeyi onaylaman gerekiyor.'], 400);
+        }
+        boxAppleRevoke($u);
         boxDeleteAvatarFile($u['avatar_file'] ?? null);
         q('DELETE FROM users WHERE id=?', [$u['id']]);
         jsonOut(['ok' => true]);

@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 12;
+const BOX_SCHEMA_VERSION = 13;
 
 function boxVersion(): string {
     static $version = null;
@@ -99,6 +99,12 @@ function ensureSchema(bool $force = false): void {
         $add('users', 'last_seen_at', 'last_seen_at DATETIME NULL DEFAULT NULL AFTER last_login_at');
         $add('users', 'daily_downloads', 'daily_downloads INT UNSIGNED NULL DEFAULT NULL AFTER app_version');
         $add('users', 'avatar_file', 'avatar_file VARCHAR(64) NULL DEFAULT NULL AFTER daily_downloads');
+        // 2.7: Apple ile giriş ve bildirimler
+        $add('users', 'has_password', 'has_password TINYINT(1) NOT NULL DEFAULT 1 AFTER avatar_file');
+        $add('users', 'apple_sub', 'apple_sub VARCHAR(120) NULL DEFAULT NULL AFTER has_password');
+        $add('users', 'apple_refresh', 'apple_refresh TEXT NULL AFTER apple_sub');
+        $add('users', 'expiry_notified_for', 'expiry_notified_for DATETIME NULL DEFAULT NULL AFTER apple_refresh');
+        if (!$hasIndex('users', 'uq_users_apple')) { q('ALTER TABLE users ADD UNIQUE INDEX uq_users_apple(apple_sub)'); $note('Dizin eklendi', 'users.uq_users_apple'); }
         if (!$hasIndex('users', 'idx_users_premium')) { q('ALTER TABLE users ADD INDEX idx_users_premium(is_premium,premium_until)'); $note('Dizin eklendi', 'users.idx_users_premium'); }
         if (!$hasIndex('users', 'idx_users_seen')) { q('ALTER TABLE users ADD INDEX idx_users_seen(last_seen_at)'); $note('Dizin eklendi', 'users.idx_users_seen'); }
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');

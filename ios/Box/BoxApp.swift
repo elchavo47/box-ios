@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct BoxApp: App {
+    @UIApplicationDelegateAdaptor(BoxAppDelegate.self) private var appDelegate
     @StateObject private var auth = AuthStore()
     @StateObject private var library = LibraryStore()
     @StateObject private var player = PlayerManager()
@@ -96,6 +97,15 @@ struct BoxApp: App {
                     player.visualizer = { AppSettings.shared.visualizer }
                     downloads.network = network
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
+                    PushManager.shared.tokenProvider = { [weak auth] in auth?.token }
+                    PushManager.shared.onOpen = { [weak router] target in
+                        switch target {
+                        case "account": router?.showAccount = true
+                        case "search": router?.tab = .search
+                        case "library": router?.tab = .library
+                        default: router?.tab = .home
+                        }
+                    }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()
@@ -121,8 +131,17 @@ struct BoxApp: App {
                         await library.importFiles([url], into: inbox)
                     }
                 }
+                .onChange(of: auth.token) { token in
+                    // Giriş yapılınca bildirim izni bir kez sorulur, cihaz hesaba bağlanır.
+                    guard token != nil else { return }
+                    Task {
+                        await PushManager.shared.requestIfNeeded()
+                        await PushManager.shared.upload()
+                    }
+                }
                 .onChange(of: scenePhase) { phase in
                     if phase == .active {
+                        if auth.token != nil { Task { await PushManager.shared.requestIfNeeded() } }
                         Task {
                             await library.refresh()
                             await server.refresh()
