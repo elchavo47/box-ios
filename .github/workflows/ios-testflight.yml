@@ -47,6 +47,10 @@ jobs:
 
           fail() { echo "::error title=Imzalama::$1"; exit 1; }
 
+          # Secret'a yanlışlıkla giren satır sonu / boşlukları temizle
+          IOS_P12_PASSWORD="$(printf '%s' "$IOS_P12_PASSWORD" | tr -d '\r\n')"
+          echo "p12 boyutu: $(printf '%s' "$IOS_P12_BASE64" | tr -d ' \r\n' | wc -c) karakter base64, şifre uzunluğu: ${#IOS_P12_PASSWORD}"
+
           printf '%s' "$IOS_P12_BASE64" | tr -d ' \r\n' | base64 -D > "$P12_PATH" || fail "IOS_P12_BASE64 gecerli base64 degil"
           printf '%s' "$IOS_PROFILE_BASE64" | tr -d ' \r\n' | base64 -D > "$PROFILE_PATH" || fail "IOS_PROFILE_BASE64 gecerli base64 degil"
           security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST" 2>/dev/null || fail "IOS_PROFILE_BASE64 bir provisioning profile degil (box.mobileprovision'in base64'u olmali)"
