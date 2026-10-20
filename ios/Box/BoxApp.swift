@@ -11,6 +11,8 @@ struct BoxApp: App {
     @StateObject private var router = AppRouter()
     @StateObject private var stream = StreamCache()
     @StateObject private var feed = FeedStore()
+    @StateObject private var settings = AppSettings.shared
+    @StateObject private var network = NetworkMonitor.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -55,6 +57,8 @@ struct BoxApp: App {
                 .environmentObject(router)
                 .environmentObject(stream)
                 .environmentObject(feed)
+                .environmentObject(settings)
+                .environmentObject(network)
                 .preferredColorScheme(.dark)
                 .tint(.accent)
                 .task {
@@ -77,6 +81,19 @@ struct BoxApp: App {
                     player.videoIDFor = { [weak library] track in library?.videoID(forPath: track.relativePath) }
                     player.onStreamCached = { [weak stream] result, temp in stream?.store(result, temp: temp) }
                     player.onRemoteSeen = { [weak library] result in library?.remember(result) }
+                    player.radioProvider = { [weak feed, weak auth, weak library] track, exclude in
+                        guard let feed, let auth, auth.isPremium, let library else { return [] }
+                        let results = await feed.radio(for: track, exclude: exclude, token: auth.token)
+                        return library.playable(results)
+                    }
+                    player.autoRadioEnabled = { [weak auth] in AppSettings.shared.autoRadio && auth?.isPremium == true }
+                    player.isPlayable = { [weak stream] track in
+                        guard let remote = track.remote else { return true }
+                        return NetworkMonitor.shared.isOnline || stream?.isCached(remote.id) == true
+                    }
+                    player.crossfade = { AppSettings.shared.crossfadeSeconds }
+                    player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
+                    downloads.network = network
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()
@@ -84,6 +101,19 @@ struct BoxApp: App {
                 }
                 .onOpenURL { url in
                     guard url.isFileURL else { return }
+                    switch url.pathExtension.lowercased() {
+                    case "boxlist":
+                        if let shared = BackupService.read(SharedPlaylist.self, from: url) {
+                            library.importShared(shared)
+                            router.tab = .library
+                        }
+                        return
+                    case "boxbackup":
+                        if let backup = BackupService.read(LibraryBackup.self, from: url) { library.restore(backup) }
+                        return
+                    default:
+                        break
+                    }
                     Task {
                         let inbox = library.documents.appendingPathComponent(AppConfig.inboxFolderName, isDirectory: true)
                         await library.importFiles([url], into: inbox)

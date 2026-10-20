@@ -74,6 +74,17 @@ final class PlayerManager: ObservableObject {
     var onStreamCached: ((SearchResult, URL) -> Void)?
     /// İnternet şarkısını hatırlamak için (geçmiş, beğeni, sıra).
     var onRemoteSeen: ((SearchResult) -> Void)?
+    /// Sıra bitince benzer şarkılarla devam etmek için (otomatik radyo).
+    var radioProvider: ((Track, [String]) async -> [Track])?
+    var autoRadioEnabled: () -> Bool = { false }
+    /// Çevrimdışıyken çalınamayacak şarkıları atlamak için.
+    var isPlayable: ((Track) -> Bool)?
+    /// Şarkılar arası yumuşak geçiş (saniye) ve ses efektleri.
+    var crossfade: () -> Double = { 0 }
+    var effects: () -> (EQPreset, Bool) = { (.flat, false) }
+    private var fadeInStarted: Date?
+    @Published private(set) var radioLoading = false
+
     /// Son akış hatası (teşhis için Hesap ekranında görünür).
     @Published private(set) var lastStreamError: String?
 
@@ -179,6 +190,26 @@ final class PlayerManager: ObservableObject {
         originalQueue.append(track)
         Haptics.success()
         saveState(force: true)
+    }
+
+    /// Bir şarkıdan radyo başlat: önce o şarkı, sonra benzerleri.
+    func startRadio(from track: Track) {
+        guard let radioProvider else { return }
+        radioLoading = true
+        Task { @MainActor in
+            let more = await radioProvider(track, [track.remote?.id].compactMap { $0 })
+            self.radioLoading = false
+            if self.current?.id == track.id {
+                if let index = self.currentIndex {
+                    self.queue = Array(self.queue.prefix(index + 1)) + more
+                    self.originalQueue = self.queue
+                    self.isShuffled = false
+                }
+            } else {
+                self.play([track] + more)
+            }
+            Haptics.success()
+        }
     }
 
     func jump(to index: Int) {
@@ -339,9 +370,34 @@ final class PlayerManager: ObservableObject {
             sleepTimer = .off
             pause()
             player.volume = 1
-        } else if remaining < 10, isPlaying {
-            // Son 10 saniyede sesi yavaşça kıs.
-            player.volume = Float(max(0.05, remaining / 10))
+        }
+    }
+
+    /// Ses seviyesi: uyku zamanlayıcısı, şarkı sonu ve başı yumuşak geçişleri birlikte.
+    private func updateVolume() {
+        var volume: Double = 1
+        if case .at(let date) = sleepTimer {
+            let remaining = date.timeIntervalSinceNow
+            if remaining < 10 { volume = min(volume, max(0.05, remaining / 10)) }
+        }
+        let fade = crossfade()
+        if fade > 0, clock.duration > fade * 2 {
+            let left = clock.duration - clock.currentTime
+            if left < fade { volume = min(volume, max(0, left / fade)) }
+            if let started = fadeInStarted {
+                let elapsed = Date().timeIntervalSince(started)
+                if elapsed < fade { volume = min(volume, max(0.05, elapsed / fade)) } else { fadeInStarted = nil }
+            }
+        }
+        if abs(Double(player.volume) - volume) > 0.01 { player.volume = Float(volume) }
+    }
+
+    /// Yumuşak geçiş açıksa şarkı bitmeden biraz önce sonrakine geç.
+    private func checkCrossfadeAdvance() {
+        let fade = crossfade()
+        guard fade > 0, isPlaying, repeatMode != .one, clock.duration > fade * 2, !isSeeking else { return }
+        if clock.duration - clock.currentTime <= 0.35, sleepTimer != .endOfTrack {
+            advance(userInitiated: false)
         }
     }
 
@@ -461,9 +517,31 @@ final class PlayerManager: ObservableObject {
             return
         }
 
-        if currentIndex + 1 < queue.count {
-            self.currentIndex = currentIndex + 1
+        // Çevrimdışıysa indirilmemiş şarkıları atla.
+        var nextIndex = currentIndex + 1
+        if let isPlayable {
+            while nextIndex < queue.count, !isPlayable(queue[nextIndex]) { nextIndex += 1 }
+        }
+
+        if nextIndex < queue.count {
+            self.currentIndex = nextIndex
             loadCurrent(autoplay: true)
+        } else if repeatMode == .off, autoRadioEnabled(), let radioProvider, let last = current {
+            // Sıra bitti: benzer şarkılarla devam et.
+            radioLoading = true
+            let known = queue.compactMap { $0.remote?.id }
+            Task { @MainActor in
+                let more = await radioProvider(last, known)
+                self.radioLoading = false
+                if more.isEmpty {
+                    if userInitiated { self.currentIndex = 0; self.loadCurrent(autoplay: true) } else { self.pause(); self.seek(to: 0) }
+                    return
+                }
+                self.queue.append(contentsOf: more)
+                self.originalQueue.append(contentsOf: more)
+                self.currentIndex = currentIndex + 1
+                self.loadCurrent(autoplay: true)
+            }
         } else if repeatMode == .all || userInitiated {
             self.currentIndex = 0
             loadCurrent(autoplay: true)
@@ -572,7 +650,7 @@ final class PlayerManager: ObservableObject {
 
         clock.currentTime = startAt
         clock.duration = track.duration
-        player.volume = 1
+        player.volume = crossfade() > 0 && record ? 0.05 : 1
         currentArtwork = nil
 
         if let remote = track.remote, !FileManager.default.fileExists(atPath: track.url.path) {
@@ -642,6 +720,14 @@ final class PlayerManager: ObservableObject {
         item.preferredForwardBufferDuration = streaming ? 4 : 0
         player.replaceCurrentItem(with: item)
         isBuffering = streaming
+        let (preset, normalize) = effects()
+        if preset != .flat || normalize {
+            Task { @MainActor in
+                let mix = await AudioEffects.audioMix(for: item, preset: preset, normalize: normalize)
+                if self.player.currentItem === item { item.audioMix = mix }
+            }
+        }
+        fadeInStarted = crossfade() > 0 && record ? Date() : nil
 
         itemObservers.removeAll()
         let token = loadToken
@@ -743,6 +829,8 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.checkSleepTimer()
+                self.updateVolume()
+                self.checkCrossfadeAdvance()
                 guard !self.isSeeking else { return }
                 if seconds.isFinite, abs(seconds - self.clock.currentTime) >= 0.2 {
                     self.clock.currentTime = seconds

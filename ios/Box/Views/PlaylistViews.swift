@@ -24,6 +24,8 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var auth: AuthStore
     @State private var quotaPrompt: [SearchResult]?
     @State private var refreshing = false
+    @State private var shareURL: URL?
+    @State private var shareNote: String?
     @State private var refreshError: String?
 
     private var missing: [SearchResult] { tracks.compactMap(\.remote) }
@@ -147,6 +149,13 @@ struct PlaylistDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: missing.count) { stream.warm(missing, limit: 8) }
         .task { if auth.isPremium { await auth.refresh() } }
+        .sheet(item: Binding(get: { shareURL.map(ShareItem.init) }, set: { shareURL = $0?.url })) { item in
+            ShareSheet(items: [item.url])
+                .presentationDetents([.medium, .large])
+        }
+        .alert("Paylaşım", isPresented: Binding(get: { shareNote != nil && shareURL == nil }, set: { if !$0 { shareNote = nil } })) {
+            Button("Tamam", role: .cancel) {}
+        } message: { Text(shareNote ?? "") }
         .confirmationDialog(
             "Bugünlük indirme hakkın yetmiyor",
             isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
@@ -213,6 +222,14 @@ struct PlaylistDetailView: View {
                             showPhotoPicker = true
                         } label: {
                             Label("Kapak resmini değiştir", systemImage: "photo")
+                        }
+                        Button {
+                            guard let playlist else { return }
+                            let (shared, skipped) = library.sharedPlaylist(for: playlist)
+                            shareNote = skipped > 0 ? "\(skipped) şarkı kendi dosyan olduğu için listeye eklenemedi; diğerleri paylaşıldı." : nil
+                            shareURL = BackupService.write(shared, name: playlist.name, ext: "boxlist")
+                        } label: {
+                            Label("Listeyi paylaş", systemImage: "square.and.arrow.up")
                         }
                         if playlist?.coverFile != nil, case .playlist(let id) = source {
                             Button {

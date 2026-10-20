@@ -8,6 +8,9 @@ struct SearchView: View {
     @EnvironmentObject private var history: SearchHistory
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var stream: StreamCache
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var network: NetworkMonitor
+    @EnvironmentObject private var feed: FeedStore
 
     @State private var query = ""
     @State private var submitted = ""
@@ -18,6 +21,7 @@ struct SearchView: View {
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var focused: Bool
     @State private var showImport = false
+    @State private var suggestions: [String] = []
     @State private var importLink = ""
 
     enum Scope: String, CaseIterable, Hashable {
@@ -63,6 +67,16 @@ struct SearchView: View {
             }
             .boxScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
+            .task(id: query) {
+                let text = query.trimmingCharacters(in: .whitespaces)
+                guard auth.isPremium, settings.searchSuggestions, submitted.isEmpty, text.count >= 2, network.isOnline else {
+                    suggestions = []
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                suggestions = await feed.suggestions(for: text, token: auth.token)
+            }
             .sheet(isPresented: $showImport) {
                 PlaylistImportView(initialLink: importLink)
             }
@@ -101,6 +115,7 @@ struct SearchView: View {
                     .onSubmit { submit(query) }
                     .onChange(of: query) { text in
                         if text.isEmpty { submitted = ""; results = []; errorMessage = nil }
+                        else if focused, !submitted.isEmpty, text.trimmingCharacters(in: .whitespaces) != submitted { submitted = "" }
                     }
 
                 if !query.isEmpty {
@@ -130,6 +145,39 @@ struct SearchView: View {
 
     @ViewBuilder
     private var idleContent: some View {
+        if !query.trimmingCharacters(in: .whitespaces).isEmpty && !suggestions.isEmpty {
+            ForEach(suggestions, id: \.self) { item in
+                HStack(spacing: 18) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(width: 28)
+                    Text(item)
+                        .font(.system(size: 17))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        query = item + " "
+                    } label: {
+                        Image(systemName: "arrow.up.left")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(width: 40, height: 44)
+                    }
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 8)
+                .frame(height: 50)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    query = item
+                    submit(item)
+                }
+            }
+            Divider().background(Color.boxStroke).padding(.vertical, 8)
+        }
+        OfflineBanner().padding(.bottom, 12)
         if auth.isPremium {
             Button {
                 importLink = ""
@@ -259,6 +307,15 @@ struct SearchView: View {
                         .frame(width: 40, height: 44)
                 }
                 .accessibilityLabel("Aramaya taşı")
+                Button {
+                    withAnimation { history.remove(query: item) }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                        .frame(width: 36, height: 44)
+                }
+                .accessibilityLabel("Geçmişten sil")
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)

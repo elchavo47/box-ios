@@ -10,6 +10,7 @@ struct RootView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var server: ServerState
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var settings: AppSettings
 
     @State private var showSplash = true
 
@@ -65,6 +66,12 @@ struct RootView: View {
                 }
                 .zIndex(1)
                 .transition(.opacity)
+            }
+
+            if !settings.onboarded && !showSplash {
+                OnboardingView()
+                    .transition(.opacity)
+                    .zIndex(2)
             }
 
             if server.updateRequired {

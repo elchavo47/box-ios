@@ -111,7 +111,15 @@ struct TrackRow: View {
     @EnvironmentObject private var stream: StreamCache
     @EnvironmentObject private var downloads: DownloadManager
 
+    @EnvironmentObject private var network: NetworkMonitor
+
     private var isCurrent: Bool { player.current?.id == track.id }
+
+    /// Çevrimdışıyken çalınamaz (indirilmemiş ve önbellekte değil).
+    private var unavailable: Bool {
+        guard !network.isOnline, let remote = track.remote else { return false }
+        return !stream.isCached(remote.id)
+    }
 
     private var downloadState: DownloadState? {
         track.remote.flatMap { downloads.state(for: $0.id) }
@@ -196,6 +204,7 @@ struct TrackRow: View {
                 TrackMenu(track: track, extra: extraMenu)
             }
         }
+        .opacity(unavailable ? 0.38 : 1)
         .contentShape(Rectangle())
     }
 }
@@ -208,6 +217,7 @@ struct TrackMenu: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var auth: AuthStore
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
 
@@ -241,6 +251,9 @@ struct TrackMenu: View {
             }
             if let url = URL(string: "https://www.youtube.com/watch?v=\(remote.id)") {
                 ShareLink(item: url) { Label("Bağlantıyı paylaş", systemImage: "square.and.arrow.up") }
+            }
+            if auth.isPremium {
+                Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
             }
             if let extra {
                 Divider()
@@ -296,6 +309,9 @@ struct TrackMenu: View {
                 Label("Paylaş", systemImage: "square.and.arrow.up")
             }
 
+            if auth.isPremium {
+                Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
+            }
             if let extra {
                 Divider()
                 extra

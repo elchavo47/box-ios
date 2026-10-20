@@ -17,6 +17,10 @@ struct AccountView: View {
             .navigationTitle("Hesap")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Ayarlar")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Bitti") { dismiss() }
                         .fontWeight(.semibold)
@@ -244,6 +248,15 @@ private struct ProfileView: View {
                 }
                 .listRowBackground(Color.boxSurface2)
             }
+
+            Section {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Ayarlar", systemImage: "gearshape")
+                }
+            }
+            .listRowBackground(Color.boxSurface2)
 
             Section("Hesap") {
                 Button {

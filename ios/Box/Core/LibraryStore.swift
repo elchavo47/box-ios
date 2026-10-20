@@ -223,6 +223,68 @@ final class LibraryStore: ObservableObject {
         return result
     }
 
+    // MARK: - Yedekleme ve paylaşma
+
+    func makeBackup() -> LibraryBackup {
+        var covers: [String: Data] = [:]
+        for playlist in playlists {
+            if let file = playlist.coverFile, let data = try? Data(contentsOf: coversDirectory.appendingPathComponent(file)) {
+                covers[file] = data
+            }
+        }
+        return LibraryBackup(playlists: playlists, favorites: Array(favorites), remoteMeta: remoteMeta, videoPaths: videoPaths, recentPaths: recentPaths, playCounts: playCounts, covers: covers)
+    }
+
+    /// Yedeği mevcut kitaplıkla birleştirir (hiçbir şey silinmez). Eklenen liste sayısını döner.
+    @discardableResult
+    func restore(_ backup: LibraryBackup) -> Int {
+        try? FileManager.default.createDirectory(at: coversDirectory, withIntermediateDirectories: true)
+        for (file, data) in backup.covers {
+            try? data.write(to: coversDirectory.appendingPathComponent(file), options: .atomic)
+        }
+        var added = 0
+        for playlist in backup.playlists {
+            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+                playlists[index] = playlist
+            } else {
+                playlists.append(playlist)
+                added += 1
+            }
+        }
+        favorites.formUnion(backup.favorites)
+        remoteMeta.merge(backup.remoteMeta) { current, _ in current }
+        videoPaths.merge(backup.videoPaths) { current, _ in current }
+        for path in backup.recentPaths.reversed() where !recentPaths.contains(path) { recentPaths.append(path) }
+        playCounts.merge(backup.playCounts) { max($0, $1) }
+        savePlaylists()
+        Self.save(Array(favorites), to: favoritesFile)
+        Self.save(remoteMeta, to: remoteMetaFile)
+        Self.save(videoPaths, to: videoPathsFile)
+        saveHistory()
+        return added
+    }
+
+    /// Paylaşmak için: listedeki şarkıların YouTube kimlikleri. Kimliği bilinmeyen yerel dosyalar atlanır.
+    func sharedPlaylist(for playlist: Playlist) -> (SharedPlaylist, skipped: Int) {
+        var items: [SearchResult] = []
+        var skipped = 0
+        for track in tracks(for: playlist) {
+            if let remote = track.remote {
+                items.append(remote)
+            } else if let id = videoID(forPath: track.relativePath) {
+                items.append(remoteMeta["yt:" + id] ?? SearchResult(id: id, title: track.title, channel: track.displayArtist, thumbnail: nil, duration: Int(track.duration)))
+            } else {
+                skipped += 1
+            }
+        }
+        return (SharedPlaylist(name: playlist.name, items: items), skipped)
+    }
+
+    @discardableResult
+    func importShared(_ shared: SharedPlaylist) -> Playlist {
+        importPlaylist(YouTubePlaylist(id: "shared-" + UUID().uuidString, title: shared.name, channel: "Paylaşılan liste", thumbnail: nil, items: shared.items))
+    }
+
     // MARK: - Liste kapakları
 
     private var coversDirectory: URL { supportDirectory.appendingPathComponent("covers", isDirectory: true) }

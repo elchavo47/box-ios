@@ -124,6 +124,7 @@ struct FullPlayerView: View {
 
     @State private var showQueue = false
     @State private var showSleep = false
+    @State private var showLyrics = false
     @State private var swipeX: CGFloat = 0
 
     var body: some View {
@@ -179,6 +180,11 @@ struct FullPlayerView: View {
         .sheet(isPresented: $showQueue) {
             QueueView()
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showLyrics) {
+            LyricsSheet()
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showSleep) {
@@ -396,6 +402,18 @@ struct FullPlayerView: View {
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel("Çalma hızı")
+
+            Spacer(minLength: 0)
+
+            Button {
+                showLyrics = true
+            } label: {
+                Image(systemName: "quote.bubble")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Şarkı sözleri")
 
             Spacer(minLength: 0)
 

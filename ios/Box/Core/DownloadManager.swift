@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import UIKit
 
 enum DownloadState: Equatable {
@@ -53,6 +54,17 @@ final class DownloadManager: ObservableObject {
         items = items.filter { $0.value.state.isActive }
     }
 
+    /// Wi‑Fi'da indir ayarı açıkken mobil veride bekleyen indirme var.
+    @Published private(set) var waitingForWifi = false
+    private var networkWatch: AnyCancellable?
+    weak var network: NetworkMonitor? {
+        didSet {
+            networkWatch = network?.$isExpensive.removeDuplicates().sink { [weak self] _ in
+                Task { @MainActor in self?.pump() }
+            }
+        }
+    }
+
     private var pending: [SearchResult] = []
     private var running = 0
     private let maxConcurrent = 2
@@ -80,6 +92,11 @@ final class DownloadManager: ObservableObject {
     }
 
     private func pump() {
+        if AppSettings.shared.wifiOnlyDownloads, network?.isExpensive == true, !pending.isEmpty {
+            waitingForWifi = true
+            return
+        }
+        waitingForWifi = false
         while running < maxConcurrent, !pending.isEmpty {
             let next = pending.removeFirst()
             running += 1

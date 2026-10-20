@@ -323,6 +323,48 @@ function boxFeed(array $artists): array {
     return $sections;
 }
 
+/** Radyo: bir şarkıdan benzer şarkılar akışı (aynı sanatçıdan en fazla 3). */
+function boxRadio(string $artist, string $title, array $exclude = []): array {
+    $artist = trim(preg_replace('/\s*-\s*Topic$/iu', '', mb_substr($artist, 0, 60)));
+    $title = mb_substr(trim($title), 0, 80);
+    $pool = [];
+    foreach (array_filter([$artist !== '' ? $artist . ' tarzı şarkılar' : '', $artist !== '' ? $artist . ' benzeri şarkılar' : '', $title !== '' ? $title . ' ' . $artist . ' radyo' : '', $artist]) as $query) {
+        try { $pool = array_merge($pool, boxSearch($query, true, 25, 43200)); } catch (RuntimeException $e) {}
+    }
+    shuffle($pool);
+    $skip = array_flip($exclude);
+    $seen = []; $perArtist = []; $out = [];
+    $titleKey = boxNorm($title);
+    foreach ($pool as $r) {
+        $key = boxNorm($r['title']);
+        $a = boxNorm($r['channel']);
+        if (isset($skip[$r['id']]) || isset($seen[$key]) || ($titleKey !== '' && $key === $titleKey) || ($perArtist[$a] ?? 0) >= 3) continue;
+        $seen[$key] = 1; $perArtist[$a] = ($perArtist[$a] ?? 0) + 1;
+        $out[] = $r;
+        if (count($out) >= 25) break;
+    }
+    return $out;
+}
+
+/** Arama önerileri (otomatik tamamlama); YouTube API kotası harcamaz. */
+function boxSuggest(string $q): array {
+    $q = mb_substr(trim($q), 0, 80);
+    if ($q === '') return [];
+    $cacheKey = 'suggest?' . mb_strtolower($q);
+    if ($cached = boxCacheGet($cacheKey, 86400)) return $cached;
+    $ch = curl_init('https://suggestqueries.google.com/complete/search?' . http_build_query(['client' => 'firefox', 'ds' => 'yt', 'hl' => 'tr', 'gl' => 'tr', 'q' => $q]));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_TIMEOUT => 4, CURLOPT_USERAGENT => 'Mozilla/5.0']);
+    $body = curl_exec($ch);
+    curl_close($ch);
+    if (is_string($body) && !mb_check_encoding($body, 'UTF-8')) $body = mb_convert_encoding($body, 'UTF-8', 'ISO-8859-9');
+    $data = is_string($body) ? json_decode($body, true) : null;
+    $out = [];
+    foreach ((array)($data[1] ?? []) as $s) if (is_string($s) && $s !== '') $out[] = $s;
+    $out = array_slice($out, 0, 8);
+    boxCachePut($cacheKey, $out);
+    return $out;
+}
+
 /** YouTube çalma listesi bağlantısı ya da kimliğinden liste kimliği. */
 function boxPlaylistId(string $input): ?string {
     $input = trim($input);

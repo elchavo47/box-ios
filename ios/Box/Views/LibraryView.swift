@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum TrackSort: String, CaseIterable, Identifiable {
     case title = "Ada göre"
@@ -16,6 +17,8 @@ struct LibraryView: View {
 
     @State private var path = NavigationPath()
     @State private var showImport = false
+    @State private var showListFile = false
+    @State private var importMessage: String?
     @State private var section: LibSection = .playlists
     @State private var searchText = ""
     @State private var showNewPlaylist = false
@@ -97,6 +100,18 @@ struct LibraryView: View {
             .sheet(isPresented: $showImport) {
                 PlaylistImportView()
             }
+            .fileImporter(isPresented: $showListFile, allowedContentTypes: [.boxPlaylist, .json]) { result in
+                guard case .success(let url) = result else { return }
+                if let shared = BackupService.read(SharedPlaylist.self, from: url), shared.kind == "box.playlist" {
+                    let playlist = library.importShared(shared)
+                    path.append(HomeRoute.playlist(playlist.id))
+                } else {
+                    importMessage = "Bu dosya bir Box listesi değil."
+                }
+            }
+            .alert("İçe aktarma", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+                Button("Tamam", role: .cancel) {}
+            } message: { Text(importMessage ?? "") }
             .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
                 TextField("Liste adı", text: $newPlaylistName)
                 Button("Oluştur") {
@@ -153,6 +168,28 @@ struct LibraryView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }
+
+        Button {
+            showListFile = true
+        } label: {
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay(Image(systemName: "doc.badge.plus").font(.system(size: 20, weight: .semibold)).foregroundColor(.white))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Liste dosyası aç")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                    Text("Arkadaşının paylaştığı .boxlist")
+                        .font(.system(size: 13))
+                        .foregroundColor(.boxSecondaryText)
+                }
+                Spacer()
+            }
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
 
         playlistRow(title: "Beğenilenler", subtitle: "Otomatik liste • \(library.favoriteTracks.count) şarkı", route: .favorites) {
             ZStack {

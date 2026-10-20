@@ -189,6 +189,20 @@ switch ($route) {
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
         jsonOut(['ok' => true, 'title' => $genre[0], 'results' => $items]);
 
+    case 'radio':
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('radio:' . $u['id'], 20, 60);
+        $exclude = array_values(array_filter(explode(',', mb_substr((string)($_GET['exclude'] ?? ''), 0, 1200)), fn($id) => preg_match(BOX_VIDEO_ID, $id)));
+        try { $items = boxRadio((string)($_GET['artist'] ?? ''), (string)($_GET['title'] ?? ''), $exclude); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
+        jsonOut(['ok' => true, 'results' => $items]);
+
+    case 'suggest':
+        $u = boxApiUser();
+        throttle('suggest:' . $u['id'], 120, 60);
+        jsonOut(['ok' => true, 'suggestions' => boxSuggest((string)($_GET['q'] ?? ''))]);
+
     case 'playlist':
         $u = boxApiUser();
         if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);

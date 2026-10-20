@@ -40,6 +40,9 @@ struct HomeView: View {
                         .padding(.top, 6)
                         .padding(.bottom, 14)
 
+                    OfflineBanner()
+                        .padding(.bottom, 12)
+
                     ChipBar(items: HomeFilter.allCases, selection: $filter) { $0.rawValue }
                         .padding(.top, 4)
                         .padding(.bottom, 18)
@@ -193,6 +196,27 @@ struct HomeView: View {
                     .padding(.horizontal, 16)
                 }
                 .frame(height: 98)
+            }
+        }
+
+        if feed.sections.isEmpty && !feed.isLoading, let error = feed.errorMessage {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Sana özel")
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.icloud").font(.system(size: 22)).foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Öneriler yüklenemedi").font(.system(size: 15, weight: .semibold))
+                        Text(error).font(.system(size: 13)).foregroundColor(.boxSecondaryText).lineLimit(2)
+                    }
+                    Spacer()
+                    Button("Tekrar dene") {
+                        Task { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxSurface))
+                .padding(.horizontal, 16)
             }
         }
 

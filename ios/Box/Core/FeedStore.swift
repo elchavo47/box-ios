@@ -50,6 +50,25 @@ final class FeedStore: ObservableObject {
         return try await APIClient.shared.send("feed/genre", query: ["key": key], token: token)
     }
 
+    /// Bir şarkıya benzer şarkılar (radyo).
+    func radio(for track: Track, exclude: [String], token: String?) async -> [SearchResult] {
+        guard let token else { return [] }
+        struct Response: Decodable { let results: [SearchResult] }
+        let response: Response? = try? await APIClient.shared.send(
+            "radio",
+            query: ["artist": track.displayArtist, "title": track.title, "exclude": exclude.suffix(80).joined(separator: ",")],
+            token: token
+        )
+        return response?.results ?? []
+    }
+
+    func suggestions(for query: String, token: String?) async -> [String] {
+        guard let token, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        struct Response: Decodable { let suggestions: [String] }
+        let response: Response? = try? await APIClient.shared.send("suggest", query: ["q": query], token: token)
+        return response?.suggestions ?? []
+    }
+
     func reset() {
         sections = []
         genres = []

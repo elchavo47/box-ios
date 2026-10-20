@@ -24,6 +24,8 @@ targets:
         PRODUCT_NAME: Box
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIconLight AppIconGreen"
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: NO
         CODE_SIGN_STYLE: Automatic
@@ -54,3 +56,22 @@ targets:
               - public.audio
               - public.mpeg-4-audio
               - public.mp3
+          - CFBundleTypeName: Box listesi
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.aydworks.box.playlist
+          - CFBundleTypeName: Box yedeği
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.aydworks.box.backup
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.aydworks.box.playlist
+            UTTypeDescription: Box çalma listesi
+            UTTypeConformsTo: [public.json, public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [boxlist]
+          - UTTypeIdentifier: com.aydworks.box.backup
+            UTTypeDescription: Box kitaplık yedeği
+            UTTypeConformsTo: [public.json, public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [boxbackup]
