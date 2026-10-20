@@ -271,7 +271,40 @@ switch ($route) {
         q('INSERT INTO search_log(day,user_id,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$u['id']]);
         $term = mb_substr(mb_strtolower(preg_replace('/\s+/u', ' ', $q)), 0, 120);
         if ($term !== '') q('INSERT INTO search_terms(day,term,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$term]);
-        jsonOut(['ok' => true, 'results' => $results]);
+        $out = ['ok' => true, 'results' => $results];
+        if ($top = boxTopArtist($q)) $out['artist'] = $top;
+        jsonOut($out);
+
+    case 'artist':
+        // Sanatçı sayfası (YouTube Music): ?id=… ya da ?name=…
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('browse:' . $u['id'], 40, 60);
+        $id = (string)($_GET['id'] ?? ''); $name = trim(mb_substr((string)($_GET['name'] ?? ''), 0, 120));
+        if (($id === '' || !boxMusicId($id)) && $name === '') jsonOut(['ok' => false, 'error' => 'Sanatçı gerekli.'], 400);
+        if (!boxMusicEnabled()) jsonOut(['ok' => false, 'error' => 'Sanatçı sayfası şu an kullanılamıyor.'], 503);
+        try { $page = boxArtistPage(boxMusicId($id) ? $id : '', $name); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => str_contains($e->getMessage(), 'bulunamadı') ? 'Sanatçı bulunamadı.' : 'Sanatçı sayfası açılamadı.'], 502); }
+        if (!$page['artist']) jsonOut(['ok' => false, 'error' => 'Sanatçı bulunamadı.'], 404);
+        jsonOut(['ok' => true] + $page);
+
+    case 'album':
+        // Albüm sayfası (YouTube Music): ?id=… ya da ?name=…&artist=…
+        $u = boxApiUser();
+        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        throttle('browse:' . $u['id'], 40, 60);
+        $id = (string)($_GET['id'] ?? '');
+        $query = trim(mb_substr((string)($_GET['name'] ?? '') . ' ' . (string)($_GET['artist'] ?? ''), 0, 160));
+        if (($id === '' || !boxMusicId($id)) && $query === '') jsonOut(['ok' => false, 'error' => 'Albüm gerekli.'], 400);
+        if (!boxMusicEnabled()) jsonOut(['ok' => false, 'error' => 'Albüm sayfası şu an kullanılamıyor.'], 503);
+        try { $page = boxAlbumPage(boxMusicId($id) ? $id : '', $query); }
+        catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => 'Albüm açılamadı.'], 502); }
+        if (!$page['album']) jsonOut(['ok' => false, 'error' => 'Albüm bulunamadı.'], 404);
+        jsonOut(['ok' => true] + $page);
+
+    case 'me/notifications':
+        $u = boxApiUser();
+        jsonOut(['ok' => true, 'items' => boxInbox($u)]);
 
     case 'feed':
         $u = boxApiUser();
@@ -280,15 +313,24 @@ switch ($route) {
         $artists = array_filter(array_map('trim', explode('|', mb_substr((string)($_GET['artists'] ?? ''), 0, 300))));
         try { $sections = boxFeed(array_values($artists)); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
-        $genres = [];
-        foreach (boxGenres() as $key => [$title]) $genres[] = ['key' => $key, 'title' => $title];
-        jsonOut(['ok' => true, 'sections' => $sections, 'genres' => $genres]);
+        jsonOut(['ok' => true, 'sections' => $sections, 'genres' => boxMoods()]);
 
     case 'feed/genre':
         $u = boxApiUser();
         if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
         throttle('feed:' . $u['id'], 20, 60);
-        $genre = boxGenres()[(string)($_GET['key'] ?? '')] ?? null;
+        $key = (string)($_GET['key'] ?? '');
+        $genre = boxGenres()[$key] ?? null;
+        if (!$genre && boxMusicEnabled() && preg_match('/^[A-Za-z0-9_%=-]{6,200}$/', $key)) {
+            // YouTube Music ruh hali kategorisi: kategorinin listelerinden şarkılar.
+            $title = 'Ruh hali';
+            foreach (boxMoods() as $m) if ($m['key'] === $key) { $title = $m['title']; break; }
+            try { $data = boxMusic('/stream/music/mood', ['params' => $key], 43200); }
+            catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => 'Bu kategori şu an açılamıyor.'], 502); }
+            $items = boxMusicResults($data['results'] ?? [], false);
+            mt_srand((int)date('Ymd')); shuffle($items); mt_srand();
+            jsonOut(['ok' => true, 'title' => $title, 'results' => array_slice($items, 0, 50)]);
+        }
         if (!$genre) jsonOut(['ok' => false, 'error' => 'Bilinmeyen tür.'], 404);
         try { $items = boxSearch($genre[1], true, 30, 43200); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }

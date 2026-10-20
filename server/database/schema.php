@@ -84,6 +84,20 @@ CREATE TABLE push_devices (
   CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE notifications (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NULL DEFAULT NULL,
+  target VARCHAR(40) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  body VARCHAR(400) NOT NULL,
+  open_to VARCHAR(20) NULL DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_notif_user (user_id, id),
+  KEY idx_notif_target (target, id),
+  CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE push_log (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   admin_id INT UNSIGNED NULL DEFAULT NULL,

@@ -18,6 +18,32 @@ $cron = rtrim((string)cfg('app.url', ''), '/') . '/cron?key=' . site('cron_key')
   <?=kpi('Bugünkü kota', nbNum($units) . ' / 10.000', 'Bir arama yaklaşık 101 birim', $units > 8000 ? 'bad' : '')?>
   <?php endif ?>
 </section>
+<?php
+$series = json_decode(site('vds_series'), true) ?: [];
+$recent = array_slice($series, -24);
+$sum = fn(string $k, string $f) => array_sum(array_map(fn($p) => (int)($p[$k][$f] ?? 0), $recent));
+$musicN = $sum('music', 'n'); $musicErr = $sum('music', 'err'); $resN = $sum('resolve', 'n'); $resErr = $sum('resolve', 'err');
+$avg = function (string $k) use ($recent): int { $n = 0; $t = 0; foreach ($recent as $p) { $c = (int)($p[$k]['n'] ?? 0); $n += $c; $t += $c * (int)($p[$k]['avg_ms'] ?? 0); } return $n ? (int)round($t / $n) : 0; };
+$lastPoint = $series ? end($series) : null;
+$hourLabel = fn($p) => substr((string)$p['at'], 11, 2);
+?>
+<?php card('VDS takibi', 'Saatlik ölçüm (zamanlanmış görevle). Son 24 saat.'); ?>
+<section class="kpis">
+  <?=kpi('Durum', $lastPoint ? ($lastPoint['ok'] ? 'Çalışıyor' : 'Ulaşılamıyor') : 'Henüz ölçüm yok', $lastPoint ? 'Son ölçüm ' . h(nbAgo($lastPoint['at'] . ':00')) . (isset($lastPoint['uptime']) ? ' · ' . h(nbRemaining((int)$lastPoint['uptime'])) . ' süredir açık' : '') : 'Bir saat içinde ilk ölçüm gelir', $lastPoint ? ($lastPoint['ok'] ? 'good' : 'bad') : '')?>
+  <?=kpi('YouTube Music', nbNum($musicN) . ' istek', ($musicN ? '%' . round($musicErr / max(1, $musicN) * 100) . ' hata · ort. ' . $avg('music') . ' ms' : 'Son 24 saatte istek yok') . ($lastPoint && isset($lastPoint['music_ready']) && !$lastPoint['music_ready'] ? ' · kütüphane kurulu değil' : ''), $musicN && $musicErr / max(1, $musicN) > 0.3 ? 'bad' : ($musicN ? 'good' : ''))?>
+  <?=kpi('Şarkı hazırlama (yt-dlp)', nbNum($resN) . ' şarkı', $resN ? '%' . round($resErr / max(1, $resN) * 100) . ' hata · ort. ' . nbNum($avg('resolve')) . ' ms' : 'Son 24 saatte yok', $resN && $resErr / max(1, $resN) > 0.2 ? 'bad' : ($resN ? 'good' : ''))?>
+</section>
+<div class="cols-2">
+  <div><p class="muted">YouTube Music istekleri (saat)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)($p['music']['n'] ?? 0)], $recent), 'istek')?></div>
+  <div><p class="muted">Hatalar (YouTube Music + yt-dlp)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)($p['music']['err'] ?? 0) + (int)($p['resolve']['err'] ?? 0)], $recent), 'hata', true)?></div>
+</div>
+<div class="cols-2">
+  <div><p class="muted">VDS yanıt süresi (ms)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)$p['ms']], $recent), 'ms')?></div>
+  <div><p class="muted">Şarkı hazırlama süresi (ort. ms)</p><?=barChart(array_map(fn($p) => ['label' => $hourLabel($p), 'value' => (int)($p['resolve']['avg_ms'] ?? 0)], $recent), 'ms')?></div>
+</div>
+<p class="muted">Sorun olunca Telegram'a haber gelir: VDS'ye iki ölçüm üst üste ulaşılamazsa, YouTube Music isteklerinin %30'undan fazlası hata verirse ve kütüphane eksikse.</p>
+<?php cardEnd(); ?>
+
 <div class="cols-2">
   <?php card('Bağlantı ayarları', 'Anahtarlar şifreli saklanır ve bir daha gösterilmez. Boş bırakılan alan değişmez.');
   formStart('services_save', 'stack');

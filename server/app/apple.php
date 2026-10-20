@@ -242,6 +242,7 @@ function boxPushSend(array $devices, string $title, string $body, array $data = 
 
 /** Bir kullanıcının bütün cihazlarına bildirim (premium açıldı vb.). Hata uygulamayı durdurmaz. */
 function boxNotifyUser(int $userId, string $title, string $body, array $data = []): array {
+    if (function_exists('boxInboxAdd')) boxInboxAdd($userId, 'user:' . $userId, $title, $body, isset($data['box']['open']) ? (string)$data['box']['open'] : null);
     try {
         $devices = q('SELECT * FROM push_devices WHERE user_id=?', [$userId])->fetchAll();
         return boxPushSend($devices, $title, $body, $data);

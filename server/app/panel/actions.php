@@ -412,12 +412,18 @@ function panelAction(array $admin): string|array {
             if (!$u) throw new RuntimeException('Kullanıcı bulunamadı. Numarasını ya da e-postasını yaz.');
             $uid = (int)$u['id']; $label = 'user:' . $uid;
         }
+        // Bildirim kutusuna her durumda yazılır; telefona yalnızca izin veren cihazlara gider.
+        boxInboxAdd($uid, $target === 'user' ? 'user:' . $uid : $target, $title, $body);
         $devices = boxPushAudience($target, $uid);
-        if (!$devices) throw new RuntimeException('Bu kitlede bildirime izin vermiş cihaz yok.');
+        if (!$devices) {
+            q('INSERT INTO push_log(admin_id,target,title,body,sent,failed,error) VALUES(?,?,?,?,0,0,?)', [(int)$admin['id'], $label, $title, $body, 'Yalnızca bildirim kutusuna eklendi']);
+            logAdmin((int)$admin['id'], 'push_send', ['target' => $label, 'sent' => 0, 'inbox_only' => true]);
+            return 'Bildirime izin vermiş cihaz yok; uygulamadaki bildirim kutusuna eklendi.';
+        }
         $r = boxPushSend($devices, $title, $body);
         q('INSERT INTO push_log(admin_id,target,title,body,sent,failed,error) VALUES(?,?,?,?,?,?,?)', [(int)$admin['id'], $label, $title, $body, $r['sent'], $r['failed'], $r['error'] ? mb_substr($r['error'], 0, 120) : null]);
         logAdmin((int)$admin['id'], 'push_send', ['target' => $label, 'sent' => $r['sent'], 'failed' => $r['failed']]);
-        if ($r['sent'] === 0) throw new RuntimeException('Gönderilemedi' . ($r['error'] ? ': ' . $r['error'] : '.'));
+        if ($r['sent'] === 0) throw new RuntimeException('Telefonlara gönderilemedi' . ($r['error'] ? ': ' . $r['error'] : '.') . ' Bildirim kutusuna eklendi.');
         return $r['sent'] . ' cihaza gönderildi' . ($r['failed'] ? ', ' . $r['failed'] . ' başarısız' : '') . ($r['removed'] ? ' (' . $r['removed'] . ' eski cihaz kaydı silindi)' : '') . '.';
     }
     if ($action === 'push_auto_save') {

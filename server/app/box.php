@@ -309,8 +309,70 @@ function boxMusicResults(array $rows, bool $music): array {
         if ($music && ($duration < 60 || $duration > 900)) continue;
         if ($title === '') continue;
         $seen[$id] = 1;
-        $out[] = ['id' => $id, 'title' => $title, 'channel' => $artist, 'thumbnail' => $r['thumbnail'] ?? ('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg'), 'duration' => $duration];
+        $item = ['id' => $id, 'title' => $title, 'channel' => $artist, 'thumbnail' => $r['thumbnail'] ?? ('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg'), 'duration' => $duration];
+        // Sanatçı ve albüm sayfasına gitmek için (uygulama 2.12+)
+        foreach (['artist_id', 'album_id', 'album'] as $k) if (!empty($r[$k]) && is_string($r[$k])) $item[$k] = mb_substr($r[$k], 0, 200);
+        $out[] = $item;
     }
+    return $out;
+}
+
+function boxMusicId(string $id): bool { return (bool)preg_match('/^[A-Za-z0-9_-]{6,80}$/', $id); }
+
+/** Sanatçı sayfası (id ya da ad ile). */
+function boxArtistPage(string $id, string $name): array {
+    $params = $id !== '' ? ['id' => $id] : ['q' => mb_substr($name, 0, 120)];
+    $data = boxMusic('/stream/music/artist', $params, 43200);
+    return [
+        'artist' => $data['artist'] ?? null,
+        'songs' => boxMusicResults($data['songs'] ?? [], false),
+        'albums' => array_values($data['albums'] ?? []),
+        'singles' => array_values($data['singles'] ?? []),
+        'related' => array_values($data['related'] ?? []),
+    ];
+}
+
+/** Albüm sayfası (id ya da "albüm sanatçı" ile). */
+function boxAlbumPage(string $id, string $query): array {
+    $params = $id !== '' ? ['id' => $id] : ['q' => mb_substr($query, 0, 160)];
+    $data = boxMusic('/stream/music/album', $params, 86400);
+    return ['album' => $data['album'] ?? null, 'tracks' => boxMusicResults($data['tracks'] ?? [], false)];
+}
+
+/** Aramada en üstte gösterilecek sanatçı (adı aramayla eşleşiyorsa). */
+function boxTopArtist(string $query): ?array {
+    if (!boxMusicEnabled()) return null;
+    try { $data = boxMusic('/stream/music/artists', ['q' => mb_substr($query, 0, 120), 'limit' => 3], 43200); }
+    catch (RuntimeException $e) { return null; }
+    $q = boxNorm($query);
+    foreach ($data['results'] ?? [] as $a) {
+        $n = boxNorm((string)($a['name'] ?? ''));
+        if ($n !== '' && $q !== '' && (str_contains($n, $q) || str_contains($q, $n))) return $a;
+    }
+    return null;
+}
+
+/** Türkiye listesi (YouTube Music). */
+function boxCharts(): ?array {
+    if (!boxMusicEnabled()) return null;
+    try { $data = boxMusic('/stream/music/charts', ['country' => 'TR'], 21600); }
+    catch (RuntimeException $e) { return null; }
+    $items = boxMusicResults($data['tracks'] ?? [], false);
+    return $items ? ['items' => $items, 'artists' => array_values($data['artists'] ?? [])] : null;
+}
+
+/** YouTube Music ruh hali / tür kategorileri; yoksa eski sabit liste. */
+function boxMoods(): array {
+    if (boxMusicEnabled()) {
+        try {
+            $data = boxMusic('/stream/music/moods', [], 86400);
+            $out = [];
+            foreach ($data['results'] ?? [] as $m) if (!empty($m['key']) && !empty($m['title'])) $out[] = ['key' => (string)$m['key'], 'title' => (string)$m['title']];
+            if ($out) return $out;
+        } catch (RuntimeException $e) {}
+    }
+    $out = [];
+    foreach (boxGenres() as $key => [$title]) $out[] = ['key' => $key, 'title' => $title];
     return $out;
 }
 
@@ -431,20 +493,38 @@ function boxFeed(array $artists): array {
     $genres = boxGenres(); $keys = array_keys($genres); $day = (int)date('z');
     $todays = [$keys[$day % count($keys)], $keys[($day + 5) % count($keys)]];
     $genrePools = [];
-    foreach ($todays as $key) {
-        try { $genrePools[$key] = boxSearch($genres[$key][1], true, 25, 43200); } catch (RuntimeException $e) { $genrePools[$key] = []; }
+    $moods = boxMusicEnabled() ? array_values(array_filter(boxMoods(), fn($m) => !isset($genres[$m['key']]))) : [];
+    if (count($moods) >= 2) {
+        // Günün iki ruh hali kategorisi, YouTube Music'in kendi listelerinden.
+        $todays = [];
+        foreach ([$moods[$day % count($moods)], $moods[($day + 7) % count($moods)]] as $m) {
+            $key = 'm:' . $m['key'];
+            if (isset($genrePools[$key])) continue;
+            $todays[] = $key;
+            $genres[$key] = [$m['title'], ''];
+            try { $genrePools[$key] = boxMusicResults(boxMusic('/stream/music/mood', ['params' => $m['key']], 43200)['results'] ?? [], true); } catch (RuntimeException $e) { $genrePools[$key] = []; }
+        }
+    } else {
+        foreach ($todays as $key) {
+            try { $genrePools[$key] = boxSearch($genres[$key][1], true, 25, 43200); } catch (RuntimeException $e) { $genrePools[$key] = []; }
+        }
     }
     $mix = array_merge($mix, array_slice($similar, 0, 12), array_slice($genrePools[$todays[0]], 0, 8));
     mt_srand($daySeed + 1); shuffle($mix); mt_srand();
     $items = $pick($mix, 20);
     if ($items) $sections[] = ['id' => 'mix', 'title' => 'Sana özel karışık', 'subtitle' => $seeds ? 'Her gün yenilenir' : 'Bugünün seçkisi', 'items' => $items];
 
+    // Türkiye listesi (YouTube Music) — "Sana özel karışık" ve ruh hali kartlarından sonra görünür.
+    if ($charts = boxCharts()) {
+        $sections[] = ['id' => 'charts', 'title' => 'Türkiye\'de bu hafta', 'subtitle' => 'En çok dinlenenler', 'items' => array_slice($charts['items'], 0, 30)];
+    }
+
     // 3) Günün türleri
     foreach ($todays as $key) {
         $pool = $genrePools[$key];
         mt_srand($daySeed + crc32($key)); shuffle($pool); mt_srand();
         $items = $pick($pool, 15);
-        if ($items) $sections[] = ['id' => 'genre-' . $key, 'title' => $genres[$key][0], 'subtitle' => 'Bugünün seçkisi', 'items' => $items];
+        if ($items) $sections[] = ['id' => 'genre-' . substr(md5($key), 0, 10), 'title' => $genres[$key][0], 'subtitle' => 'Bugünün seçkisi', 'items' => $items];
     }
     return $sections;
 }
@@ -577,16 +657,77 @@ function boxVdsHealth(): array {
 }
 
 /** Saatlik servis izleme: VDS iki kontrol üst üste ulaşılamazsa uyarı üretir. */
+/** VDS sayaçları (/stream/stats). */
+function boxVdsStats(): ?array {
+    if (boxVdsKey() === '') return null;
+    $exp = time() + 120;
+    $ch = curl_init(boxVdsUrl() . '/stream/stats?' . http_build_query(['exp' => $exp, 'sig' => hash_hmac('sha256', 'music:' . $exp, boxVdsKey())]));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_TIMEOUT => 6, CURLOPT_USERAGENT => 'Box-Health/' . boxVersion()]);
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $data = is_string($body) ? json_decode($body, true) : null;
+    return $code === 200 && is_array($data) && !empty($data['ok']) ? $data : null;
+}
+
+/** Saatlik VDS örneği: son saatteki istek/hata/süre (sayaçlar VDS açıldığından beri birikir, farkı alınır). */
+function boxVdsSample(array $health): void {
+    $stats = boxVdsStats();
+    $last = json_decode(site('vds_stats_last'), true);
+    $series = json_decode(site('vds_series'), true) ?: [];
+    $point = ['at' => date('Y-m-d H:i'), 'ok' => $health['ok'] ? 1 : 0, 'ms' => (int)$health['ms']];
+    if ($stats) {
+        $restarted = !is_array($last) || (int)($stats['uptime'] ?? 0) < (int)($last['uptime'] ?? 0);
+        foreach (['music', 'resolve'] as $k) {
+            $now = $stats['stats'][$k] ?? ['n' => 0, 'err' => 0, 'avg_ms' => 0];
+            $before = $restarted ? ['n' => 0, 'err' => 0, 'avg_ms' => 0] : ($last['stats'][$k] ?? ['n' => 0, 'err' => 0, 'avg_ms' => 0]);
+            $n = max(0, (int)$now['n'] - (int)$before['n']);
+            $err = max(0, (int)$now['err'] - (int)$before['err']);
+            $totalNow = (int)$now['n'] * (int)$now['avg_ms']; $totalBefore = (int)$before['n'] * (int)$before['avg_ms'];
+            $point[$k] = ['n' => $n, 'err' => $err, 'avg_ms' => $n > 0 ? (int)max(0, ($totalNow - $totalBefore) / $n) : 0];
+        }
+        $point['uptime'] = (int)($stats['uptime'] ?? 0);
+        $point['music_ready'] = !empty($stats['music']) ? 1 : 0;
+        saveSite('vds_stats_last', json_encode($stats));
+        // YouTube Music hataları: son saatte en az 5 istek ve %30'dan fazlası hatalıysa bir kez haber ver.
+        $m = $point['music'];
+        $bad = $m['n'] >= 5 && $m['err'] / max(1, $m['n']) > 0.3;
+        $wasBad = site('vds_music_bad') === '1';
+        if ($bad && !$wasBad) staffAlert('services', "⚠️ YouTube Music araması hata veriyor: son saatte {$m['n']} istekten {$m['err']} tanesi başarısız. Arama yedek YouTube API ile yapılıyor.\nVDS'de: /opt/yt-api-venv/bin/pip install -U ytmusicapi && systemctl restart yt-stream");
+        if (!$bad && $wasBad && $m['n'] > 0) staffAlert('services', '✅ YouTube Music araması yeniden düzgün çalışıyor.');
+        saveSite('vds_music_bad', $bad ? '1' : ($m['n'] > 0 ? '0' : site('vds_music_bad')));
+        if (empty($stats['music']) && site('vds_music_missing') !== '1') { staffAlert('services', '⚠️ VDS\'de ytmusicapi kurulu değil; arama YouTube API kotasından yapılıyor.'); saveSite('vds_music_missing', '1'); }
+        if (!empty($stats['music'])) saveSite('vds_music_missing', '0');
+    }
+    $series[] = $point;
+    saveSite('vds_series', json_encode(array_slice($series, -72)));
+}
+
 function boxServiceWatch(): void {
     $prev = json_decode(site('vds_health'), true);
     $now = boxVdsHealth();
     $now['fails'] = $now['ok'] ? 0 : (int)($prev['fails'] ?? 0) + 1;
     saveSite('vds_health', json_encode($now, JSON_UNESCAPED_UNICODE));
+    try { boxVdsSample($now); } catch (Throwable $e) { error_log('vds sample: ' . $e->getMessage()); }
     if ($now['fails'] === 2) secEvent('critical', 'vds_down', 'VDS indirme servisine ulaşılamıyor (' . $now['error'] . '). Kullanıcılar şarkı indiremiyor. Panel > Servisler.', null, 'vds' . date('YmdH'), 6);
     if ($now['ok'] && (int)($prev['fails'] ?? 0) >= 2) staffAlert('services', '✅ VDS indirme servisi yeniden çalışıyor (' . $now['ms'] . ' ms).');
 }
 
+/** Uygulamadaki bildirim kutusuna yazar (telefona bildirim gitmese de kutuda durur). */
+function boxInboxAdd(?int $userId, string $target, string $title, string $body, ?string $open = null): void {
+    try {
+        q('INSERT INTO notifications(user_id,target,title,body,open_to) VALUES(?,?,?,?,?)', [$userId, mb_substr($target, 0, 40), mb_substr($title, 0, 120), mb_substr($body, 0, 400), $open]);
+    } catch (Throwable $e) { error_log('inbox: ' . $e->getMessage()); }
+}
+
+function boxInbox(array $u, int $limit = 50): array {
+    $prem = boxIsPremium($u) ? 'premium' : 'free';
+    $rows = q("SELECT id,title,body,open_to,created_at FROM notifications WHERE (user_id=? OR (user_id IS NULL AND target IN ('all', ?))) AND created_at>=? ORDER BY id DESC LIMIT " . max(1, min(100, $limit)), [$u['id'], $prem, $u['created_at']])->fetchAll();
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'body' => (string)$r['body'], 'open' => $r['open_to'], 'created_at' => date(DATE_ATOM, (int)strtotime((string)$r['created_at']))], $rows);
+}
+
 function boxDailyCleanup(): void {
+    q('DELETE FROM notifications WHERE created_at<DATE_SUB(NOW(),INTERVAL 90 DAY)');
     q('DELETE FROM login_attempts WHERE attempted_at<DATE_SUB(NOW(),INTERVAL 2 DAY)');
     q('DELETE FROM tokens WHERE expires_at<NOW()');
     q('DELETE FROM search_log WHERE day<DATE_SUB(CURDATE(),INTERVAL 120 DAY)');

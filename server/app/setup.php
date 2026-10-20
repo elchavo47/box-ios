@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 13;
+const BOX_SCHEMA_VERSION = 14;
 
 function boxVersion(): string {
     static $version = null;
