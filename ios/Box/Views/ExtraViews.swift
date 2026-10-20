@@ -277,7 +277,7 @@ final class FlowingBackgroundView: UIView {
         apply(colors: [])
         // Uygulama arka plandan dönünce animasyonları yeniden başlat.
         observer = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.restartMotion(force: true)
+            Task { @MainActor in self?.restartMotion(force: true) }
         }
     }
 
