@@ -111,6 +111,8 @@ struct BoxApp: App {
                     }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
+                    // Kaldığı yerden devam eden sırada internet şarkısı varsa ve premium yoksa çıkar.
+                    if !auth.isPremium { player.dropRemoteTracks() }
                     await server.refresh()
                     await auth.refresh()
                 }
@@ -142,6 +144,7 @@ struct BoxApp: App {
                         player.dropRemoteTracks()
                         downloads.cancelAll()
                         feed.reset()
+                        history.clear()
                     }
                 }
                 .onChange(of: auth.user?.id) { id in
