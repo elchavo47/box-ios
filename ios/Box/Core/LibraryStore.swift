@@ -35,6 +35,16 @@ final class LibraryStore: ObservableObject {
         var totalSize: Int64?
     }
 
+    /// İnternet şarkıları (indirilmemiş) yalnızca premium'da görünür ve çalınır.
+    /// Kapalıyken son çalınanlar, beğeniler, listeler vb. yalnızca cihazdaki dosyaları gösterir.
+    var allowsRemote = false {
+        didSet {
+            guard allowsRemote != oldValue else { return }
+            derived = Derived()
+            objectWillChange.send()
+        }
+    }
+
     private func tracksChanged() {
         trackByPath = Dictionary(tracks.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
         derived = Derived()
@@ -270,7 +280,7 @@ final class LibraryStore: ObservableObject {
             for item in remote {
                 if let path = downloadedPath(for: item.id), let local = index[path] {
                     if !have.contains(path) { result.append(local) }
-                } else {
+                } else if allowsRemote {
                     result.append(.remote(item))
                 }
             }
@@ -575,7 +585,8 @@ final class LibraryStore: ObservableObject {
     func resolve(path: String) -> Track? {
         if let local = track(forPath: path) { return local }
         guard let meta = remoteMeta[path] else { return nil }
-        return localTrack(for: meta) ?? .remote(meta)
+        if let local = localTrack(for: meta) { return local }
+        return allowsRemote ? .remote(meta) : nil
     }
 
     func recordPlay(_ track: Track) {
@@ -688,6 +699,12 @@ final class LibraryStore: ObservableObject {
     func renamePlaylist(_ id: UUID, to name: String) {
         guard let index = playlists.firstIndex(where: { $0.id == id }), !name.isEmpty else { return }
         playlists[index].name = name
+        savePlaylists()
+    }
+
+    /// Kitaplıkta basılı tutup sürükleyerek liste sırasını değiştirme.
+    func movePlaylists(from source: IndexSet, to destination: Int) {
+        playlists.move(fromOffsets: source, toOffset: destination)
         savePlaylists()
     }
 

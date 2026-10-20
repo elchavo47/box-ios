@@ -5,7 +5,7 @@ import SwiftUI
 extension LibraryStore {
     /// YouTube sonuçlarını çalınabilir şarkılara çevirir (indirilmişse yerel dosya).
     func playable(_ results: [SearchResult]) -> [Track] {
-        results.map { localTrack(for: $0) ?? .remote($0) }
+        results.compactMap { localTrack(for: $0) ?? (allowsRemote ? .remote($0) : nil) }
     }
 }
 
@@ -69,6 +69,20 @@ struct OnlineResultRow: View {
             }
             .buttonStyle(PressableStyle(scale: 0.98))
             .contextMenu { OnlineContextItems(result: result) }
+
+            // Satıra dokununca çaldığını bilmeyenler için ayrı oynat düğmesi.
+            Button {
+                if isCurrent { player.togglePlayPause() } else { onPlay() }
+                Haptics.tap()
+            } label: {
+                Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white)
+                    .frame(width: 40, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableStyle(scale: 0.9))
+            .accessibilityLabel(isCurrent && player.isPlaying ? "Duraklat" : "Çal")
 
             Button {
                 if library.localTrack(for: result) == nil {

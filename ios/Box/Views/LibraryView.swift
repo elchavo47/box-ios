@@ -24,6 +24,7 @@ struct LibraryView: View {
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
     @AppStorage("box.sort") private var sort: TrackSort = .title
+    @State private var editMode: EditMode = .inactive
 
     enum LibSection: String, CaseIterable, Hashable {
         case playlists = "Listeler"
@@ -68,6 +69,8 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .environment(\.editMode, $editMode)
+            .onChange(of: section) { _ in editMode = .inactive }
             .boxScreenBackground()
             .navigationTitle("Kitaplık")
             .searchable(text: $searchText, prompt: "Kitaplığında ara")
@@ -140,64 +143,61 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var playlists: some View {
-        Button {
-            showNewPlaylist = true
-        } label: {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundColor(.white))
-                Text("Yeni çalma listesi")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
-                Spacer()
+        // 1) Her zaman üstte: son çalınanlar ve beğenilenler.
+        if !library.recentlyPlayed.isEmpty {
+            playlistRow(title: "Son çalınanlar", subtitle: "\(library.recentlyPlayed.count) şarkı", route: .recent) {
+                PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
             }
         }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-
-        playlistRow(title: "Beğenilenler", subtitle: "Otomatik liste • \(library.favoriteTracks.count) şarkı", route: .favorites) {
+        playlistRow(title: "Beğenilenler", subtitle: "\(library.favoriteTracks.count) şarkı", route: .favorites) {
             ZStack {
                 LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 Image(systemName: "heart.fill").foregroundColor(.white)
             }
         }
 
-        if !library.downloadedTracks.isEmpty {
-            playlistRow(title: "İndirilenler", subtitle: "Otomatik liste • \(library.downloadedTracks.count) şarkı", route: .downloads) {
-                PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 56, cornerRadius: 0)
+        // 2) Kendi listelerin: basılı tutup sürükleyerek sıralanır.
+        HStack {
+            Text("Listelerim")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
+            Spacer()
+            if library.playlists.count > 1 {
+                Button(editMode == .active ? "Bitti" : "Sırala") {
+                    withAnimation { editMode = editMode == .active ? .inactive : .active }
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.accent)
+                .buttonStyle(.borderless)
             }
         }
+        .padding(.top, 14)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .moveDisabled(true)
 
-        playlistRow(title: "Box Özeti", subtitle: "Dinleme istatistiklerin", route: .summary) {
-            ZStack {
-                LinearGradient(colors: [Color.accent, Color(red: 0.62, green: 0.95, blue: 0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "chart.bar.fill").foregroundColor(.black)
-            }
-        }
-
-        ForEach(SmartList.allCases, id: \.self) { list in
-            let count = list == .mostPlayed ? library.mostPlayed.count : (list == .forgotten ? library.forgotten.count : library.addedThisMonth.count)
-            if count > 0 {
-                playlistRow(title: list.title, subtitle: "Akıllı liste • \(count) şarkı", route: .smart(list)) {
-                    ZStack {
-                        Color.boxSurface2
-                        Image(systemName: list.icon).foregroundColor(.accent)
-                    }
+        if library.playlists.isEmpty {
+            Button {
+                showNewPlaylist = true
+            } label: {
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.1))
+                        .frame(width: 56, height: 56)
+                        .overlay(Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundColor(.white))
+                    Text("İlk listeni oluştur")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                    Spacer()
                 }
             }
-        }
-
-        if !library.recentlyPlayed.isEmpty {
-            playlistRow(title: "Son çalınanlar", subtitle: "Otomatik liste • \(library.recentlyPlayed.count) şarkı", route: .recent) {
-                PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
-            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
 
         ForEach(library.playlists) { playlist in
             let tracks = library.tracks(for: playlist)
-            playlistRow(title: playlist.name, subtitle: (playlist.sourceID != nil ? "YouTube listesi" : "Liste") + " • \(tracks.count) şarkı", route: .playlist(playlist.id)) {
+            playlistRow(title: playlist.name, subtitle: playlistSubtitle(playlist, count: tracks.count), route: .playlist(playlist.id)) {
                 PlaylistArtwork(playlist: playlist, tracks: tracks, size: 56, cornerRadius: 0)
             }
             .swipeActions {
@@ -208,6 +208,87 @@ struct LibraryView: View {
                 }
             }
         }
+        .onMove { from, to in
+            library.movePlaylists(from: from, to: to)
+            Haptics.soft()
+        }
+
+        if library.playlists.count > 1 && editMode != .active {
+            Text("Sırasını değiştirmek için listeye basılı tutup sürükle.")
+                .font(.footnote)
+                .foregroundColor(.boxTertiaryText)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+
+        // 3) Otomatik listeler: yer kaplamasın diye tek satırda, yana kaydırılır.
+        Text("Otomatik listeler")
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.top, 14)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+                if !library.downloadedTracks.isEmpty {
+                    autoTile(title: "İndirilenler", subtitle: "\(library.downloadedTracks.count) şarkı", route: .downloads) {
+                        PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 120, cornerRadius: 0)
+                    }
+                }
+                ForEach(SmartList.allCases, id: \.self) { list in
+                    let count = list == .mostPlayed ? library.mostPlayed.count : (list == .forgotten ? library.forgotten.count : library.addedThisMonth.count)
+                    if count > 0 {
+                        autoTile(title: list.title, subtitle: "\(count) şarkı", route: .smart(list)) {
+                            ZStack {
+                                Color.boxSurface2
+                                Image(systemName: list.icon).font(.system(size: 30)).foregroundColor(.accent)
+                            }
+                        }
+                    }
+                }
+                autoTile(title: "Box Özeti", subtitle: "İstatistiklerin", route: .summary) {
+                    ZStack {
+                        LinearGradient(colors: [Color.accent, Color(red: 0.62, green: 0.95, blue: 0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Image(systemName: "chart.bar.fill").font(.system(size: 30)).foregroundColor(.black)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private func playlistSubtitle(_ playlist: Playlist, count: Int) -> String {
+        if playlist.sourceID != nil {
+            if count == 0 && !auth.isPremium { return "YouTube listesi • Premium ile dinlenir" }
+            return "YouTube listesi • \(count) şarkı"
+        }
+        return "\(count) şarkı"
+    }
+
+    private func autoTile<Cover: View>(title: String, subtitle: String, route: HomeRoute, @ViewBuilder cover: () -> Cover) -> some View {
+        // Liste satırı içinde birden çok bağlantı olduğu için düğmeyle açılıyor (satırın tamamı tek dokunuş sayılmasın).
+        Button { path.append(route) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                cover()
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(.boxSecondaryText)
+                    .lineLimit(1)
+            }
+            .frame(width: 120, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
     }
 
     private func playlistRow<Cover: View>(title: String, subtitle: String, route: HomeRoute, @ViewBuilder cover: () -> Cover) -> some View {

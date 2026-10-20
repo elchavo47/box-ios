@@ -91,6 +91,21 @@ final class DownloadManager: ObservableObject {
         for result in results { download(result) }
     }
 
+    /// Premium kapanınca ya da çıkış yapılınca: bekleyenleri ve sürenleri iptal et.
+    /// Süren indirme bitse bile kitaplığa kaydedilmez.
+    func cancelAll() {
+        pending.removeAll()
+        for (id, item) in items where item.state.isActive { retryable[id] = false }
+        items = items.filter { !$0.value.state.isActive }
+        waitingForWifi = false
+    }
+
+    /// Çıkışta indirme geçmişini de temizle (başka hesap görmesin).
+    func reset() {
+        cancelAll()
+        items.removeAll()
+    }
+
     private func pump() {
         if AppSettings.shared.wifiOnlyDownloads, network?.isExpensive == true, !pending.isEmpty {
             waitingForWifi = true
@@ -203,6 +218,11 @@ final class DownloadManager: ObservableObject {
                 }
             }
 
+            // İndirme bu arada iptal edildiyse (premium kapandı, çıkış yapıldı) kaydetme.
+            guard items[id]?.state.isActive == true else {
+                try? FileManager.default.removeItem(at: tempFile)
+                return false
+            }
             update(id, .processing)
 
             let folder = library.documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)

@@ -245,7 +245,7 @@ struct TrackMenu: View {
             Button { player.playNext(track); router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Button { player.addToQueue(track); router.show("Sıraya eklendi", icon: "text.append", track: track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
             Divider()
-            if library.localTrack(for: remote) == nil {
+            if auth.isPremium && library.localTrack(for: remote) == nil {
                 Button {
                     downloads.download(remote)
                     Haptics.success()

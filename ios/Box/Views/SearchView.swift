@@ -178,7 +178,7 @@ struct SearchView: View {
             Divider().background(Color.boxStroke).padding(.vertical, 8)
         }
         OfflineBanner().padding(.bottom, 12)
-        if !downloads.sortedItems.isEmpty {
+        if auth.isPremium && !downloads.sortedItems.isEmpty {
             HStack {
                 Text("İndirmeler")
                     .font(.system(size: 20, weight: .bold))

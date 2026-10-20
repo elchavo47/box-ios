@@ -88,10 +88,13 @@ struct BoxApp: App {
                         return library.playable(results)
                     }
                     player.autoRadioEnabled = { [weak auth] in AppSettings.shared.autoRadio && auth?.isPremium == true }
-                    player.isPlayable = { [weak stream] track in
+                    player.isPlayable = { [weak stream, weak auth] track in
                         guard let remote = track.remote else { return true }
+                        guard auth?.isPremium == true else { return false }
                         return NetworkMonitor.shared.isOnline || stream?.isCached(remote.id) == true
                     }
+                    player.allowsRemote = { [weak auth] in auth?.isPremium == true }
+                    library.allowsRemote = auth.isPremium
                     player.crossfade = { AppSettings.shared.crossfadeSeconds }
                     player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
                     player.visualizer = { AppSettings.shared.visualizer }
@@ -131,9 +134,40 @@ struct BoxApp: App {
                         await library.importFiles([url], into: inbox)
                     }
                 }
+                .onChange(of: auth.isPremium) { premium in
+                    // Premium kapanınca premium'a ait hiçbir şey kalmasın: internet şarkıları,
+                    // video, radyo, bekleyen indirmeler, öneriler.
+                    library.allowsRemote = premium
+                    if !premium {
+                        player.dropRemoteTracks()
+                        downloads.cancelAll()
+                        feed.reset()
+                    }
+                }
+                .onChange(of: auth.user?.id) { id in
+                    // Başka bir hesaba geçildiyse önceki hesabın aramaları görünmesin.
+                    guard let id else { return }
+                    let key = "box.lastUserID"
+                    let previous = UserDefaults.standard.object(forKey: key) as? Int
+                    // previous == nil: bu sürüm ilk kez açıldı; önceden kimin aradığı bilinmediği için bir kez temizle.
+                    if previous == nil || previous != id {
+                        history.clear()
+                        feed.reset()
+                        downloads.reset()
+                    }
+                    UserDefaults.standard.set(id, forKey: key)
+                }
                 .onChange(of: auth.token) { token in
+                    guard token != nil else {
+                        // Çıkış yapıldı: hesaba ait her şeyi temizle.
+                        history.clear()
+                        feed.reset()
+                        downloads.reset()
+                        library.allowsRemote = false
+                        player.dropRemoteTracks()
+                        return
+                    }
                     // Giriş yapılınca bildirim izni bir kez sorulur, cihaz hesaba bağlanır.
-                    guard token != nil else { return }
                     Task {
                         await PushManager.shared.requestIfNeeded()
                         await PushManager.shared.upload()

@@ -156,6 +156,14 @@ final class PlayerManager: ObservableObject {
     // MARK: - Oynatma
 
     func play(_ tracks: [Track], startAt index: Int = 0, shuffled: Bool = false) {
+        var tracks = tracks
+        var index = index
+        if !allowsRemote() {
+            // Premium yoksa indirilmemiş internet şarkıları çalınmaz.
+            let chosen = tracks.indices.contains(index) ? tracks[index] : nil
+            tracks = tracks.filter { !$0.isRemote }
+            index = chosen.flatMap { c in tracks.firstIndex { $0.id == c.id } } ?? 0
+        }
         guard !tracks.isEmpty else { return }
 
         let safeIndex = min(max(index, 0), tracks.count - 1)
@@ -178,6 +186,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func playNext(_ track: Track) {
+        if track.isRemote && !allowsRemote() { return }
         guard let currentIndex else {
             play([track])
             return
@@ -189,6 +198,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func addToQueue(_ track: Track) {
+        if track.isRemote && !allowsRemote() { return }
         guard currentIndex != nil else {
             play([track])
             return
@@ -201,7 +211,7 @@ final class PlayerManager: ObservableObject {
 
     /// Bir şarkıdan radyo başlat: önce o şarkı, sonra benzerleri.
     func startRadio(from track: Track) {
-        guard let radioProvider else { return }
+        guard let radioProvider, allowsRemote() else { return }
         radioLoading = true
         Task { @MainActor in
             let more = await radioProvider(track, [track.remote?.id].compactMap { $0 })
@@ -408,6 +418,30 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    // MARK: - Premium
+
+    /// Premium açık mı (internet şarkıları, video, radyo için).
+    var allowsRemote: () -> Bool = { true }
+
+    /// Premium kapanınca: internet şarkılarını sıradan çıkar, video modunu kapat.
+    /// Çalan şarkı internet şarkısıysa oynatma durur.
+    func dropRemoteTracks() {
+        if videoMode {
+            videoMode = false
+            stopVideo()
+        }
+        guard queue.contains(where: \.isRemote) else { return }
+        if current?.isRemote == true {
+            stop()
+            return
+        }
+        let currentPath = current?.relativePath
+        queue.removeAll { $0.isRemote }
+        originalQueue.removeAll { $0.isRemote }
+        currentIndex = currentPath.flatMap { path in queue.firstIndex { $0.relativePath == path } }
+        if currentIndex == nil { stop() } else { saveState(force: true) }
+    }
+
     // MARK: - Kitaplık değişikliği
 
     /// Dosya silindiğinde ya da taşındığında kuyruğu temizler.
@@ -563,6 +597,7 @@ final class PlayerManager: ObservableObject {
     /// Şarkı ile Video arasında geçiş. Ses hiç durmaz; görüntü sesin saniyesine kilitlenir.
     func setVideoMode(_ on: Bool) async {
         if on {
+            guard allowsRemote() else { return }
             guard !videoMode || videoProgressive == nil else { return }
             videoMode = true
             await loadVideoForCurrent()
