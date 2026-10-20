@@ -266,7 +266,21 @@ struct FullPlayerView: View {
     }
 
     private func artwork(_ track: Track, side: CGFloat) -> some View {
-        ArtworkView(url: track.url, size: side, cornerRadius: 10, fallback: track.artworkFallback)
+        ZStack {
+            ArtworkView(url: track.url, size: side, cornerRadius: 10, fallback: track.artworkFallback)
+            // İnternetten çalan şarkıda dosyada kapak yok: oynatıcının indirdiği yüksek kaliteli
+            // (bantsız, 900 px) kapağı göster; küçük resim gerilip bulanık görünmesin.
+            if track.isRemote, player.current?.id == track.id, let hq = player.currentArtwork {
+                Image(uiImage: hq)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: side, height: side)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: player.currentArtwork)
             .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
             .scaleEffect(player.isPlaying ? 1 : 0.9)
             .animation(.spring(response: 0.45, dampingFraction: 0.78), value: player.isPlaying)

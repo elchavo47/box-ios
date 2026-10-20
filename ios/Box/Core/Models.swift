@@ -23,7 +23,10 @@ struct Track: Identifiable, Hashable {
 
     /// Kapak henüz yokken gösterilecek küçük resim (bantsız).
     var artworkFallback: URL? {
-        remote.flatMap { URL(string: "https://i.ytimg.com/vi/\($0.id)/mqdefault.jpg") }
+        guard let remote else { return nil }
+        // YouTube Music'in kare albüm kapağı varsa onu kullan (bantsız, yüksek çözünürlük).
+        if let square = remote.squareCoverURL { return square }
+        return URL(string: "https://i.ytimg.com/vi/\(remote.id)/mqdefault.jpg")
     }
 
     static func remote(_ result: SearchResult) -> Track {
@@ -144,6 +147,15 @@ struct SearchResult: Codable, Identifiable, Hashable {
 
     var thumbnailURL: URL? {
         thumbnail.flatMap(URL.init(string:))
+    }
+
+    /// YouTube Music kare kapağı (ör. lh3.googleusercontent.com/...=w544-h544), istenen boyutta.
+    var squareCoverURL: URL? { squareCover(size: 544) }
+
+    func squareCover(size: Int) -> URL? {
+        guard let thumbnail, thumbnail.contains("googleusercontent.com") || thumbnail.contains("ggpht.com") else { return nil }
+        let resized = thumbnail.replacingOccurrences(of: #"=w\d+-h\d+[^/]*$"#, with: "=w\(size)-h\(size)-l90-rj", options: .regularExpression)
+        return URL(string: resized)
     }
 
     /// Siyah bantsız, yüksek çözünürlüklü kapak.

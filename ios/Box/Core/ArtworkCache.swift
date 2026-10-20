@@ -45,9 +45,18 @@ actor ArtworkCache {
     }
 
     /// İnternet şarkısının kapağı (YouTube küçük resmi, bantsız kare).
-    func remoteArtwork(for videoID: String) async -> UIImage? {
+    func remoteArtwork(for videoID: String, preferred: URL? = nil) async -> UIImage? {
         let key = ("yt:" + videoID) as NSString
         if let cached = large.object(forKey: key) { return cached }
+        // Önce YouTube Music'in kare kapağı (büyük boyutta), olmazsa video küçük resimleri.
+        if let preferred,
+           let (data, response) = try? await URLSession.shared.data(from: preferred),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let decoded = UIImage(data: data), decoded.size.width >= 300 {
+            let prepared = Self.downscale(Self.squareCrop(decoded), maxSide: 900)
+            large.setObject(prepared, forKey: key)
+            return prepared
+        }
         for name in ["maxresdefault", "hqdefault", "mqdefault"] {
             guard let url = URL(string: "https://i.ytimg.com/vi/\(videoID)/\(name).jpg"),
                   let (data, response) = try? await URLSession.shared.data(from: url),

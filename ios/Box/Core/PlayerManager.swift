@@ -865,7 +865,7 @@ final class PlayerManager: ObservableObject {
             }
             // İnternet şarkısı: dosyada kapak yok, YouTube küçük resmini kullan (kilit ekranı için de).
             if image == nil, let remote = track.remote {
-                image = await ArtworkCache.shared.remoteArtwork(for: remote.id)
+                image = await ArtworkCache.shared.remoteArtwork(for: remote.id, preferred: remote.squareCover(size: 1080))
                 if let image { color = await ArtworkCache.shared.dominantColor(of: image, key: "yt:" + remote.id) }
             }
             var colors: [UIColor] = []
