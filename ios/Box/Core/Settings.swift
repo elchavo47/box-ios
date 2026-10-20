@@ -14,6 +14,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("set.normalize") var normalizeVolume = false { willSet { objectWillChange.send() } }
     @AppStorage("set.onboarded") var onboarded = false { willSet { objectWillChange.send() } }
     @AppStorage("set.searchSuggestions") var searchSuggestions = true { willSet { objectWillChange.send() } }
+    @AppStorage("set.visualizer") var visualizer = true { willSet { objectWillChange.send() } }
 
     var eqPreset: EQPreset {
         get { EQPreset(rawValue: eqPresetRaw) ?? .flat }

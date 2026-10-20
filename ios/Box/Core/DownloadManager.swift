@@ -139,6 +139,7 @@ final class DownloadManager: ObservableObject {
         library.setDownloadedPath(path, for: result.id)
         update(result.id, .done(path))
         onFinished?(result, path)
+        if pending.isEmpty && running <= 1 { Haptics.success() }
         return true
     }
 
@@ -230,6 +231,7 @@ final class DownloadManager: ObservableObject {
             library.setDownloadedPath(path, for: id)
             update(id, .done(path))
             onFinished?(result, path)
+            if pending.isEmpty && running <= 1 { Haptics.success() }
             return true
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? "İndirme başarısız oldu."

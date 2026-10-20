@@ -70,7 +70,18 @@ actor ArtworkCache {
         return color
     }
 
-    private func averageColor(_ image: UIImage) -> UIColor? {
+    /// Kapaktaki üç bölgenin rengi (akan arka plan için): sol üst, orta, sağ alt.
+    func palette(of image: UIImage) -> [UIColor] {
+        guard let cg = Self.downscale(image, maxSide: 90).cgImage else { return [] }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let regions = [CGRect(x: 0, y: 0, width: w / 2, height: h / 2), CGRect(x: w / 4, y: h / 4, width: w / 2, height: h / 2), CGRect(x: w / 2, y: h / 2, width: w / 2, height: h / 2)]
+        return regions.compactMap { rect in
+            guard let part = cg.cropping(to: rect.integral) else { return nil }
+            return averageColor(UIImage(cgImage: part), brightnessRange: 0.3...0.62)
+        }
+    }
+
+    private func averageColor(_ image: UIImage, brightnessRange: ClosedRange<CGFloat> = 0.28...0.48) -> UIColor? {
         guard let cg = image.cgImage else { return nil }
 
         let input = CIImage(cgImage: cg)
@@ -86,7 +97,7 @@ actor ArtworkCache {
         UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
             .getHue(&hue, saturation: &sat, brightness: &bri, alpha: &alpha)
         // Okunaklı kalması için koyu ve doygun tut.
-        return UIColor(hue: hue, saturation: min(max(sat, 0.25) * 1.15, 0.85), brightness: min(max(bri, 0.28), 0.48), alpha: 1)
+        return UIColor(hue: hue, saturation: min(max(sat, 0.25) * 1.15, 0.85), brightness: min(max(bri, brightnessRange.lowerBound), brightnessRange.upperBound), alpha: 1)
     }
 
     func invalidate(_ url: URL) {

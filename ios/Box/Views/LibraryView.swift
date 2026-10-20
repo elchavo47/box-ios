@@ -91,6 +91,18 @@ struct LibraryView: View {
                             Image(systemName: "arrow.up.arrow.down")
                         }
                     }
+                    if section == .playlists {
+                        Menu {
+                            Button { showNewPlaylist = true } label: { Label("Yeni çalma listesi", systemImage: "plus") }
+                            if auth.isPremium {
+                                Button { showImport = true } label: { Label("YouTube listesini içe aktar", systemImage: "square.and.arrow.down.on.square") }
+                            }
+                            Button { showListFile = true } label: { Label("Liste dosyası aç (.boxlist)", systemImage: "doc.badge.plus") }
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Liste ekle")
+                    }
                     AccountButton()
                 }
             }
@@ -139,52 +151,6 @@ struct LibraryView: View {
                 Text("Yeni çalma listesi")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white)
-                Spacer()
-            }
-        }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-
-        if auth.isPremium {
-            Button {
-                showImport = true
-            } label: {
-                HStack(spacing: 14) {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.accent)
-                        .frame(width: 56, height: 56)
-                        .overlay(Image(systemName: "square.and.arrow.down.on.square").font(.system(size: 20, weight: .semibold)).foregroundColor(.black))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("YouTube listesini içe aktar")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
-                        Text("Bağlantıyı yapıştır")
-                            .font(.system(size: 13))
-                            .foregroundColor(.boxSecondaryText)
-                    }
-                    Spacer()
-                }
-            }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-        }
-
-        Button {
-            showListFile = true
-        } label: {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(Image(systemName: "doc.badge.plus").font(.system(size: 20, weight: .semibold)).foregroundColor(.white))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Liste dosyası aç")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                    Text("Arkadaşının paylaştığı .boxlist")
-                        .font(.system(size: 13))
-                        .foregroundColor(.boxSecondaryText)
-                }
                 Spacer()
             }
         }

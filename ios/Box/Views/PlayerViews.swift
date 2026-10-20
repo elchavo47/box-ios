@@ -125,6 +125,8 @@ struct FullPlayerView: View {
     @State private var showQueue = false
     @State private var showSleep = false
     @State private var showLyrics = false
+    @State private var heartPop = 0
+    @EnvironmentObject private var settings: AppSettings
     @State private var swipeX: CGFloat = 0
 
     var body: some View {
@@ -151,7 +153,13 @@ struct FullPlayerView: View {
                                         if player.videoLoading || player.isBuffering { ProgressView().tint(.white).scaleEffect(1.3) }
                                     }
                             } else {
-                                artwork(track, side: artSide)
+                                VStack(spacing: 14) {
+                                    artwork(track, side: artSide)
+                                    if settings.visualizer {
+                                        VisualizerBars(height: 26)
+                                            .opacity(player.meter == nil ? 0.35 : 1)
+                                    }
+                                }
                             }
                         }
                         .frame(width: width)
@@ -209,17 +217,16 @@ struct FullPlayerView: View {
     private var background: some View {
         ZStack {
             Color.boxBackground
-            LinearGradient(
-                colors: [
-                    Color(player.artworkColor ?? UIColor(red: 0.12, green: 0.2, blue: 0.17, alpha: 1)),
-                    Color(player.artworkColor ?? UIColor(red: 0.12, green: 0.2, blue: 0.17, alpha: 1)).opacity(0.55),
-                    Color.boxBackground,
-                ],
-                startPoint: .top,
-                endPoint: .bottom
+            FlowingBackground(
+                colors: player.artworkPalette.isEmpty
+                    ? [Color(player.artworkColor ?? UIColor(red: 0.12, green: 0.2, blue: 0.17, alpha: 1))]
+                    : player.artworkPalette.map { Color($0) },
+                playing: player.isPlaying
             )
-            .animation(.easeInOut(duration: 0.6), value: player.artworkColor)
+            .id(player.current?.id)
+            .transition(.opacity)
         }
+        .animation(.easeInOut(duration: 0.6), value: player.current?.id)
         .ignoresSafeArea()
     }
 
@@ -289,8 +296,11 @@ struct FullPlayerView: View {
                         if swipeX != 0 { withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 } }
                     }
             )
+            .overlay { HeartPop(trigger: heartPop) }
             .onTapGesture(count: 2) {
-                if !library.isFavorite(track) { library.toggleFavorite(track); Haptics.success() }
+                if !library.isFavorite(track) { library.toggleFavorite(track) }
+                Haptics.success()
+                heartPop += 1
             }
     }
 
@@ -306,17 +316,9 @@ struct FullPlayerView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
+            HeartButton(liked: library.isFavorite(track)) {
                 library.toggleFavorite(track)
-                Haptics.tap()
-            } label: {
-                Image(systemName: library.isFavorite(track) ? "heart.fill" : "heart")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(library.isFavorite(track) ? .accent : .white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
             }
-            .accessibilityLabel(library.isFavorite(track) ? "Beğenilerden çıkar" : "Beğen")
         }
         .foregroundColor(.white)
     }

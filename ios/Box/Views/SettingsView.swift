@@ -40,6 +40,11 @@ struct SettingsView: View {
                 }
                 .tint(.accent)
 
+                Toggle(isOn: $settings.visualizer) {
+                    Label("Ses dalgası", systemImage: "waveform")
+                }
+                .tint(.accent)
+
                 if auth.isPremium {
                     Toggle(isOn: $settings.autoRadio) {
                         Label("Sıra bitince benzerleriyle devam et", systemImage: "dot.radiowaves.left.and.right")

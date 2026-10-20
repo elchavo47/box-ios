@@ -218,6 +218,7 @@ struct TrackMenu: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var router: AppRouter
     @State private var showNewPlaylist = false
     @State private var showTagEditor = false
     @State private var newPlaylistName = ""
@@ -241,13 +242,14 @@ struct TrackMenu: View {
 
     private func remoteMenu(_ remote: SearchResult) -> some View {
         Menu {
-            Button { player.playNext(track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
-            Button { player.addToQueue(track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+            Button { player.playNext(track); router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { player.addToQueue(track); router.show("Sıraya eklendi", icon: "text.append", track: track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
             Divider()
             if library.localTrack(for: remote) == nil {
                 Button {
                     downloads.download(remote)
                     Haptics.success()
+                    router.show("İndirme başladı", icon: "arrow.down.circle", track: track)
                 } label: { Label("Kitaplığa indir", systemImage: "arrow.down.circle") }
             }
             if let url = URL(string: "https://www.youtube.com/watch?v=\(remote.id)") {
@@ -267,12 +269,14 @@ struct TrackMenu: View {
         Menu {
             Button {
                 player.playNext(track)
+                router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track)
             } label: {
                 Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward")
             }
 
             Button {
                 player.addToQueue(track)
+                router.show("Sıraya eklendi", icon: "text.append", track: track)
             } label: {
                 Label("Sıraya ekle", systemImage: "text.append")
             }
@@ -300,6 +304,7 @@ struct TrackMenu: View {
                     Button(playlist.name) {
                         library.add([track], to: playlist.id)
                         Haptics.success()
+                        router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
                     }
                 }
             } label: {

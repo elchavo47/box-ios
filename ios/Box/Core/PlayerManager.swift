@@ -49,6 +49,8 @@ final class PlayerManager: ObservableObject {
     @Published var showFullPlayer = false
     @Published private(set) var currentArtwork: UIImage?
     @Published private(set) var artworkColor: UIColor?
+    /// Akan arka plan için kapaktan üç renk.
+    @Published private(set) var artworkPalette: [UIColor] = []
     @Published private(set) var sleepTimer: SleepTimer = .off
     @Published private(set) var playbackRate: Float = 1
     /// İnternetten dinlenen şarkı hazırlanıyor.
@@ -831,9 +833,12 @@ final class PlayerManager: ObservableObject {
                 image = await ArtworkCache.shared.remoteArtwork(for: remote.id)
                 if let image { color = await ArtworkCache.shared.dominantColor(of: image, key: "yt:" + remote.id) }
             }
+            var colors: [UIColor] = []
+            if let image { colors = await ArtworkCache.shared.palette(of: image) }
             guard let self, self.current?.id == track.id else { return }
             self.currentArtwork = image
             self.artworkColor = color
+            self.artworkPalette = colors
             self.updateNowPlaying()
         }
     }

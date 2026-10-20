@@ -24,8 +24,24 @@ extension Color {
 }
 
 extension View {
+    /// Ekran arka planı + mini oynatıcının altında son satırın kalmaması için boşluk.
     func boxScreenBackground() -> some View {
-        background(Color.boxBackground.ignoresSafeArea())
+        modifier(ScreenBackground())
+    }
+}
+
+private struct ScreenBackground: ViewModifier {
+    @EnvironmentObject private var player: PlayerManager
+
+    func body(content: Content) -> some View {
+        let clearance: CGFloat = player.current == nil ? 16 : 96
+        if #available(iOS 17.0, *) {
+            content
+                .contentMargins(.bottom, clearance, for: .scrollContent)
+                .background(Color.boxBackground.ignoresSafeArea())
+        } else {
+            content.background(Color.boxBackground.ignoresSafeArea())
+        }
     }
 }
 

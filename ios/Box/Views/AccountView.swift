@@ -195,7 +195,7 @@ private struct ProfileView: View {
                         ZStack(alignment: .bottomTrailing) {
                             UserAvatar(user: user, size: 68)
                                 .overlay {
-                                    if auth.isWorking && uploading { ProgressView().tint(.white) }
+                                    if uploading { ProgressView().tint(.white) }
                                 }
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 11, weight: .bold))

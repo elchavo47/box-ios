@@ -652,8 +652,16 @@ final class LibraryStore: ObservableObject {
 
     func add(_ tracks: [Track], to id: UUID) {
         guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
-        for track in tracks where !playlists[index].paths.contains(track.relativePath) {
-            playlists[index].paths.append(track.relativePath)
+        for track in tracks {
+            if let remote = track.remote {
+                // İndirilmemiş şarkı: liste internetten çalar, indirilince yerel dosyaya geçer.
+                remember(remote)
+                var list = playlists[index].remote ?? []
+                if !list.contains(where: { $0.id == remote.id }) { list.append(remote) }
+                playlists[index].remote = list
+            } else if !playlists[index].paths.contains(track.relativePath) {
+                playlists[index].paths.append(track.relativePath)
+            }
         }
         savePlaylists()
     }

@@ -93,6 +93,7 @@ struct BoxApp: App {
                     }
                     player.crossfade = { AppSettings.shared.crossfadeSeconds }
                     player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
+                    player.visualizer = { AppSettings.shared.visualizer }
                     downloads.network = network
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     await library.refresh()
@@ -153,4 +154,25 @@ struct BoxApp: App {
 final class AppRouter: ObservableObject {
     @Published var tab: BoxTab = .home
     @Published var showAccount = false
+    @Published private(set) var toast: Toast?
+
+    struct Toast: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+        var icon: String = "checkmark.circle.fill"
+        var track: Track? = nil
+    }
+
+    private var toastTask: Task<Void, Never>?
+
+    /// Kısa bilgi baloncuğu (ör. "Listeye eklendi").
+    func show(_ text: String, icon: String = "checkmark.circle.fill", track: Track? = nil) {
+        toastTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = Toast(text: text, icon: icon, track: track) }
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.25)) { self.toast = nil }
+        }
+    }
 }

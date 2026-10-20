@@ -60,6 +60,17 @@ struct RootView: View {
                 }
                 .allowsHitTesting(false)
 
+            if let toast = router.toast {
+                VStack {
+                    ToastView(toast: toast)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(4)
+                .allowsHitTesting(false)
+            }
+
             if let announcement = server.announcement, !showSplash {
                 AnnouncementCard(announcement: announcement) {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { server.dismissAnnouncement() }

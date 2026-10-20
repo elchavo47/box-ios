@@ -178,36 +178,6 @@ struct SearchView: View {
             Divider().background(Color.boxStroke).padding(.vertical, 8)
         }
         OfflineBanner().padding(.bottom, 12)
-        if auth.isPremium {
-            Button {
-                importLink = ""
-                showImport = true
-            } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "square.and.arrow.down.on.square")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.black)
-                        .frame(width: 44, height: 44)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.accent))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("YouTube listesini içe aktar")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                        Text("Bağlantıyı yapıştır, listeyi dinle ya da indir")
-                            .font(.system(size: 13))
-                            .foregroundColor(.boxSecondaryText)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundColor(.boxSecondaryText)
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.boxSurface))
-            }
-            .buttonStyle(PressableStyle(scale: 0.98))
-            .padding(.horizontal, 16)
-            .padding(.bottom, 18)
-        }
-
         if !downloads.sortedItems.isEmpty {
             HStack {
                 Text("İndirmeler")

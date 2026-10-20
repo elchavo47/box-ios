@@ -210,3 +210,168 @@ struct OfflineBanner: View {
         }
     }
 }
+
+// MARK: - Akan arka plan
+
+/// Kapağın renkleriyle yavaşça akan arka plan (Apple Music benzeri). Hareket azaltma açıksa durağan.
+struct FlowingBackground: View {
+    let colors: [Color]
+    var playing: Bool = true
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !playing)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            Canvas { context, size in
+                let palette = colors.isEmpty ? [Color(red: 0.12, green: 0.24, blue: 0.19)] : colors
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(palette[0].opacity(0.9)))
+                let radius = max(size.width, size.height) * 0.75
+                for (index, color) in palette.enumerated() {
+                    let speed = 0.05 + Double(index) * 0.017
+                    let phase = Double(index) * 2.1
+                    let x = size.width * (0.5 + 0.38 * cos(t * speed + phase))
+                    let y = size.height * (0.32 + 0.28 * sin(t * speed * 1.3 + phase))
+                    let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                    context.fill(
+                        Path(ellipseIn: rect),
+                        with: .radialGradient(Gradient(colors: [color.opacity(0.95), color.opacity(0)]), center: CGPoint(x: x, y: y), startRadius: 0, endRadius: radius)
+                    )
+                }
+            }
+        }
+        .overlay(
+            LinearGradient(colors: [.clear, Color.black.opacity(0.35), Color.boxBackground.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+        )
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.8), value: colors.count)
+    }
+}
+
+// MARK: - Görselleştirici
+
+/// Müziğe göre oynayan çubuklar (ses akışından ölçülür).
+struct VisualizerBars: View {
+    @EnvironmentObject private var player: PlayerManager
+    var height: CGFloat = 28
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !player.isPlaying)) { _ in
+            let levels = player.meter?.levels() ?? []
+            HStack(alignment: .center, spacing: 4) {
+                ForEach(0..<TapContext.bandCount * 2 - 1, id: \.self) { index in
+                    // Ortadan iki yana yansıyan bantlar.
+                    let band = abs(index - (TapContext.bandCount - 1))
+                    let value = levels.indices.contains(band) ? CGFloat(levels[band]) : 0.08
+                    Capsule()
+                        .fill(Color.white.opacity(0.85))
+                        .frame(width: 4, height: max(4, height * (player.isPlaying ? value : 0.12)))
+                }
+            }
+            .frame(height: height)
+            .animation(.linear(duration: 1.0 / 30), value: levels)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Beğeni animasyonu
+
+struct HeartButton: View {
+    let liked: Bool
+    var size: CGFloat = 24
+    let action: () -> Void
+
+    @State private var burst = false
+    @State private var bounce = false
+
+    var body: some View {
+        Button {
+            let willLike = !liked
+            action()
+            if willLike {
+                Haptics.success()
+                burst = false
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.45)) { bounce = true }
+                withAnimation(.easeOut(duration: 0.55)) { burst = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { bounce = false }
+                }
+            } else {
+                Haptics.tap()
+            }
+        } label: {
+            ZStack {
+                ForEach(0..<8, id: \.self) { index in
+                    let angle = Double(index) / 8 * 2 * .pi
+                    Circle()
+                        .fill(index.isMultiple(of: 2) ? Color.accent : Color.white)
+                        .frame(width: 5, height: 5)
+                        .offset(x: burst ? cos(angle) * size * 1.1 : 0, y: burst ? sin(angle) * size * 1.1 : 0)
+                        .opacity(burst ? 0 : (bounce ? 1 : 0))
+                }
+                Image(systemName: liked ? "heart.fill" : "heart")
+                    .font(.system(size: size, weight: .semibold))
+                    .foregroundColor(liked ? .accent : .white)
+                    .scaleEffect(bounce ? 1.3 : 1)
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(liked ? "Beğenilerden çıkar" : "Beğen")
+    }
+}
+
+/// Çift dokununca kapağın üstünde büyüyüp kaybolan kalp.
+struct HeartPop: View {
+    let trigger: Int
+    @State private var visible = false
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.system(size: 96))
+            .foregroundColor(.white)
+            .shadow(color: .black.opacity(0.35), radius: 16)
+            .scaleEffect(visible ? 1 : 0.4)
+            .opacity(visible ? 0.95 : 0)
+            .onChange(of: trigger) { _ in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { visible = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    withAnimation(.easeIn(duration: 0.25)) { visible = false }
+                }
+            }
+            .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Bildirim baloncuğu
+
+struct ToastView: View {
+    let toast: AppRouter.Toast
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let track = toast.track {
+                ArtworkView(url: track.url, size: 38, cornerRadius: 6, fallback: track.artworkFallback)
+                    .transition(.scale)
+            } else {
+                Image(systemName: toast.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.accent)
+                    .frame(width: 38, height: 38)
+            }
+            Text(toast.text)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.boxSurface2)
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
+        )
+        .padding(.horizontal, 14)
+    }
+}
