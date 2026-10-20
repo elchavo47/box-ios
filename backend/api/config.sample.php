@@ -28,6 +28,4 @@ const TOKEN_TTL_DAYS = 180;
 const CACHE_DIR = __DIR__ . '/cache';
 const CACHE_TIME = 3600;
 
-// Admin paneli girişi (şifre en az 10 karakter)
-const ADMIN_USERNAME = 'admin';
-const ADMIN_PASSWORD = 'GUCLU_BIR_ADMIN_SIFRESI';
+// Admin hesapları veritabanında tutulur (kurulum sihirbazı oluşturur).

@@ -1,7 +1,9 @@
-# config, lib ve önbellek dosyalarına dışarıdan erişimi kapat
-<FilesMatch "^(config|config\.sample|lib)\.php$">
+# Yalnızca index.php dışarıdan çağrılabilir; ayar, kütüphane ve önbellek dosyaları kapalı.
+<FilesMatch "^(config|config\.sample|config_writer|lib)\.php$|^\.|\.(tmp|lock|sql|log)$">
     Require all denied
 </FilesMatch>
+
+Options -Indexes
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

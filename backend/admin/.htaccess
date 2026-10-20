@@ -1,0 +1,11 @@
+Options -Indexes
+
+# İç dosyalar dışarıdan açılamaz
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^_inc/ - [F,L]
+</IfModule>
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
