@@ -1,6 +1,6 @@
 # Box: yalnızca index.php ve /assets dışarıya açıktır. Kod, ayar, yedek ve günlük klasörleri kapalıdır.
 # Not: Aynı alan adındaki eski YouTube API'si (api.php) çalışmaya devam eder.
-Options -Indexes
+Options -Indexes -MultiViews
 DirectoryIndex index.php
 
 <IfModule mod_headers.c>

@@ -49,7 +49,7 @@ if ($legacy) {
     $action = (string)($_GET['action'] ?? '');
     $route = [
         'register' => 'auth/register', 'login' => 'auth/login', 'logout' => 'auth/logout', 'me' => 'me',
-        'update_profile' => 'me', 'delete_account' => 'me/delete', 'search' => 'search', 'download_link' => 'download', 'ping' => 'ping',
+        'update_profile' => 'me', 'delete_account' => 'me/delete', 'search' => 'search', 'download_link' => 'download', 'ping' => 'ping', 'config' => 'config',
     ][$action] ?? '';
 } else {
     $route = preg_match('#^/api/v1/(.+)$#', $path, $m) ? $m[1] : '';
