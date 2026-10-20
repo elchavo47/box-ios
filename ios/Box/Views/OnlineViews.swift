@@ -82,7 +82,7 @@ struct OnlineResultRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableStyle(scale: 0.9))
-            .accessibilityLabel(isCurrent && player.isPlaying ? "Duraklat" : "Çal")
+            .accessibilityLabel(isCurrent && player.isPlaying ? L("Duraklat") : L("Çal"))
 
             Button {
                 if library.localTrack(for: result) == nil {
@@ -93,7 +93,7 @@ struct OnlineResultRow: View {
                 DownloadIndicator(state: downloads.state(for: result.id), downloaded: library.localTrack(for: result) != nil)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(library.localTrack(for: result) != nil ? "İndirildi" : "İndir")
+            .accessibilityLabel(library.localTrack(for: result) != nil ? L("İndirildi") : L("İndir"))
         }
     }
 }
@@ -106,11 +106,11 @@ struct OnlineContextItems: View {
 
     var body: some View {
         let track = library.localTrack(for: result) ?? .remote(result)
-        Button { player.play([track]) } label: { Label("Dinle", systemImage: "play.fill") }
-        Button { player.playNext(track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
-        Button { player.addToQueue(track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+        Button { player.play([track]) } label: { Label(L("Dinle"), systemImage: "play.fill") }
+        Button { player.playNext(track) } label: { Label(L("Sıradaki olarak çal"), systemImage: "text.line.first.and.arrowtriangle.forward") }
+        Button { player.addToQueue(track) } label: { Label(L("Sıraya ekle"), systemImage: "text.append") }
         if library.localTrack(for: result) == nil {
-            Button { downloads.download(result) } label: { Label("Kitaplığa indir", systemImage: "arrow.down.circle") }
+            Button { downloads.download(result) } label: { Label(L("Kitaplığa indir"), systemImage: "arrow.down.circle") }
         }
     }
 }
@@ -214,14 +214,14 @@ struct GenreView: View {
                 if loading {
                     ProgressView().tint(.white).frame(maxWidth: .infinity).padding(.top, 80)
                 } else if let error {
-                    EmptyStateView(icon: "exclamationmark.triangle", title: "Yüklenemedi", message: error, actionTitle: "Tekrar dene") {
+                    EmptyStateView(icon: "exclamationmark.triangle", title: L("Yüklenemedi"), message: error, actionTitle: L("Tekrar dene")) {
                         Task { await load() }
                     }
                 } else {
                     HStack(spacing: 10) {
-                        Button { player.play(library.playable(results), startAt: 0) } label: { Label("Dinle", systemImage: "play.fill") }
+                        Button { player.play(library.playable(results), startAt: 0) } label: { Label(L("Dinle"), systemImage: "play.fill") }
                             .buttonStyle(PrimaryButtonStyle())
-                        Button { player.play(library.playable(results), startAt: 0, shuffled: true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                        Button { player.play(library.playable(results), startAt: 0, shuffled: true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                             .buttonStyle(PrimaryButtonStyle(filled: false))
                     }
                     .padding(.horizontal, 16)
@@ -243,7 +243,7 @@ struct GenreView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button { downloads.download(all: results) } label: { Label("Hepsini indir", systemImage: "arrow.down.circle") }
+                    Button { downloads.download(all: results) } label: { Label(L("Hepsini indir"), systemImage: "arrow.down.circle") }
                         .disabled(results.isEmpty)
                 } label: { Image(systemName: "ellipsis.circle") }
             }
@@ -258,7 +258,7 @@ struct GenreView: View {
             results = try await feed.genre(genre.key, token: auth.token).results
             stream.warm(results, limit: 4)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Bir sorun oldu."
+            self.error = (error as? LocalizedError)?.errorDescription ?? L("Bir sorun oldu.")
         }
         loading = false
     }
@@ -295,11 +295,11 @@ struct PlaylistImportView: View {
                 .padding(16)
             }
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle("YouTube listesi")
+            .navigationTitle(L("YouTube listesi"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Kapat") { dismiss() }
+                    Button(L("Kapat")) { dismiss() }
                 }
             }
         }
@@ -316,7 +316,7 @@ struct PlaylistImportView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("YouTube veya YouTube Music'teki bir çalma listesinin bağlantısını yapıştır. Liste Box'a eklenir; şarkıları indirmeden dinleyebilir ya da tek dokunuşla hepsini indirebilirsin.")
+            Text(L("YouTube veya YouTube Music'teki bir çalma listesinin bağlantısını yapıştır. Liste Box'a eklenir; şarkıları indirmeden dinleyebilir ya da tek dokunuşla hepsini indirebilirsin."))
                 .font(.subheadline)
                 .foregroundColor(.boxSecondaryText)
 
@@ -329,7 +329,7 @@ struct PlaylistImportView: View {
                     .autocorrectionDisabled()
                     .submitLabel(.go)
                     .onSubmit { Task { await fetch() } }
-                Button("Yapıştır") {
+                Button(L("Yapıştır")) {
                     if let clip = UIPasteboard.general.string { link = clip }
                 }
                 .font(.system(size: 14, weight: .semibold))
@@ -345,15 +345,15 @@ struct PlaylistImportView: View {
             Button {
                 Task { await fetch() }
             } label: {
-                if loading { ProgressView().tint(.black) } else { Text("Listeyi getir") }
+                if loading { ProgressView().tint(.black) } else { Text(L("Listeyi getir")) }
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty || loading)
 
             VStack(alignment: .leading, spacing: 6) {
-                Label("YouTube uygulamasında listeyi aç › Paylaş › Bağlantıyı kopyala", systemImage: "1.circle")
-                Label("Box'a dön, bağlantı kendiliğinden gelir", systemImage: "2.circle")
-                Label("Gizli listeler ve otomatik \"Mix\" listeleri desteklenmez", systemImage: "info.circle")
+                Label(L("YouTube uygulamasında listeyi aç › Paylaş › Bağlantıyı kopyala"), systemImage: "1.circle")
+                Label(L("Box'a dön, bağlantı kendiliğinden gelir"), systemImage: "2.circle")
+                Label(L("Gizli listeler ve otomatik \"Mix\" listeleri desteklenmez"), systemImage: "info.circle")
             }
             .font(.footnote)
             .foregroundColor(.boxSecondaryText)
@@ -372,9 +372,9 @@ struct PlaylistImportView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(list.title).font(.system(size: 20, weight: .bold)).lineLimit(2)
-                    Text("\(list.channel) • \(list.items.count) şarkı").font(.subheadline).foregroundColor(.boxSecondaryText)
+                    Text(L("{0} • {1} şarkı", list.channel, list.items.count)).font(.subheadline).foregroundColor(.boxSecondaryText)
                     if missing.count < list.items.count {
-                        Text("\(list.items.count - missing.count) tanesi zaten kitaplığında").font(.footnote).foregroundColor(.accent)
+                        Text(L("{0} tanesi zaten kitaplığında", list.items.count - missing.count)).font(.footnote).foregroundColor(.accent)
                     }
                 }
             }
@@ -384,13 +384,13 @@ struct PlaylistImportView: View {
                     save(list)
                     player.play(tracks, startAt: 0)
                     dismiss()
-                } label: { Label("Dinle", systemImage: "play.fill") }
+                } label: { Label(L("Dinle"), systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
                 Button {
                     save(list)
                     player.play(tracks, startAt: 0, shuffled: true)
                     dismiss()
-                } label: { Label("Karıştır", systemImage: "shuffle") }
+                } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                     .buttonStyle(PrimaryButtonStyle(filled: false))
             }
 
@@ -400,7 +400,7 @@ struct PlaylistImportView: View {
                 Haptics.success()
                 dismiss()
             } label: {
-                Label(missing.isEmpty ? "Hepsi indirilmiş" : "Kaydet ve \(missing.count) şarkıyı indir", systemImage: "arrow.down.circle")
+                Label(missing.isEmpty ? L("Hepsi indirilmiş") : L("Kaydet ve {0} şarkıyı indir", missing.count), systemImage: "arrow.down.circle")
             }
             .buttonStyle(PrimaryButtonStyle(filled: false))
             .disabled(missing.isEmpty)
@@ -410,7 +410,7 @@ struct PlaylistImportView: View {
                 Haptics.success()
                 dismiss()
             } label: {
-                Label(saved ? "Kaydedildi" : "Sadece Box listesi olarak kaydet", systemImage: "text.badge.plus")
+                Label(saved ? L("Kaydedildi") : L("Sadece Box listesi olarak kaydet"), systemImage: "text.badge.plus")
             }
             .buttonStyle(PrimaryButtonStyle(filled: false))
 
@@ -440,12 +440,12 @@ struct PlaylistImportView: View {
         do {
             let response: PlaylistResponse = try await APIClient.shared.send("playlist", query: ["url": text], token: token)
             if response.playlist.items.isEmpty {
-                error = "Listede çalınabilir şarkı bulunamadı."
+                error = L("Listede çalınabilir şarkı bulunamadı.")
             } else {
                 playlist = response.playlist
             }
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Liste alınamadı."
+            self.error = (error as? LocalizedError)?.errorDescription ?? L("Liste alınamadı.")
         }
     }
 }

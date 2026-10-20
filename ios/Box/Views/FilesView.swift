@@ -39,8 +39,8 @@ struct FolderView: View {
             if items.isEmpty {
                 EmptyStateView(
                     icon: "folder",
-                    title: "Klasör boş",
-                    message: "Sağ üstteki + ile dosya içe aktar ya da yeni klasör oluştur."
+                    title: L("Klasör boş"),
+                    message: L("Sağ üstteki + ile dosya içe aktar ya da yeni klasör oluştur.")
                 )
                 .listRowBackground(Color.clear)
             }
@@ -53,19 +53,19 @@ struct FolderView: View {
                         Button(role: .destructive) {
                             deleteTarget = item
                         } label: {
-                            Label("Sil", systemImage: "trash")
+                            Label(L("Sil"), systemImage: "trash")
                         }
                         Button {
                             startRename(item)
                         } label: {
-                            Label("Adlandır", systemImage: "pencil")
+                            Label(L("Adlandır"), systemImage: "pencil")
                         }
                         .tint(.gray)
                     }
             }
 
             if isRoot {
-                Text("Bu klasör iPhone'daki Dosyalar uygulamasında \"Bu iPhone'da › Box\" altında da görünür. Bilgisayardan Finder ile dosya atabilirsin.")
+                Text(L("Bu klasör iPhone'daki Dosyalar uygulamasında \"Bu iPhone'da › Box\" altında da görünür. Bilgisayardan Finder ile dosya atabilirsin."))
                     .font(.footnote)
                     .foregroundColor(.boxSecondaryText)
                     .listRowBackground(Color.clear)
@@ -76,7 +76,7 @@ struct FolderView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .boxScreenBackground()
-        .navigationTitle(isRoot ? "Dosyalar" : folder.lastPathComponent)
+        .navigationTitle(isRoot ? L("Dosyalar") : folder.lastPathComponent)
         .navigationBarTitleDisplayMode(isRoot ? .large : .inline)
         .refreshable { reload() }
         .onAppear { reload() }
@@ -96,13 +96,13 @@ struct FolderView: View {
                     Button {
                         showImporter = true
                     } label: {
-                        Label("Dosya içe aktar", systemImage: "square.and.arrow.down")
+                        Label(L("Dosya içe aktar"), systemImage: "square.and.arrow.down")
                     }
                     Button {
                         newFolderName = ""
                         showNewFolder = true
                     } label: {
-                        Label("Yeni klasör", systemImage: "folder.badge.plus")
+                        Label(L("Yeni klasör"), systemImage: "folder.badge.plus")
                     }
                 } label: {
                     Image(systemName: "plus.circle.fill")
@@ -119,22 +119,22 @@ struct FolderView: View {
             Task {
                 let count = await library.importFiles(urls, into: folder)
                 reload()
-                showToast(count > 0 ? "\(count) dosya içe aktarıldı" : "Yeni dosya eklenmedi")
+                showToast(count > 0 ? L("{0} dosya içe aktarıldı", count) : L("Yeni dosya eklenmedi"))
             }
         }
-        .alert("Yeni klasör", isPresented: $showNewFolder) {
-            TextField("Klasör adı", text: $newFolderName)
-            Button("Oluştur") {
+        .alert(L("Yeni klasör"), isPresented: $showNewFolder) {
+            TextField(L("Klasör adı"), text: $newFolderName)
+            Button(L("Oluştur")) {
                 perform { _ = try FileService.createFolder(named: newFolderName, in: folder) }
             }
-            Button("Vazgeç", role: .cancel) {}
+            Button(L("Vazgeç"), role: .cancel) {}
         }
-        .alert("Yeniden adlandır", isPresented: Binding(
+        .alert(L("Yeniden adlandır"), isPresented: Binding(
             get: { renameTarget != nil },
             set: { if !$0 { renameTarget = nil } }
         )) {
-            TextField("Yeni ad", text: $renameText)
-            Button("Kaydet") {
+            TextField(L("Yeni ad"), text: $renameText)
+            Button(L("Kaydet")) {
                 guard let target = renameTarget else { return }
                 perform {
                     let newURL = try FileService.rename(target.url, to: renameText)
@@ -142,17 +142,17 @@ struct FolderView: View {
                     await ArtworkCache.shared.invalidate(target.url)
                 }
             }
-            Button("Vazgeç", role: .cancel) {}
+            Button(L("Vazgeç"), role: .cancel) {}
         }
         .confirmationDialog(
-            deleteTarget.map { "\"\($0.name)\" silinsin mi?" } ?? "",
+            deleteTarget.map { L("\"{0}\" silinsin mi?", $0.name) } ?? "",
             isPresented: Binding(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Sil", role: .destructive) {
+            Button(L("Sil"), role: .destructive) {
                 guard let target = deleteTarget else { return }
                 perform {
                     try FileService.delete(target.url)
@@ -161,7 +161,7 @@ struct FolderView: View {
             }
         } message: {
             if deleteTarget?.isDirectory == true {
-                Text("Klasörün içindeki her şey silinir.")
+                Text(L("Klasörün içindeki her şey silinir."))
             }
         }
         .sheet(item: $moveTarget) { item in
@@ -172,11 +172,11 @@ struct FolderView: View {
                 }
             }
         }
-        .alert("İşlem yapılamadı", isPresented: Binding(
+        .alert(L("İşlem yapılamadı"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("Tamam", role: .cancel) {}
+            Button(L("Tamam"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -211,7 +211,7 @@ struct FolderView: View {
                         Text(item.name)
                             .font(.system(size: 16, weight: .medium))
                             .lineLimit(1)
-                        Text("\(item.childCount) öğe")
+                        Text(L("{0} öğe", item.childCount))
                             .font(.subheadline)
                             .foregroundColor(.boxSecondaryText)
                     }
@@ -246,13 +246,13 @@ struct FolderView: View {
             Button {
                 playFolder(startingWith: item, shuffled: false)
             } label: {
-                Label("Çal", systemImage: "play.fill")
+                Label(L("Çal"), systemImage: "play.fill")
             }
             if let track = library.track(forPath: library.relativePath(for: item.url)) {
                 Button {
                     player.addToQueue(track)
                 } label: {
-                    Label("Sıraya ekle", systemImage: "text.append")
+                    Label(L("Sıraya ekle"), systemImage: "text.append")
                 }
             }
         }
@@ -260,25 +260,25 @@ struct FolderView: View {
         Button {
             startRename(item)
         } label: {
-            Label("Yeniden adlandır", systemImage: "pencil")
+            Label(L("Yeniden adlandır"), systemImage: "pencil")
         }
 
         Button {
             moveTarget = item
         } label: {
-            Label("Taşı", systemImage: "folder")
+            Label(L("Taşı"), systemImage: "folder")
         }
 
         if !item.isDirectory {
             ShareLink(item: item.url) {
-                Label("Paylaş", systemImage: "square.and.arrow.up")
+                Label(L("Paylaş"), systemImage: "square.and.arrow.up")
             }
         }
 
         Button(role: .destructive) {
             deleteTarget = item
         } label: {
-            Label("Sil", systemImage: "trash")
+            Label(L("Sil"), systemImage: "trash")
         }
     }
 
@@ -352,7 +352,7 @@ struct FolderPickerView: View {
                     HStack(spacing: 12) {
                         Image(systemName: url == library.documents ? "house.fill" : "folder.fill")
                             .foregroundColor(.neon)
-                        Text(url == library.documents ? "Box (ana klasör)" : library.relativePath(for: url))
+                        Text(url == library.documents ? L("Box (ana klasör)") : library.relativePath(for: url))
                             .foregroundColor(.white)
                             .lineLimit(1)
                     }
@@ -361,11 +361,11 @@ struct FolderPickerView: View {
             }
             .scrollContentBackground(.hidden)
             .boxScreenBackground()
-            .navigationTitle("Nereye taşınsın?")
+            .navigationTitle(L("Nereye taşınsın?"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Vazgeç") { dismiss() }
+                    Button(L("Vazgeç")) { dismiss() }
                 }
             }
         }

@@ -424,7 +424,7 @@ final class LibraryStore: ObservableObject {
     func createPlaylist(name: String, tracks list: [Track]) -> Playlist {
         let local = list.filter { !$0.isRemote }.map(\.relativePath)
         let remote = list.compactMap(\.remote)
-        let playlist = Playlist(name: name.isEmpty ? "Sıram" : name, paths: local, remote: remote.isEmpty ? nil : remote)
+        let playlist = Playlist(name: name.isEmpty ? L("Sıram") : name, paths: local, remote: remote.isEmpty ? nil : remote)
         playlists.append(playlist)
         savePlaylists()
         return playlist
@@ -531,7 +531,7 @@ final class LibraryStore: ObservableObject {
         let paths = localPaths ?? matchLocals(shared.locals ?? []).paths
         var items = shared.items
         for item in extra where !items.contains(where: { $0.id == item.id }) { items.append(item) }
-        let playlist = Playlist(name: shared.name.isEmpty ? "Paylaşılan liste" : shared.name, paths: paths, remote: items.isEmpty ? nil : items)
+        let playlist = Playlist(name: shared.name.isEmpty ? L("Paylaşılan liste") : shared.name, paths: paths, remote: items.isEmpty ? nil : items)
         playlists.append(playlist)
         savePlaylists()
         return playlist
@@ -765,7 +765,7 @@ final class LibraryStore: ObservableObject {
 
     @discardableResult
     func createPlaylist(name: String, paths: [String] = []) -> Playlist {
-        let playlist = Playlist(name: name.isEmpty ? "Yeni liste" : name, paths: paths)
+        let playlist = Playlist(name: name.isEmpty ? L("Yeni liste") : name, paths: paths)
         playlists.append(playlist)
         savePlaylists()
         return playlist

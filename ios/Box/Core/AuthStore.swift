@@ -110,7 +110,7 @@ final class AuthStore: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         let square = ArtworkCache.downscale(ArtworkCache.squareCrop(image.normalizedOrientation()), maxSide: 400)
-        guard let data = square.jpegData(compressionQuality: 0.82) else { throw APIError(message: "Fotoğraf hazırlanamadı.", status: 0) }
+        guard let data = square.jpegData(compressionQuality: 0.82) else { throw APIError(message: L("Fotoğraf hazırlanamadı."), status: 0) }
         let response: UserResponse = try await APIClient.shared.send("me/avatar", method: "POST", body: ["image": data.base64EncodedString()], token: token)
         store(token: token, user: response.user)
     }

@@ -64,7 +64,7 @@ struct PlaylistDetailView: View {
                 library.importPlaylist(response.playlist)
                 Haptics.success()
             } catch {
-                refreshError = (error as? LocalizedError)?.errorDescription ?? "Liste yenilenemedi."
+                refreshError = (error as? LocalizedError)?.errorDescription ?? L("Liste yenilenemedi.")
             }
         }
     }
@@ -83,8 +83,8 @@ struct PlaylistDetailView: View {
 
     private var title: String {
         switch source {
-        case .favorites: return "Beğenilenler"
-        case .playlist: return playlist?.name ?? "Liste"
+        case .favorites: return L("Beğenilenler")
+        case .playlist: return playlist?.name ?? L("Liste")
         case .tracks(let title, _, _): return title
         }
     }
@@ -123,10 +123,10 @@ struct PlaylistDetailView: View {
                 if tracks.isEmpty {
                     EmptyStateView(
                         icon: source == .favorites ? "heart" : "music.note.list",
-                        title: "Liste boş",
+                        title: L("Liste boş"),
                         message: source == .favorites
-                            ? "Çalarken kalbe dokunduğun şarkılar burada görünür."
-                            : (source.isEditable ? "Sağ üstteki menüden şarkı ekle." : "Burada henüz şarkı yok.")
+                            ? L("Çalarken kalbe dokunduğun şarkılar burada görünür.")
+                            : (source.isEditable ? L("Sağ üstteki menüden şarkı ekle.") : L("Burada henüz şarkı yok."))
                     )
                     .listRowBackground(Color.clear)
                 }
@@ -160,22 +160,22 @@ struct PlaylistDetailView: View {
             }
         }
         .confirmationDialog(
-            "Bugünlük indirme hakkın yetmiyor",
+            L("Bugünlük indirme hakkın yetmiyor"),
             isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
             titleVisibility: .visible
         ) {
             if let list = quotaPrompt, let left = auth.quota?.downloadsLeft, left > 0 {
-                Button("İlk \(left) şarkıyı indir") {
+                Button(L("İlk {0} şarkıyı indir", left)) {
                     downloads.download(all: Array(list.prefix(left)))
                     quotaPrompt = nil
                 }
             }
-            Button("Vazgeç", role: .cancel) { quotaPrompt = nil }
+            Button(L("Vazgeç"), role: .cancel) { quotaPrompt = nil }
         } message: {
-            Text("\(quotaPrompt?.count ?? 0) şarkı indirilecek ama bugün \(auth.quota?.downloadsLeft ?? 0) hakkın kaldı. Kalanlar internetten çalmaya devam eder; yarın indirebilirsin.")
+            Text(L("{0} şarkı indirilecek ama bugün {1} hakkın kaldı. Kalanlar internetten çalmaya devam eder; yarın indirebilirsin.", quotaPrompt?.count ?? 0, auth.quota?.downloadsLeft ?? 0))
         }
-        .alert("Liste yenilenemedi", isPresented: Binding(get: { refreshError != nil }, set: { if !$0 { refreshError = nil } })) {
-            Button("Tamam", role: .cancel) {}
+        .alert(L("Liste yenilenemedi"), isPresented: Binding(get: { refreshError != nil }, set: { if !$0 { refreshError = nil } })) {
+            Button(L("Tamam"), role: .cancel) {}
         } message: {
             Text(refreshError ?? "")
         }
@@ -202,7 +202,7 @@ struct PlaylistDetailView: View {
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
-                    .accessibilityLabel("Listeyi paylaş")
+                    .accessibilityLabel(L("Listeyi paylaş"))
                 }
                 if case .playlist = source {
                     EditButton()
@@ -211,49 +211,49 @@ struct PlaylistDetailView: View {
                             Button {
                                 downloadAll()
                             } label: {
-                                Label("İndirilmemiş \(missing.count) şarkıyı indir", systemImage: "arrow.down.circle")
+                                Label(L("İndirilmemiş {0} şarkıyı indir", missing.count), systemImage: "arrow.down.circle")
                             }
                         }
                         if playlist?.sourceID != nil {
                             Button {
                                 refreshFromYouTube()
                             } label: {
-                                Label(refreshing ? "Yenileniyor…" : "YouTube'dan yenile", systemImage: "arrow.clockwise")
+                                Label(refreshing ? L("Yenileniyor…") : L("YouTube'dan yenile"), systemImage: "arrow.clockwise")
                             }
                             .disabled(refreshing)
                         }
                         Button {
                             showPicker = true
                         } label: {
-                            Label("Şarkı ekle", systemImage: "plus")
+                            Label(L("Şarkı ekle"), systemImage: "plus")
                         }
                         Button {
                             renameText = playlist?.name ?? ""
                             showRename = true
                         } label: {
-                            Label("Yeniden adlandır", systemImage: "pencil")
+                            Label(L("Yeniden adlandır"), systemImage: "pencil")
                         }
                         Button {
                             showPhotoPicker = true
                         } label: {
-                            Label("Kapak resmini değiştir", systemImage: "photo")
+                            Label(L("Kapak resmini değiştir"), systemImage: "photo")
                         }
                         Button {
                             showExport = true
                         } label: {
-                            Label("Dışa aktar / paylaş", systemImage: "square.and.arrow.up")
+                            Label(L("Dışa aktar / paylaş"), systemImage: "square.and.arrow.up")
                         }
                         if playlist?.coverFile != nil, case .playlist(let id) = source {
                             Button {
                                 library.removeCover(for: id)
                             } label: {
-                                Label("Kapak resmini kaldır", systemImage: "photo.badge.minus")
+                                Label(L("Kapak resmini kaldır"), systemImage: "photo.badge.minus")
                             }
                         }
                         Button(role: .destructive) {
                             showDeleteConfirm = true
                         } label: {
-                            Label("Listeyi sil", systemImage: "trash")
+                            Label(L("Listeyi sil"), systemImage: "trash")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -268,17 +268,17 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .alert("Listeyi yeniden adlandır", isPresented: $showRename) {
-            TextField("Liste adı", text: $renameText)
-            Button("Kaydet") {
+        .alert(L("Listeyi yeniden adlandır"), isPresented: $showRename) {
+            TextField(L("Liste adı"), text: $renameText)
+            Button(L("Kaydet")) {
                 if case .playlist(let id) = source {
                     library.renamePlaylist(id, to: renameText.trimmingCharacters(in: .whitespaces))
                 }
             }
-            Button("Vazgeç", role: .cancel) {}
+            Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog("Bu liste silinsin mi? Şarkılar silinmez.", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Listeyi sil", role: .destructive) {
+        .confirmationDialog(L("Bu liste silinsin mi? Şarkılar silinmez."), isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button(L("Listeyi sil"), role: .destructive) {
                 if case .playlist(let id) = source {
                     library.deletePlaylist(id)
                     dismiss()
@@ -305,7 +305,7 @@ struct PlaylistDetailView: View {
                             }
                     }
                     .buttonStyle(PressableStyle())
-                    .accessibilityLabel("Kapak resmini değiştir")
+                    .accessibilityLabel(L("Kapak resmini değiştir"))
                 } else {
                     PlaylistCover(tracks: tracks, icon: icon, size: 210, cornerRadius: 10)
                 }
@@ -317,7 +317,7 @@ struct PlaylistDetailView: View {
                     .font(.system(size: 26, weight: .bold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                Text("\(tracks.count) şarkı • \(Formatters.longDuration(totalDuration))")
+                Text(L("{0} şarkı • {1}", tracks.count, Formatters.longDuration(totalDuration)))
                     .font(.subheadline)
                     .foregroundColor(.boxSecondaryText)
             }
@@ -326,14 +326,14 @@ struct PlaylistDetailView: View {
                 Button {
                     player.play(tracks, startAt: 0)
                 } label: {
-                    Label("Çal", systemImage: "play.fill")
+                    Label(L("Çal"), systemImage: "play.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle())
 
                 Button {
                     player.play(tracks, startAt: 0, shuffled: true)
                 } label: {
-                    Label("Karıştır", systemImage: "shuffle")
+                    Label(L("Karıştır"), systemImage: "shuffle")
                 }
                 .buttonStyle(PrimaryButtonStyle(filled: false))
 
@@ -348,7 +348,7 @@ struct PlaylistDetailView: View {
                             .background(Circle().fill(Color.white.opacity(0.1)))
                     }
                     .buttonStyle(PressableStyle())
-                    .accessibilityLabel("Dışa aktar")
+                    .accessibilityLabel(L("Dışa aktar"))
                 }
 
                 if !missing.isEmpty || activeDownloads > 0 {
@@ -362,14 +362,14 @@ struct PlaylistDetailView: View {
                         .frame(width: 46, height: 46)
                     }
                     .buttonStyle(PressableStyle())
-                    .accessibilityLabel("İndirilmemiş \(missing.count) şarkıyı indir")
+                    .accessibilityLabel(L("İndirilmemiş {0} şarkıyı indir", missing.count))
                 }
             }
             .disabled(tracks.isEmpty)
             .opacity(tracks.isEmpty ? 0.5 : 1)
 
             if !missing.isEmpty {
-                Text(activeDownloads > 0 ? "\(activeDownloads) şarkı iniyor • \(missing.count) indirilmedi" : "\(missing.count) şarkı indirilmedi • internetten çalar")
+                Text(activeDownloads > 0 ? L("{0} şarkı iniyor • {1} indirilmedi", activeDownloads, missing.count) : L("{0} şarkı indirilmedi • internetten çalar", missing.count))
                     .font(.footnote)
                     .foregroundColor(.boxSecondaryText)
             }
@@ -438,15 +438,15 @@ struct TrackPickerView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .boxScreenBackground()
-            .searchable(text: $searchText, prompt: "Ara")
-            .navigationTitle("Şarkı ekle")
+            .searchable(text: $searchText, prompt: L("Ara"))
+            .navigationTitle(L("Şarkı ekle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Vazgeç") { dismiss() }
+                    Button(L("Vazgeç")) { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Ekle (\(selected.count))") {
+                    Button(L("Ekle ({0})", selected.count)) {
                         let chosen = library.tracks.filter { selected.contains($0.id) }
                         onDone(chosen)
                         dismiss()

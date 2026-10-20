@@ -62,6 +62,9 @@ final class APIClient {
         request.setValue(DeviceInfo.identifier, forHTTPHeaderField: "X-Box-Device-ID")
         request.setValue(DeviceInfo.model, forHTTPHeaderField: "X-Box-Device")
         request.setValue(DeviceInfo.system, forHTTPHeaderField: "X-Box-OS")
+        // Sunucu mesajları (hatalar, ana sayfa başlıkları, bildirimler) bu dilde gelsin.
+        request.setValue(Lang.shared.serverCode, forHTTPHeaderField: "Accept-Language")
+        request.setValue(Lang.shared.serverCode, forHTTPHeaderField: "X-Box-Lang")
 
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -83,7 +86,7 @@ final class APIClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw APIError(message: "Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.", status: 0)
+            throw APIError(message: L("Sunucuya ulaşılamadı. İnternet bağlantını kontrol et."), status: 0)
         }
 
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -91,7 +94,7 @@ final class APIClient {
         guard (200..<300).contains(status) else {
             let envelope = try? decoder.decode(ErrorEnvelope.self, from: data)
             let error = APIError(
-                message: envelope?.error ?? "Beklenmeyen bir hata oluştu (\(status)).",
+                message: envelope?.error ?? L("Beklenmeyen bir hata oluştu ({0}).", status),
                 status: status,
                 maintenance: envelope?.maintenance == true,
                 updateRequired: envelope?.updateRequired == true
@@ -107,7 +110,7 @@ final class APIClient {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            throw APIError(message: "Sunucudan geçersiz yanıt geldi.", status: status)
+            throw APIError(message: L("Sunucudan geçersiz yanıt geldi."), status: status)
         }
     }
 }

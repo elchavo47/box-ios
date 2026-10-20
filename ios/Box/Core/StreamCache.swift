@@ -51,10 +51,10 @@ final class StreamCache: ObservableObject {
 
         let task = Task<URL, Error> { [weak self] in
             guard let token = self?.auth?.token else {
-                throw APIError(message: "Dinlemek için giriş yap.", status: 401)
+                throw APIError(message: L("Dinlemek için giriş yap."), status: 401)
             }
             let link: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": result.id], token: token)
-            guard let url = URL(string: link.fileUrl ?? link.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
+            guard let url = URL(string: link.fileUrl ?? link.url) else { throw APIError(message: L("Geçersiz bağlantı."), status: 0) }
             let temp = try await FileDownloader.download(from: url) { _ in }
             try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
             let artwork = await DownloadManager.fetchArtwork(result)
@@ -94,9 +94,9 @@ final class StreamCache: ObservableObject {
         if let cached = links[videoID], cached.expires > Date() { return cached }
         if let task = linkTasks[videoID] { return try await task.value }
         let task = Task<(url: URL, video: URL?, expires: Date), Error> { [weak self] in
-            guard let token = self?.auth?.token else { throw APIError(message: "Dinlemek için giriş yap.", status: 401) }
+            guard let token = self?.auth?.token else { throw APIError(message: L("Dinlemek için giriş yap."), status: 401) }
             let response: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": videoID], token: token)
-            guard let url = URL(string: response.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
+            guard let url = URL(string: response.url) else { throw APIError(message: L("Geçersiz bağlantı."), status: 0) }
             return (url, response.videoUrl.flatMap(URL.init(string:)), Date(timeIntervalSince1970: TimeInterval(response.expiresAt - 300)))
         }
         linkTasks[videoID] = task
@@ -114,7 +114,7 @@ final class StreamCache: ObservableObject {
     /// Video olarak izlemek için bağlantı.
     func videoURL(_ videoID: String) async throws -> URL {
         let value = try await link(for: videoID)
-        guard let video = value.video else { throw APIError(message: "Video şu an açılamıyor.", status: 0) }
+        guard let video = value.video else { throw APIError(message: L("Video şu an açılamıyor."), status: 0) }
         return video
     }
 

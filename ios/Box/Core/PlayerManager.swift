@@ -635,19 +635,19 @@ final class PlayerManager: ObservableObject {
                         self.videoLoading = false
                         self.videoMode = false
                         self.stopVideo()
-                        self.errorMessage = "Bu şarkının videosu açılamadı."
+                        self.errorMessage = L("Bu şarkının videosu açılamadı.")
                     }
                 }
                 .store(in: &videoObservers)
             loader.onError = { [weak self] message in
                 guard let self, self.videoProgressive === loader else { return }
-                self.lastStreamError = "Video: " + message
+                self.lastStreamError = L("Video: ") + message
             }
             syncVideo(force: true)
         } catch {
             videoLoading = false
             videoMode = false
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Video açılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Video açılamadı.")
         }
     }
 
@@ -705,7 +705,7 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    guard let live = self.liveRemote else { throw APIError(message: "Akış ayarlı değil.", status: 0) }
+                    guard let live = self.liveRemote else { throw APIError(message: L("Akış ayarlı değil."), status: 0) }
                     let url = try await live(remote)
                     guard token == self.loadToken else { return }
                     // Uygulama şarkıyı kendisi indirir, ilk baytlar gelir gelmez oynatıcıya verir.
@@ -748,7 +748,7 @@ final class PlayerManager: ObservableObject {
             guard token == loadToken else { return }
             isBuffering = false
             isPlaying = false
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şarkı açılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Şarkı açılamadı.")
             updateNowPlaying()
         }
     }
@@ -781,7 +781,7 @@ final class PlayerManager: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
                 guard let self, token == self.loadToken, self.player.currentItem === item,
                       self.isBuffering, self.clock.currentTime < 0.5 else { return }
-                self.lastStreamError = "Akış 8 saniyede başlamadı; şarkı indirilerek çalınıyor."
+                self.lastStreamError = L("Akış 8 saniyede başlamadı; şarkı indirilerek çalınıyor.")
                 self.progressive?.cancel()
                 Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: 0, record: false) }
             }
@@ -796,14 +796,14 @@ final class PlayerManager: ObservableObject {
                 if status == .readyToPlay {
                     self.syncVideo(force: true)
                 } else if status == .failed {
-                    if streaming { self.lastStreamError = item.error?.localizedDescription ?? "Oynatıcı akışı açamadı." }
+                    if streaming { self.lastStreamError = item.error?.localizedDescription ?? L("Oynatıcı akışı açamadı.") }
                     if streaming, let remote = track.remote {
                         self.itemObservers.removeAll()
                         Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: self.clock.currentTime, record: false) }
                     } else {
                         self.isBuffering = false
                         self.isPlaying = false
-                        self.errorMessage = "Bu dosya çalınamıyor."
+                        self.errorMessage = L("Bu dosya çalınamıyor.")
                     }
                 }
             }

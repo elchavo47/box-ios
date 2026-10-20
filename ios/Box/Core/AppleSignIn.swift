@@ -35,12 +35,12 @@ struct AppleSignInRequest {
         switch outcome {
         case .failure(let error):
             if let auth = error as? ASAuthorizationError, auth.code == .canceled { return nil }
-            throw APIError(message: "Apple ile giriş yapılamadı.", status: 0)
+            throw APIError(message: L("Apple ile giriş yapılamadı."), status: 0)
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = credential.identityToken,
                   let token = String(data: tokenData, encoding: .utf8) else {
-                throw APIError(message: "Apple ile giriş yapılamadı.", status: 0)
+                throw APIError(message: L("Apple ile giriş yapılamadı."), status: 0)
             }
             let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
             var name: String?

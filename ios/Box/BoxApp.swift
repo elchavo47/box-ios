@@ -14,6 +14,7 @@ struct BoxApp: App {
     @StateObject private var feed = FeedStore()
     @StateObject private var settings = AppSettings.shared
     @StateObject private var network = NetworkMonitor.shared
+    @StateObject private var lang = Lang.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -36,6 +37,11 @@ struct BoxApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // Dil değişince bütün ekranlar yeni dille yeniden çizilsin (uygulama yeniden başlamaz).
+                .id(lang.code)
+                .environment(\.locale, lang.locale)
+                .environment(\.layoutDirection, lang.layoutDirection)
+                .environmentObject(lang)
                 .environmentObject(auth)
                 .environmentObject(library)
                 .environmentObject(player)
@@ -54,16 +60,16 @@ struct BoxApp: App {
                     stream.attach(auth: auth)
                     player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
                     player.resolveRemote = { [weak stream] result in
-                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        guard let stream else { throw APIError(message: L("Hazır değil."), status: 0) }
                         return try await stream.resolve(result)
                     }
                     player.liveRemote = { [weak stream] result in
-                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        guard let stream else { throw APIError(message: L("Hazır değil."), status: 0) }
                         return try await stream.liveURL(result)
                     }
                     player.prefetchRemote = { [weak stream] result in stream?.prepareLink(result) }
                     player.videoURLFor = { [weak stream] id in
-                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        guard let stream else { throw APIError(message: L("Hazır değil."), status: 0) }
                         return try await stream.videoURL(id)
                     }
                     player.videoIDFor = { [weak library] track in library?.videoID(forPath: track.relativePath) }
@@ -114,7 +120,7 @@ struct BoxApp: App {
                         if let lists = SharedListFile.read(from: url), !lists.isEmpty {
                             router.importRequest = ImportRequest(lists: lists)
                         } else {
-                            router.show("Bu dosya bir Box listesi değil.", icon: "exclamationmark.triangle.fill")
+                            router.show(L("Bu dosya bir Box listesi değil."), icon: "exclamationmark.triangle.fill")
                         }
                         return
                     case "boxbackup":
@@ -202,6 +208,11 @@ struct BoxApp: App {
                 }
                 .onChange(of: scenePhase) { phase in
                     if phase == .background { library.flushStats() }
+                }
+                .onChange(of: lang.code) { _ in
+                    // Ana sayfa bölümleri ve bildirimler sunucudan yeni dille gelsin.
+                    feed.reset()
+                    Task { await InboxStore.shared.load(token: auth.token, userID: auth.user?.id) }
                 }
                 .onChange(of: library.tracks) { tracks in
                     player.handleLibraryChange(validPaths: Set(tracks.map(\.relativePath)))

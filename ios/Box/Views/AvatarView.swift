@@ -50,11 +50,11 @@ struct AvatarCropView: View {
             let side = min(proxy.size.width - 40, 360)
             VStack(spacing: 0) {
                 HStack {
-                    Button("Vazgeç", action: onCancel)
+                    Button(L("Vazgeç"), action: onCancel)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
                     Spacer()
-                    Text("Fotoğrafı ayarla")
+                    Text(L("Fotoğrafı ayarla"))
                         .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()
@@ -66,7 +66,7 @@ struct AvatarCropView: View {
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("Döndür")
+                    .accessibilityLabel(L("Döndür"))
                 }
                 .padding(.horizontal, 20)
                 .frame(height: 56)
@@ -77,7 +77,7 @@ struct AvatarCropView: View {
 
                 Spacer(minLength: 0)
 
-                Text("Sürükleyerek ve iki parmakla yakınlaştırarak ayarla")
+                Text(L("Sürükleyerek ve iki parmakla yakınlaştırarak ayarla"))
                     .font(.system(size: 13))
                     .foregroundColor(.boxSecondaryText)
                     .multilineTextAlignment(.center)
@@ -88,7 +88,7 @@ struct AvatarCropView: View {
                     Haptics.success()
                     onDone(render(side: side))
                 } label: {
-                    Text("Kullan")
+                    Text(L("Kullan"))
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.horizontal, 20)

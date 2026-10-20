@@ -106,7 +106,7 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
         let status = http?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             completionHandler(.cancel)
-            fail("Akış sunucusu \(status) döndü.")
+            fail(L("Akış sunucusu {0} döndü.", status))
             return
         }
         if status == 206, let range = http?.value(forHTTPHeaderField: "Content-Range"),
@@ -116,7 +116,7 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
             // Sunucu parça desteklemiyor: tamamını tek seferde al.
             if nextOffset > 0 {
                 completionHandler(.cancel)
-                fail("Sunucu parça parça gönderemiyor.")
+                fail(L("Sunucu parça parça gönderemiyor."))
                 return
             }
             rangeSupported = false
@@ -145,7 +145,7 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
                 queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.requestNextChunk() }
                 return
             }
-            fail("Bağlantı koptu: \(error.localizedDescription)")
+            fail(L("Bağlantı koptu: {0}", error.localizedDescription))
             return
         }
         retries = 0

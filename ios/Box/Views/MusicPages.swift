@@ -47,7 +47,7 @@ struct MusicBrowser: View {
                                 .frame(width: 30, height: 30)
                                 .background(Circle().fill(Color.black.opacity(0.45)))
                         }
-                        .accessibilityLabel("Kapat")
+                        .accessibilityLabel(L("Kapat"))
                     }
                 }
         }
@@ -101,7 +101,7 @@ struct ArtistView: View {
             if let page {
                 content(page)
             } else if let error {
-                EmptyStateView(icon: "music.mic", title: "Açılamadı", message: error, actionTitle: "Tekrar dene") { Task { await load() } }
+                EmptyStateView(icon: "music.mic", title: L("Açılamadı"), message: error, actionTitle: L("Tekrar dene")) { Task { await load() } }
                     .padding(.top, 80)
             } else {
                 ProgressView().tint(.white).frame(maxWidth: .infinity).padding(.top, 160)
@@ -142,11 +142,11 @@ struct ArtistView: View {
             }
 
             HStack(spacing: 10) {
-                Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                     .buttonStyle(PrimaryButtonStyle())
                 Button {
                     if let first = tracks.first { player.startRadio(from: first) }
-                } label: { Label("Radyo", systemImage: "dot.radiowaves.left.and.right") }
+                } label: { Label(L("Radyo"), systemImage: "dot.radiowaves.left.and.right") }
                     .buttonStyle(PrimaryButtonStyle(filled: false))
             }
             .disabled(tracks.isEmpty)
@@ -154,7 +154,7 @@ struct ArtistView: View {
 
             if !songs.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "Popüler şarkılar", action: toggleAll, actionTitle: showAllSongs ? "Daha az" : "Tümü")
+                    SectionHeader(title: L("Popüler şarkılar"), action: toggleAll, actionTitle: showAllSongs ? L("Daha az") : L("Tümü"))
                     ForEach(Array(songs.prefix(showAllSongs ? songs.count : 5).enumerated()), id: \.element.id) { index, result in
                         OnlineResultRow(result: result) { player.play(tracks, startAt: index) }
                             .padding(.horizontal, 16)
@@ -163,12 +163,12 @@ struct ArtistView: View {
                 }
             }
 
-            if !page.albums.isEmpty { albumRow("Albümler", page.albums) }
-            if !page.singles.isEmpty { albumRow("Single ve EP'ler", page.singles) }
+            if !page.albums.isEmpty { albumRow(L("Albümler"), page.albums) }
+            if !page.singles.isEmpty { albumRow(L("Single ve EP'ler"), page.singles) }
 
             if !page.related.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Benzer sanatçılar")
+                    SectionHeader(title: L("Benzer sanatçılar"))
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 16) {
                             ForEach(page.related) { artist in
@@ -185,7 +185,7 @@ struct ArtistView: View {
 
             if let about = page.artist.description, !about.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Hakkında").font(.system(size: 23, weight: .bold))
+                    Text(L("Hakkında")).font(.system(size: 23, weight: .bold))
                     Text(about)
                         .font(.system(size: 15))
                         .foregroundColor(.boxSecondaryText)
@@ -219,13 +219,13 @@ struct ArtistView: View {
 
     private func load() async {
         error = nil
-        guard let token = auth.token else { error = "Giriş yapman gerekiyor."; return }
+        guard let token = auth.token else { error = L("Giriş yapman gerekiyor."); return }
         var query: [String: String] = [:]
         if let artistID { query["id"] = artistID } else { query["name"] = name }
         do {
             page = try await APIClient.shared.send("artist", query: query, token: token)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Sanatçı açılamadı."
+            self.error = (error as? LocalizedError)?.errorDescription ?? L("Sanatçı açılamadı.")
         }
     }
 }
@@ -272,7 +272,7 @@ struct TopArtistRow: View {
                     Text(artist.name)
                         .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.white)
-                    Text("Sanatçı • sayfasını aç")
+                    Text(L("Sanatçı • sayfasını aç"))
                         .font(.system(size: 13))
                         .foregroundColor(.boxSecondaryText)
                 }
@@ -309,7 +309,7 @@ struct AlbumView: View {
             if let page {
                 content(page)
             } else if let error {
-                EmptyStateView(icon: "square.stack", title: "Açılamadı", message: error, actionTitle: "Tekrar dene") { Task { await load() } }
+                EmptyStateView(icon: "square.stack", title: L("Açılamadı"), message: error, actionTitle: L("Tekrar dene")) { Task { await load() } }
                     .padding(.top, 80)
             } else {
                 ProgressView().tint(.white).frame(maxWidth: .infinity).padding(.top, 160)
@@ -324,7 +324,7 @@ struct AlbumView: View {
         let tracks = library.playable(page.tracks)
         let missing = page.tracks.filter { library.localTrack(for: $0) == nil }
         let total = page.tracks.reduce(0) { $0 + $1.duration }
-        let meta = [page.album.type, page.album.year, "\(page.tracks.count) şarkı", total > 0 ? Formatters.longDuration(Double(total)) : nil]
+        let meta = [page.album.type, page.album.year, L("{0} şarkı", page.tracks.count), total > 0 ? Formatters.longDuration(Double(total)) : nil]
             .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " • ")
 
         return VStack(spacing: 18) {
@@ -352,9 +352,9 @@ struct AlbumView: View {
             .padding(.horizontal, 24)
 
             HStack(spacing: 10) {
-                Button { player.play(tracks, startAt: 0) } label: { Label("Dinle", systemImage: "play.fill") }
+                Button { player.play(tracks, startAt: 0) } label: { Label(L("Dinle"), systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
-                Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                     .buttonStyle(PrimaryButtonStyle(filled: false))
                 Button {
                     downloads.download(all: missing)
@@ -365,7 +365,7 @@ struct AlbumView: View {
                         .background(Circle().fill(Color.white.opacity(0.1)))
                 }
                 .disabled(missing.isEmpty)
-                .accessibilityLabel(missing.isEmpty ? "Hepsi indirildi" : "Albümü indir")
+                .accessibilityLabel(missing.isEmpty ? L("Hepsi indirildi") : L("Albümü indir"))
             }
             .disabled(tracks.isEmpty)
             .padding(.horizontal, 16)
@@ -383,13 +383,13 @@ struct AlbumView: View {
 
     private func load() async {
         error = nil
-        guard let token = auth.token else { error = "Giriş yapman gerekiyor."; return }
+        guard let token = auth.token else { error = L("Giriş yapman gerekiyor."); return }
         var query: [String: String] = [:]
         if let albumID { query["id"] = albumID } else { query["name"] = name; query["artist"] = artist }
         do {
             page = try await APIClient.shared.send("album", query: query, token: token)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Albüm açılamadı."
+            self.error = (error as? LocalizedError)?.errorDescription ?? L("Albüm açılamadı.")
         }
     }
 }
@@ -511,7 +511,7 @@ struct InboxButton: View {
                 .font(.system(size: 19, weight: .semibold))
                 .frame(width: 40, height: 40)
         }
-        .accessibilityLabel(inbox.unread > 0 ? "Bildirimler, \(inbox.unread) okunmamış" : "Bildirimler")
+        .accessibilityLabel(inbox.unread > 0 ? L("Bildirimler, {0} okunmamış", inbox.unread) : L("Bildirimler"))
     }
 }
 
@@ -526,7 +526,7 @@ struct InboxView: View {
         NavigationStack {
             List {
                 if inbox.items.isEmpty {
-                    EmptyStateView(icon: "bell", title: inbox.loading ? "Yükleniyor…" : "Bildirim yok", message: "Box'tan gelen duyurular ve hesabınla ilgili bildirimler burada durur.")
+                    EmptyStateView(icon: "bell", title: inbox.loading ? L("Yükleniyor…") : L("Bildirim yok"), message: L("Box'tan gelen duyurular ve hesabınla ilgili bildirimler burada durur."))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -569,11 +569,11 @@ struct InboxView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.boxBackground.ignoresSafeArea())
-            .navigationTitle("Bildirimler")
+            .navigationTitle(L("Bildirimler"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Bitti") { dismiss() }.fontWeight(.semibold)
+                    Button(L("Bitti")) { dismiss() }.fontWeight(.semibold)
                 }
             }
             .refreshable { await inbox.load(token: auth.token, userID: auth.user?.id) }

@@ -30,12 +30,12 @@ enum EQPreset: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .flat: return "Kapalı"
-        case .bass: return "Bas"
-        case .vocal: return "Vokal"
-        case .acoustic: return "Akustik"
-        case .treble: return "Tiz"
-        case .night: return "Gece (yumuşak)"
+        case .flat: return L("Kapalı")
+        case .bass: return L("Bas")
+        case .vocal: return L("Vokal")
+        case .acoustic: return L("Akustik")
+        case .treble: return L("Tiz")
+        case .night: return L("Gece (yumuşak)")
         }
     }
 

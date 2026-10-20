@@ -134,9 +134,9 @@ struct TrackRow: View {
     }
 
     private var subtitle: String {
-        if case .failed = downloadState { return "İndirilemedi • tekrar denemek için menüyü aç" }
-        if case .downloading(let p) = downloadState { return "İndiriliyor • %\(Int(p * 100))" }
-        if case .preparing = downloadState { return "İndirme sırada…" }
+        if case .failed = downloadState { return L("İndirilemedi • tekrar denemek için menüyü aç") }
+        if case .downloading(let p) = downloadState { return L("İndiriliyor • %{0}", Int(p * 100)) }
+        if case .preparing = downloadState { return L("İndirme sırada…") }
         return track.displayArtist + (track.duration > 0 ? " • " + Formatters.time(track.duration) : "")
     }
 
@@ -232,16 +232,16 @@ struct TrackMenu: View {
             }
         }
         .sheet(isPresented: $showTagEditor) { TagEditorView(track: track) }
-        .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
-            TextField("Liste adı", text: $newPlaylistName)
-            Button("Oluştur") {
+        .alert(L("Yeni çalma listesi"), isPresented: $showNewPlaylist) {
+            TextField(L("Liste adı"), text: $newPlaylistName)
+            Button(L("Oluştur")) {
                 let playlist = library.createPlaylist(name: newPlaylistName.trimmingCharacters(in: .whitespaces))
                 library.add([track], to: playlist.id)
                 newPlaylistName = ""
                 Haptics.success()
-                router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
+                router.show(L("{0} listesine eklendi", playlist.name), icon: "text.badge.plus", track: track)
             }
-            Button("Vazgeç", role: .cancel) { newPlaylistName = "" }
+            Button(L("Vazgeç"), role: .cancel) { newPlaylistName = "" }
         }
     }
 
@@ -251,7 +251,7 @@ struct TrackMenu: View {
             Haptics.tap()
         } label: {
             Label(
-                library.isFavorite(track) ? "Beğenilenlerden çıkar" : "Beğen",
+                library.isFavorite(track) ? L("Beğenilenlerden çıkar") : L("Beğen"),
                 systemImage: library.isFavorite(track) ? "heart.slash" : "heart"
             )
         }
@@ -262,18 +262,18 @@ struct TrackMenu: View {
             Button {
                 showNewPlaylist = true
             } label: {
-                Label("Yeni liste…", systemImage: "plus")
+                Label(L("Yeni liste…"), systemImage: "plus")
             }
             if !library.playlists.isEmpty { Divider() }
             ForEach(library.playlists) { playlist in
                 Button(playlist.name) {
                     library.add([track], to: playlist.id)
                     Haptics.success()
-                    router.show("\(playlist.name) listesine eklendi", icon: "text.badge.plus", track: track)
+                    router.show(L("{0} listesine eklendi", playlist.name), icon: "text.badge.plus", track: track)
                 }
             }
         } label: {
-            Label("Listeye ekle", systemImage: "text.badge.plus")
+            Label(L("Listeye ekle"), systemImage: "text.badge.plus")
         }
     }
 
@@ -288,8 +288,8 @@ struct TrackMenu: View {
 
     private func remoteMenu(_ remote: SearchResult) -> some View {
         Menu {
-            Button { player.playNext(track); router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
-            Button { player.addToQueue(track); router.show("Sıraya eklendi", icon: "text.append", track: track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+            Button { player.playNext(track); router.show(L("Sıradaki olarak çalacak"), icon: "text.line.first.and.arrowtriangle.forward", track: track) } label: { Label(L("Sıradaki olarak çal"), systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { player.addToQueue(track); router.show(L("Sıraya eklendi"), icon: "text.append", track: track) } label: { Label(L("Sıraya ekle"), systemImage: "text.append") }
             Divider()
             favoriteButton
             addToPlaylistMenu
@@ -297,14 +297,14 @@ struct TrackMenu: View {
                 Button {
                     downloads.download(remote)
                     Haptics.success()
-                    router.show("İndirme başladı", icon: "arrow.down.circle", track: track)
-                } label: { Label("Kitaplığa indir", systemImage: "arrow.down.circle") }
+                    router.show(L("İndirme başladı"), icon: "arrow.down.circle", track: track)
+                } label: { Label(L("Kitaplığa indir"), systemImage: "arrow.down.circle") }
             }
             if let url = URL(string: "https://www.youtube.com/watch?v=\(remote.id)") {
-                ShareLink(item: url) { Label("Bağlantıyı paylaş", systemImage: "square.and.arrow.up") }
+                ShareLink(item: url) { Label(L("Bağlantıyı paylaş"), systemImage: "square.and.arrow.up") }
             }
             if auth.isPremium {
-                Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
+                Button { player.startRadio(from: track) } label: { Label(L("Radyo başlat"), systemImage: "dot.radiowaves.left.and.right") }
                 musicLinks
             }
             if let extra {
@@ -317,9 +317,9 @@ struct TrackMenu: View {
     /// Premium: şarkının sanatçı ve albüm sayfası (YouTube Music).
     @ViewBuilder
     private var musicLinks: some View {
-        Button { router.openMusic(.artistPage(for: track), player: player) } label: { Label("Sanatçıya git", systemImage: "music.mic") }
+        Button { router.openMusic(.artistPage(for: track), player: player) } label: { Label(L("Sanatçıya git"), systemImage: "music.mic") }
         if let album = MusicPage.albumPage(for: track) {
-            Button { router.openMusic(album, player: player) } label: { Label("Albüme git", systemImage: "square.stack") }
+            Button { router.openMusic(album, player: player) } label: { Label(L("Albüme git"), systemImage: "square.stack") }
         }
     }
 
@@ -327,16 +327,16 @@ struct TrackMenu: View {
         Menu {
             Button {
                 player.playNext(track)
-                router.show("Sıradaki olarak çalacak", icon: "text.line.first.and.arrowtriangle.forward", track: track)
+                router.show(L("Sıradaki olarak çalacak"), icon: "text.line.first.and.arrowtriangle.forward", track: track)
             } label: {
-                Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward")
+                Label(L("Sıradaki olarak çal"), systemImage: "text.line.first.and.arrowtriangle.forward")
             }
 
             Button {
                 player.addToQueue(track)
-                router.show("Sıraya eklendi", icon: "text.append", track: track)
+                router.show(L("Sıraya eklendi"), icon: "text.append", track: track)
             } label: {
-                Label("Sıraya ekle", systemImage: "text.append")
+                Label(L("Sıraya ekle"), systemImage: "text.append")
             }
 
             Divider()
@@ -347,15 +347,15 @@ struct TrackMenu: View {
             Button {
                 showTagEditor = true
             } label: {
-                Label("Bilgileri düzenle", systemImage: "pencil")
+                Label(L("Bilgileri düzenle"), systemImage: "pencil")
             }
 
             ShareLink(item: track.url) {
-                Label("Paylaş", systemImage: "square.and.arrow.up")
+                Label(L("Paylaş"), systemImage: "square.and.arrow.up")
             }
 
             if auth.isPremium {
-                Button { player.startRadio(from: track) } label: { Label("Radyo başlat", systemImage: "dot.radiowaves.left.and.right") }
+                Button { player.startRadio(from: track) } label: { Label(L("Radyo başlat"), systemImage: "dot.radiowaves.left.and.right") }
                 musicLinks
             }
             if let extra {
@@ -370,7 +370,7 @@ struct SectionHeader: View {
     let title: String
     var subtitle: String? = nil
     var action: (() -> Void)? = nil
-    var actionTitle = "Tümü"
+    var actionTitle = L("Tümü")
 
     var body: some View {
         HStack(alignment: .lastTextBaseline) {
@@ -589,6 +589,6 @@ struct DownloadFillIcon: View {
             guard progress == nil else { return }
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
         }
-        .accessibilityLabel(done ? "İndirildi" : progress.map { "İndiriliyor yüzde \(Int($0 * 100))" } ?? "İndirme sırada")
+        .accessibilityLabel(done ? L("İndirildi") : progress.map { L("İndiriliyor yüzde {0}", Int($0 * 100)) } ?? L("İndirme sırada"))
     }
 }

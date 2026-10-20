@@ -16,9 +16,9 @@ enum SmartList: String, Hashable, CaseIterable {
 
     var title: String {
         switch self {
-        case .mostPlayed: return "En çok dinlediklerin"
-        case .forgotten: return "Uzun süredir dinlemediklerin"
-        case .thisMonth: return "Bu ay eklenenler"
+        case .mostPlayed: return L("En çok dinlediklerin")
+        case .forgotten: return L("Uzun süredir dinlemediklerin")
+        case .thisMonth: return L("Bu ay eklenenler")
         }
     }
 
@@ -65,7 +65,7 @@ struct HomeView: View {
                     OfflineBanner()
                         .padding(.bottom, 12)
 
-                    ChipBar(items: HomeFilter.allCases, selection: $filter) { $0.rawValue }
+                    ChipBar(items: HomeFilter.allCases, selection: $filter) { L($0.rawValue) }
                         .padding(.top, 4)
                         .padding(.bottom, 18)
 
@@ -74,9 +74,9 @@ struct HomeView: View {
                     } else {
                         switch filter {
                         case .all: overview
-                        case .favorites: trackList(library.favoriteTracks, empty: "Çalarken kalbe dokunduğun şarkılar burada görünür.")
+                        case .favorites: trackList(library.favoriteTracks, empty: L("Çalarken kalbe dokunduğun şarkılar burada görünür."))
                         case .recent: trackList(library.recentlyAdded, empty: "")
-                        case .downloads: trackList(library.downloadedTracks, empty: auth.isPremium ? "Ara sekmesinden indirdiğin şarkılar burada görünür." : "Dosyalar sekmesinden müzik ekleyebilirsin.")
+                        case .downloads: trackList(library.downloadedTracks, empty: auth.isPremium ? L("Ara sekmesinden indirdiğin şarkılar burada görünür.") : L("Dosyalar sekmesinden müzik ekleyebilirsin."))
                         }
                     }
                 }
@@ -114,7 +114,7 @@ struct HomeView: View {
                         .foregroundColor(.white)
                         .frame(width: 40, height: 40)
                 }
-                .accessibilityLabel("Ara")
+                .accessibilityLabel(L("Ara"))
             }
             if auth.isLoggedIn { InboxButton() }
             AccountButton()
@@ -138,7 +138,7 @@ struct HomeView: View {
 
             if !library.recentlyAdded.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Son eklenenler", action: { filter = .recent }, actionTitle: "Tümü")
+                    SectionHeader(title: L("Son eklenenler"), action: { filter = .recent }, actionTitle: L("Tümü"))
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 14) {
                             ForEach(library.recentlyAdded) { track in
@@ -162,7 +162,7 @@ struct HomeView: View {
 
             if library.artists.count > 1 {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Sanatçılar")
+                    SectionHeader(title: L("Sanatçılar"))
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 16) {
                             ForEach(library.artists.sorted { $0.tracks.count > $1.tracks.count }.prefix(15)) { group in
@@ -173,7 +173,7 @@ struct HomeView: View {
                                             .font(.system(size: 14, weight: .semibold))
                                             .foregroundColor(.white)
                                             .lineLimit(1)
-                                        Text("\(group.tracks.count) şarkı")
+                                        Text(L("{0} şarkı", group.tracks.count))
                                             .font(.system(size: 12))
                                             .foregroundColor(.boxSecondaryText)
                                     }
@@ -195,15 +195,15 @@ struct HomeView: View {
     private var forYou: some View {
         if feed.sections.isEmpty && !feed.isLoading, let error = feed.errorMessage {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Sana özel")
+                SectionHeader(title: L("Sana özel"))
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.icloud").font(.system(size: 22)).foregroundColor(.orange)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Öneriler yüklenemedi").font(.system(size: 15, weight: .semibold))
+                        Text(L("Öneriler yüklenemedi")).font(.system(size: 15, weight: .semibold))
                         Text(error).font(.system(size: 13)).foregroundColor(.boxSecondaryText).lineLimit(2)
                     }
                     Spacer()
-                    Button("Tekrar dene") {
+                    Button(L("Tekrar dene")) {
                         Task { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
                     }
                     .font(.system(size: 14, weight: .semibold))
@@ -216,7 +216,7 @@ struct HomeView: View {
 
         if feed.sections.isEmpty && feed.isLoading {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Sana özel", subtitle: "Hazırlanıyor")
+                SectionHeader(title: L("Sana özel"), subtitle: L("Hazırlanıyor"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
                         ForEach(0..<4, id: \.self) { _ in
@@ -236,7 +236,7 @@ struct HomeView: View {
 
         if !feed.genres.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Ruh haline göre", subtitle: "Keşfet")
+                SectionHeader(title: L("Ruh haline göre"), subtitle: L("Keşfet"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHGrid(rows: [GridItem(.fixed(44), spacing: 10), GridItem(.fixed(44), spacing: 10)], spacing: 10) {
                         ForEach(Array(feed.genres.enumerated()), id: \.element.id) { index, genre in
@@ -274,7 +274,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: section.title, subtitle: section.subtitle, action: {
                 player.play(library.playable(section.items), startAt: 0)
-            }, actionTitle: "Dinle")
+            }, actionTitle: L("Dinle"))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
@@ -295,7 +295,7 @@ struct HomeView: View {
 
     private var greeting: some View {
         let hour = Calendar.current.component(.hour, from: Date())
-        let text = hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar"
+        let text = hour < 6 ? L("İyi geceler") : hour < 12 ? L("Günaydın") : hour < 18 ? L("İyi günler") : L("İyi akşamlar")
         let name = auth.user?.name.split(separator: " ").first.map(String.init)
 
         return VStack(alignment: .leading, spacing: 16) {
@@ -303,11 +303,11 @@ struct HomeView: View {
                 if auth.user != nil {
                     Button { router.showAccount = true } label: { UserAvatar(user: auth.user, size: 46) }
                         .buttonStyle(PressableStyle())
-                        .accessibilityLabel("Profil")
+                        .accessibilityLabel(L("Profil"))
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     if let fullName = auth.user?.name {
-                        Text(fullName.uppercased(with: Locale(identifier: "tr_TR")))
+                        Text(fullName.uppercased(with: Lang.shared.locale))
                             .font(.system(size: 13, weight: .semibold))
                             .tracking(0.6)
                             .foregroundColor(.boxSecondaryText)
@@ -325,14 +325,14 @@ struct HomeView: View {
                 Button {
                     player.play(library.tracks, startAt: 0, shuffled: true)
                 } label: {
-                    Label("Karışık çal", systemImage: "shuffle")
+                    Label(L("Karışık çal"), systemImage: "shuffle")
                 }
                 .buttonStyle(PrimaryButtonStyle())
 
                 Button {
                     player.play(library.favoriteTracks.isEmpty ? library.tracks : library.favoriteTracks, startAt: 0)
                 } label: {
-                    Label(library.favoriteTracks.isEmpty ? "Tümünü çal" : "Beğenilenler", systemImage: library.favoriteTracks.isEmpty ? "play.fill" : "heart.fill")
+                    Label(library.favoriteTracks.isEmpty ? L("Tümünü çal") : L("Beğenilenler"), systemImage: library.favoriteTracks.isEmpty ? "play.fill" : "heart.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle(filled: false))
             }
@@ -346,7 +346,7 @@ struct HomeView: View {
         let rows = [GridItem(.fixed(150), spacing: 10), GridItem(.fixed(150), spacing: 10)]
 
         return VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Tekrar dinle", subtitle: "Son çalınanlar", action: { path.append(HomeRoute.recent) }, actionTitle: "Tümü")
+            SectionHeader(title: L("Tekrar dinle"), subtitle: L("Son çalınanlar"), action: { path.append(HomeRoute.recent) }, actionTitle: L("Tümü"))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHGrid(rows: rows, spacing: 10) {
                     ForEach(items) { track in
@@ -385,7 +385,7 @@ struct HomeView: View {
         let columns = stride(from: 0, to: picks.count, by: 4).map { Array(picks[$0..<min($0 + 4, picks.count)]) }
 
         return VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Hızlı seçimler", action: { player.play(picks, startAt: 0) }, actionTitle: "Tümünü oynat")
+            SectionHeader(title: L("Hızlı seçimler"), action: { player.play(picks, startAt: 0) }, actionTitle: L("Tümünü oynat"))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 8) {
                     ForEach(columns.indices, id: \.self) { column in
@@ -406,11 +406,11 @@ struct HomeView: View {
 
     private var playlistsRow: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Çalma listelerin")
+            SectionHeader(title: L("Çalma listelerin"))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
                     NavigationLink(value: HomeRoute.favorites) {
-                        CoverCard(title: "Beğenilenler", subtitle: "\(library.favoriteTracks.count) şarkı") {
+                        CoverCard(title: L("Beğenilenler"), subtitle: L("{0} şarkı", library.favoriteTracks.count)) {
                             ZStack {
                                 LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 Image(systemName: "heart.fill").font(.system(size: 44)).foregroundColor(.white)
@@ -421,7 +421,7 @@ struct HomeView: View {
 
                     if !library.downloadedTracks.isEmpty {
                         NavigationLink(value: HomeRoute.downloads) {
-                            CoverCard(title: "İndirilenler", subtitle: "\(library.downloadedTracks.count) şarkı") {
+                            CoverCard(title: L("İndirilenler"), subtitle: L("{0} şarkı", library.downloadedTracks.count)) {
                                 PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 150)
                             }
                         }
@@ -431,7 +431,7 @@ struct HomeView: View {
                     ForEach(library.playlists) { playlist in
                         let tracks = library.tracks(for: playlist)
                         NavigationLink(value: HomeRoute.playlist(playlist.id)) {
-                            CoverCard(title: playlist.name, subtitle: "\(tracks.count) şarkı") {
+                            CoverCard(title: playlist.name, subtitle: L("{0} şarkı", tracks.count)) {
                                 PlaylistArtwork(playlist: playlist, tracks: tracks, size: 150)
                             }
                         }
@@ -448,12 +448,12 @@ struct HomeView: View {
     private func trackList(_ tracks: [Track], empty: String) -> some View {
         LazyVStack(spacing: 0) {
             if tracks.isEmpty {
-                EmptyStateView(icon: "music.note", title: "Burada henüz şarkı yok", message: empty)
+                EmptyStateView(icon: "music.note", title: L("Burada henüz şarkı yok"), message: empty)
             } else {
                 HStack(spacing: 10) {
-                    Button { player.play(tracks, startAt: 0) } label: { Label("Çal", systemImage: "play.fill") }
+                    Button { player.play(tracks, startAt: 0) } label: { Label(L("Çal"), systemImage: "play.fill") }
                         .buttonStyle(PrimaryButtonStyle())
-                    Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                    Button { player.play(tracks, startAt: 0, shuffled: true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                         .buttonStyle(PrimaryButtonStyle(filled: false))
                 }
                 .padding(.horizontal, 16)
@@ -471,7 +471,7 @@ struct HomeView: View {
     private var loading: some View {
         VStack(spacing: 14) {
             ProgressView().tint(.white)
-            Text("Kitaplık taranıyor…").font(.subheadline).foregroundColor(.boxSecondaryText)
+            Text(L("Kitaplık taranıyor…")).font(.subheadline).foregroundColor(.boxSecondaryText)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 120)
@@ -481,16 +481,16 @@ struct HomeView: View {
         VStack(spacing: 16) {
             BoxMark(size: 76)
                 .padding(.top, 56)
-            Text("Müziğin burada yaşayacak")
+            Text(L("Müziğin burada yaşayacak"))
                 .font(.system(size: 22, weight: .bold))
             Text(auth.isPremium
-                 ? "Ara sekmesinden şarkı bul ve indir, ya da Dosyalar'dan kendi müziklerini ekle."
-                 : "Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamadan \"Box ile aç\" de.")
+                 ? L("Ara sekmesinden şarkı bul ve indir, ya da Dosyalar'dan kendi müziklerini ekle.")
+                 : L("Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamadan \"Box ile aç\" de."))
                 .font(.subheadline)
                 .foregroundColor(.boxSecondaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
-            Button(auth.isPremium ? "Şarkı ara" : "Dosya ekle") {
+            Button(auth.isPremium ? L("Şarkı ara") : L("Dosya ekle")) {
                 router.tab = auth.isPremium ? .search : .files
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -508,10 +508,10 @@ struct TrackContextItems: View {
     @EnvironmentObject private var library: LibraryStore
 
     var body: some View {
-        Button { player.playNext(track) } label: { Label("Sıradaki olarak çal", systemImage: "text.line.first.and.arrowtriangle.forward") }
-        Button { player.addToQueue(track) } label: { Label("Sıraya ekle", systemImage: "text.append") }
+        Button { player.playNext(track) } label: { Label(L("Sıradaki olarak çal"), systemImage: "text.line.first.and.arrowtriangle.forward") }
+        Button { player.addToQueue(track) } label: { Label(L("Sıraya ekle"), systemImage: "text.append") }
         Button { library.toggleFavorite(track) } label: {
-            Label(library.isFavorite(track) ? "Beğenilenlerden çıkar" : "Beğen", systemImage: library.isFavorite(track) ? "heart.slash" : "heart")
+            Label(library.isFavorite(track) ? L("Beğenilenlerden çıkar") : L("Beğen"), systemImage: library.isFavorite(track) ? "heart.slash" : "heart")
         }
     }
 }
@@ -528,9 +528,9 @@ struct HomeRouteView: View {
         case .favorites:
             PlaylistDetailView(source: .favorites)
         case .downloads:
-            PlaylistDetailView(source: .tracks(title: "İndirilenler", icon: "arrow.down", tracks: library.downloadedTracks))
+            PlaylistDetailView(source: .tracks(title: L("İndirilenler"), icon: "arrow.down", tracks: library.downloadedTracks))
         case .recent:
-            PlaylistDetailView(source: .tracks(title: "Son çalınanlar", icon: "clock", tracks: library.recentlyPlayed))
+            PlaylistDetailView(source: .tracks(title: L("Son çalınanlar"), icon: "clock", tracks: library.recentlyPlayed))
         case .genre(let genre):
             GenreView(genre: genre)
         case .summary:

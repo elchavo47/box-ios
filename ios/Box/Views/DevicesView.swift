@@ -42,19 +42,19 @@ struct DevicesView: View {
                         row(device)
                             .swipeActions {
                                 if !device.current {
-                                    Button(role: .destructive) { confirm = device } label: { Label("Çıkış yap", systemImage: "rectangle.portrait.and.arrow.right") }
+                                    Button(role: .destructive) { confirm = device } label: { Label(L("Çıkış yap"), systemImage: "rectangle.portrait.and.arrow.right") }
                                 }
                             }
                     }
                 } footer: {
-                    Text("Tanımadığın bir cihaz görürsen ondan çıkış yap ve şifreni değiştir.")
+                    Text(L("Tanımadığın bir cihaz görürsen ondan çıkış yap ve şifreni değiştir."))
                 }
                 .listRowBackground(Color.boxSurface2)
 
                 if devices.count > 1 {
                     Section {
                         Button(role: .destructive) { confirmOthers = true } label: {
-                            Label("Diğer bütün cihazlardan çıkış yap", systemImage: "iphone.slash")
+                            Label(L("Diğer bütün cihazlardan çıkış yap"), systemImage: "iphone.slash")
                         }
                     }
                     .listRowBackground(Color.boxSurface2)
@@ -63,17 +63,17 @@ struct DevicesView: View {
         }
         .scrollContentBackground(.hidden)
         .boxScreenBackground()
-        .navigationTitle("Cihazlarım")
+        .navigationTitle(L("Cihazlarım"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
-        .confirmationDialog("\(confirm?.name ?? "Cihaz") cihazından çıkış yapılsın mı?", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
-            Button("Çıkış yap", role: .destructive) {
+        .confirmationDialog(L("{0} cihazından çıkış yapılsın mı?", confirm?.name ?? L("Cihaz")), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
+            Button(L("Çıkış yap"), role: .destructive) {
                 if let device = confirm { Task { await logout(["id": device.id]) } }
             }
         }
-        .confirmationDialog("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?", isPresented: $confirmOthers, titleVisibility: .visible) {
-            Button("Hepsinden çıkış yap", role: .destructive) { Task { await logout(["others": true]) } }
+        .confirmationDialog(L("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?"), isPresented: $confirmOthers, titleVisibility: .visible) {
+            Button(L("Hepsinden çıkış yap"), role: .destructive) { Task { await logout(["others": true]) } }
         }
     }
 
@@ -87,7 +87,7 @@ struct DevicesView: View {
                 HStack(spacing: 6) {
                     Text(device.name).font(.system(size: 16, weight: .semibold))
                     if device.current {
-                        Text("Bu cihaz")
+                        Text(L("Bu cihaz"))
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.black)
                             .padding(.horizontal, 7)
@@ -108,20 +108,15 @@ struct DevicesView: View {
     private func details(_ device: DeviceEntry) -> String {
         var parts: [String] = []
         if let os = device.os { parts.append(os) }
-        if let app = device.app { parts.append("Box " + app) }
+        if let app = device.app { parts.append(L("Box ") + app) }
         if device.current {
-            parts.append("şu an")
+            parts.append(L("şu an"))
         } else if let date = device.lastUsed {
-            parts.append(Self.relative.localizedString(for: date, relativeTo: Date()))
+            parts.append(Formatters.relative(date))
         }
         return parts.joined(separator: " • ")
     }
 
-    private static let relative: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
 
     private func load() async {
         guard let token = auth.token else { return }
@@ -132,7 +127,7 @@ struct DevicesView: View {
             devices = response.devices
             errorMessage = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Cihazlar yüklenemedi."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Cihazlar yüklenemedi.")
         }
     }
 
@@ -143,7 +138,7 @@ struct DevicesView: View {
             withAnimation { devices = response.devices }
             Haptics.success()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Çıkış yapılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Çıkış yapılamadı.")
         }
     }
 }

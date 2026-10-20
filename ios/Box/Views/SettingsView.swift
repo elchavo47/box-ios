@@ -11,14 +11,32 @@ struct SettingsView: View {
     @State private var message: String?
     @State private var iconName: String? = UIApplication.shared.alternateIconName
 
+    @EnvironmentObject private var lang: Lang
+
     var body: some View {
         List {
             Section {
+                NavigationLink {
+                    LanguagePickerView()
+                } label: {
+                    HStack {
+                        Label(L("Dil"), systemImage: "globe")
+                        Spacer()
+                        Text(lang.choice == "auto" ? L("Otomatik ({0})", lang.language.name) : lang.language.name)
+                            .foregroundColor(.boxSecondaryText)
+                    }
+                }
+            } footer: {
+                Text(L("Otomatik seçiliyse Box telefonunun dilini kullanır; desteklenmeyen dillerde İngilizce açılır."))
+            }
+            .listRowBackground(Color.boxSurface2)
+
+            Section {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Label("Yumuşak geçiş", systemImage: "waveform.path")
+                        Label(L("Yumuşak geçiş"), systemImage: "waveform.path")
                         Spacer()
-                        Text(settings.crossfadeSeconds == 0 ? "Kapalı" : "\(Int(settings.crossfadeSeconds)) sn")
+                        Text(settings.crossfadeSeconds == 0 ? L("Kapalı") : L("{0} sn", Int(settings.crossfadeSeconds)))
                             .foregroundColor(.boxSecondaryText)
                             .monospacedDigit()
                     }
@@ -32,79 +50,79 @@ struct SettingsView: View {
                         Text(preset.title).tag(preset.rawValue)
                     }
                 } label: {
-                    Label("Ekolayzer", systemImage: "slider.vertical.3")
+                    Label(L("Ekolayzer"), systemImage: "slider.vertical.3")
                 }
 
                 Toggle(isOn: $settings.normalizeVolume) {
-                    Label("Ses seviyesini eşitle", systemImage: "speaker.wave.2")
+                    Label(L("Ses seviyesini eşitle"), systemImage: "speaker.wave.2")
                 }
                 .tint(.accent)
 
                 Toggle(isOn: $settings.visualizer) {
-                    Label("Ses dalgası", systemImage: "waveform")
+                    Label(L("Ses dalgası"), systemImage: "waveform")
                 }
                 .tint(.accent)
 
                 if auth.isPremium {
                     Toggle(isOn: $settings.autoRadio) {
-                        Label("Sıra bitince benzerleriyle devam et", systemImage: "dot.radiowaves.left.and.right")
+                        Label(L("Sıra bitince benzerleriyle devam et"), systemImage: "dot.radiowaves.left.and.right")
                     }
                     .tint(.accent)
                 }
             } header: {
-                Text("Oynatma")
+                Text(L("Oynatma"))
             } footer: {
-                Text("Ekolayzer ve ses eşitleme bir sonraki şarkıdan itibaren uygulanır.")
+                Text(L("Ekolayzer ve ses eşitleme bir sonraki şarkıdan itibaren uygulanır."))
             }
             .listRowBackground(Color.boxSurface2)
 
             if auth.isPremium {
                 Section {
                     Toggle(isOn: $settings.wifiOnlyDownloads) {
-                        Label("Sadece Wi‑Fi'da indir", systemImage: "wifi")
+                        Label(L("Sadece Wi‑Fi'da indir"), systemImage: "wifi")
                     }
                     .tint(.accent)
                     Toggle(isOn: $settings.searchSuggestions) {
-                        Label("Arama önerileri", systemImage: "text.magnifyingglass")
+                        Label(L("Arama önerileri"), systemImage: "text.magnifyingglass")
                     }
                     .tint(.accent)
                 } header: {
-                    Text("İndirme ve arama")
+                    Text(L("İndirme ve arama"))
                 } footer: {
-                    Text("Mobil veride bekleyen indirmeler Wi‑Fi'a bağlanınca kendiliğinden başlar.")
+                    Text(L("Mobil veride bekleyen indirmeler Wi‑Fi'a bağlanınca kendiliğinden başlar."))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
 
-            Section("Depolama ve kitaplık") {
+            Section(L("Depolama ve kitaplık")) {
                 NavigationLink {
                     StorageView()
                 } label: {
-                    Label("Depolama", systemImage: "internaldrive")
+                    Label(L("Depolama"), systemImage: "internaldrive")
                 }
                 NavigationLink {
                     DuplicatesView()
                 } label: {
-                    Label("Kopya şarkıları bul", systemImage: "doc.on.doc")
+                    Label(L("Kopya şarkıları bul"), systemImage: "doc.on.doc")
                 }
                 Button {
-                    backupURL = BackupService.write(library.makeBackup(), name: "Box yedeği \(Self.dayString)", ext: "boxbackup")
+                    backupURL = BackupService.write(library.makeBackup(), name: L("Box yedeği {0}", Self.dayString), ext: "boxbackup")
                 } label: {
-                    Label("Kitaplığı yedekle", systemImage: "icloud.and.arrow.up")
+                    Label(L("Kitaplığı yedekle"), systemImage: "icloud.and.arrow.up")
                 }
                 Button {
                     showRestore = true
                 } label: {
-                    Label("Yedekten geri yükle", systemImage: "icloud.and.arrow.down")
+                    Label(L("Yedekten geri yükle"), systemImage: "icloud.and.arrow.down")
                 }
             }
             .listRowBackground(Color.boxSurface2)
 
-            Section("Uygulama ikonu") {
+            Section(L("Uygulama ikonu")) {
                 HStack(spacing: 18) {
-                    iconChoice(nil, preview: "IconPreviewDark", title: "Gece")
-                    iconChoice("AppIconLight", preview: "IconPreviewLight", title: "Açık")
-                    iconChoice("AppIconGreen", preview: "IconPreviewGreen", title: "Yeşil")
+                    iconChoice(nil, preview: "IconPreviewDark", title: L("Gece"))
+                    iconChoice("AppIconLight", preview: "IconPreviewLight", title: L("Açık"))
+                    iconChoice("AppIconGreen", preview: "IconPreviewGreen", title: L("Yeşil"))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
@@ -115,14 +133,14 @@ struct SettingsView: View {
                 Button {
                     settings.onboarded = false
                 } label: {
-                    Label("Tanıtımı yeniden göster", systemImage: "sparkles")
+                    Label(L("Tanıtımı yeniden göster"), systemImage: "sparkles")
                 }
             }
             .listRowBackground(Color.boxSurface2)
         }
         .scrollContentBackground(.hidden)
         .background(Color.boxSurface.ignoresSafeArea())
-        .navigationTitle("Ayarlar")
+        .navigationTitle(L("Ayarlar"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: Binding(get: { backupURL.map(ShareItem.init) }, set: { backupURL = $0?.url })) { item in
             ShareSheet(items: [item.url])
@@ -131,13 +149,13 @@ struct SettingsView: View {
             guard case .success(let url) = result else { return }
             if let backup = BackupService.read(LibraryBackup.self, from: url), backup.kind == "box.backup" {
                 let added = library.restore(backup)
-                message = "Yedek geri yüklendi. \(added) yeni liste eklendi; beğeniler ve geçmiş birleştirildi."
+                message = L("Yedek geri yüklendi. {0} yeni liste eklendi; beğeniler ve geçmiş birleştirildi.", added)
             } else {
-                message = "Bu dosya bir Box yedeği değil."
+                message = L("Bu dosya bir Box yedeği değil.")
             }
         }
-        .alert("Yedekleme", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("Tamam", role: .cancel) {}
+        .alert(L("Yedekleme"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button(L("Tamam"), role: .cancel) {}
         } message: {
             Text(message ?? "")
         }
@@ -204,12 +222,12 @@ struct StorageView: View {
                     .listRowBackground(Color.clear)
             }
 
-            Section("Özet") {
-                row("Kitaplık", Formatters.bytes(library.totalSize), "\(library.tracks.count) şarkı", icon: "music.note")
-                row("İndirilenler", Formatters.bytes(downloadsSize), "\(library.downloadedTracks.count) şarkı", icon: "arrow.down.circle")
+            Section(L("Özet")) {
+                row(L("Kitaplık"), Formatters.bytes(library.totalSize), L("{0} şarkı", library.tracks.count), icon: "music.note")
+                row(L("İndirilenler"), Formatters.bytes(downloadsSize), L("{0} şarkı", library.downloadedTracks.count), icon: "arrow.down.circle")
                 HStack {
-                    row("Dinleme önbelleği", Formatters.bytes(cacheSize), "Kitaplıkta görünmez", icon: "icloud")
-                    Button("Temizle") {
+                    row(L("Dinleme önbelleği"), Formatters.bytes(cacheSize), L("Kitaplıkta görünmez"), icon: "icloud")
+                    Button(L("Temizle")) {
                         stream.clear()
                         cacheSize = 0
                     }
@@ -219,9 +237,9 @@ struct StorageView: View {
             }
             .listRowBackground(Color.boxSurface2)
 
-            Section("En çok yer kaplayan sanatçılar") {
+            Section(L("En çok yer kaplayan sanatçılar")) {
                 ForEach(topArtists, id: \.name) { item in
-                    row(item.name, Formatters.bytes(item.size), "\(item.count) şarkı", icon: "music.mic")
+                    row(item.name, Formatters.bytes(item.size), L("{0} şarkı", item.count), icon: "music.mic")
                 }
             }
             .listRowBackground(Color.boxSurface2)
@@ -235,27 +253,27 @@ struct StorageView: View {
                             .foregroundColor(.boxSecondaryText)
                     }
                     .swipeActions {
-                        Button(role: .destructive) { deleteTarget = track } label: { Label("Sil", systemImage: "trash") }
+                        Button(role: .destructive) { deleteTarget = track } label: { Label(L("Sil"), systemImage: "trash") }
                     }
                 }
             } header: {
-                Text("En büyük dosyalar")
+                Text(L("En büyük dosyalar"))
             } footer: {
-                Text("Silmek için sola kaydır. Silinen dosya listelerden de çıkar.")
+                Text(L("Silmek için sola kaydır. Silinen dosya listelerden de çıkar."))
             }
             .listRowBackground(Color.boxSurface2)
         }
         .scrollContentBackground(.hidden)
         .background(Color.boxSurface.ignoresSafeArea())
-        .navigationTitle("Depolama")
+        .navigationTitle(L("Depolama"))
         .navigationBarTitleDisplayMode(.inline)
         .task { cacheSize = stream.totalSize }
         .confirmationDialog(
-            deleteTarget.map { "\"\($0.title)\" silinsin mi?" } ?? "",
+            deleteTarget.map { L("\"{0}\" silinsin mi?", $0.title) } ?? "",
             isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Sil", role: .destructive) {
+            Button(L("Sil"), role: .destructive) {
                 if let track = deleteTarget { delete(track) }
             }
         }
@@ -279,9 +297,9 @@ struct StorageView: View {
             .clipShape(Capsule())
             .background(Capsule().fill(Color.white.opacity(0.08)))
             HStack(spacing: 14) {
-                legend(.accent, "İndirilenler")
-                legend(.accentDeep, "Diğer")
-                legend(.white.opacity(0.35), "Önbellek")
+                legend(.accent, L("İndirilenler"))
+                legend(.accentDeep, L("Diğer"))
+                legend(.white.opacity(0.35), L("Önbellek"))
             }
             .font(.caption)
             .foregroundColor(.boxSecondaryText)
@@ -348,7 +366,7 @@ struct DuplicatesView: View {
     var body: some View {
         List {
             if groups.isEmpty {
-                EmptyStateView(icon: "checkmark.circle", title: "Kopya yok", message: "Aynı şarkının birden fazla kopyası bulunamadı.")
+                EmptyStateView(icon: "checkmark.circle", title: L("Kopya yok"), message: L("Aynı şarkının birden fazla kopyası bulunamadı."))
                     .listRowBackground(Color.clear)
             }
             ForEach(groups, id: \.first!.id) { group in
@@ -358,7 +376,7 @@ struct DuplicatesView: View {
                             TrackRow(track: track, showMenu: false)
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(Formatters.bytes(track.fileSize)).font(.caption.monospacedDigit())
-                                if index == 0 { Text("En iyi").font(.caption2.weight(.bold)).foregroundColor(.accent) }
+                                if index == 0 { Text(L("En iyi")).font(.caption2.weight(.bold)).foregroundColor(.accent) }
                             }
                             .foregroundColor(.boxSecondaryText)
                         }
@@ -368,18 +386,18 @@ struct DuplicatesView: View {
                                 try? FileService.delete(track.url)
                                 library.pathDeleted(track.url)
                                 Task { await library.refresh() }
-                            } label: { Label("Sil", systemImage: "trash") }
+                            } label: { Label(L("Sil"), systemImage: "trash") }
                         }
                     }
                 } footer: {
-                    Text("\(group.count) kopya • sola kaydırarak fazlasını sil")
+                    Text(L("{0} kopya • sola kaydırarak fazlasını sil", group.count))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
         }
         .scrollContentBackground(.hidden)
         .background(Color.boxSurface.ignoresSafeArea())
-        .navigationTitle("Kopya şarkılar")
+        .navigationTitle(L("Kopya şarkılar"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

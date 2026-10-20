@@ -7,7 +7,7 @@ enum MusicFormat {
     static func count(_ raw: String?) -> String? {
         guard var text = raw?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
         if let space = text.firstIndex(of: " ") { text = String(text[..<space]) }
-        let units: [Character: String] = ["K": "B", "M": "Mn", "B": "Mr"]
+        let units: [Character: String] = ["K": "B", "M": L("Mn"), "B": L("Mr")]
         if let last = text.last, let unit = units[last.uppercased().first ?? last] {
             let number = String(text.dropLast()).replacingOccurrences(of: ".", with: ",")
             return number.isEmpty ? nil : number + " " + unit
@@ -17,9 +17,9 @@ enum MusicFormat {
 
     static func albumType(_ raw: String?) -> String {
         switch raw?.lowercased() {
-        case "single": return "Single"
-        case "ep": return "EP"
-        default: return "Albüm"
+        case "single": return L("Single")
+        case "ep": return L("EP")
+        default: return L("Albüm")
         }
     }
 
@@ -27,23 +27,23 @@ enum MusicFormat {
         var parts: [String] = []
         switch item.type {
         case .song:
-            parts.append("Şarkı")
+            parts.append(L("Şarkı"))
             if !inCard, let channel = item.channel, !channel.isEmpty { parts.append(channel) }
-            if let plays = count(item.views) { parts.append(plays + " kez dinlendi") }
+            if let plays = count(item.views) { parts.append(plays + L(" kez dinlendi")) }
             else if inCard, let duration = item.duration, duration > 0 { parts.append(Formatters.time(Double(duration))) }
         case .video:
-            parts.append("Video")
+            parts.append(L("Video"))
             if let channel = item.channel, !channel.isEmpty { parts.append(channel) }
-            if let views = count(item.views) { parts.append(views + " görüntüleme") }
+            if let views = count(item.views) { parts.append(views + L(" görüntüleme")) }
         case .album:
             parts.append(albumType(item.albumType))
             if let channel = item.channel, !channel.isEmpty { parts.append(channel) }
             if let year = item.year, !year.isEmpty { parts.append(year) }
         case .artist:
-            parts.append("Sanatçı")
-            if let subs = count(item.subscribers) { parts.append(subs + " dinleyici") }
+            parts.append(L("Sanatçı"))
+            if let subs = count(item.subscribers) { parts.append(subs + L(" dinleyici")) }
         case .playlist:
-            parts.append("Çalma listesi")
+            parts.append(L("Çalma listesi"))
             if let author = item.author, !author.isEmpty { parts.append(author) }
         case .other:
             break
@@ -237,7 +237,7 @@ struct TopResultCard: View {
         HStack(spacing: 10) {
             switch item.type {
             case .artist, .album, .playlist:
-                Button { play(item.type == .artist ? artistSongs : children, nil, true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                Button { play(item.type == .artist ? artistSongs : children, nil, true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(artistSongs.isEmpty && children.isEmpty)
                 Button {
@@ -246,14 +246,14 @@ struct TopResultCard: View {
                     } else {
                         open(item)
                     }
-                } label: { Label(item.type == .artist ? "Mix" : "Radyo", systemImage: "dot.radiowaves.left.and.right") }
+                } label: { Label(item.type == .artist ? L("Mix") : L("Radyo"), systemImage: "dot.radiowaves.left.and.right") }
                     .buttonStyle(OutlineButtonStyle())
             default:
-                Button { play([item] + songs.filter { $0.itemID != item.itemID }, item, false) } label: { Label("Çal", systemImage: "play.fill") }
+                Button { play([item] + songs.filter { $0.itemID != item.itemID }, item, false) } label: { Label(L("Çal"), systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
                 Button {
                     if let result = item.result { player.startRadio(from: library.localTrack(for: result) ?? .remote(result)) }
-                } label: { Label("Radyo", systemImage: "dot.radiowaves.left.and.right") }
+                } label: { Label(L("Radyo"), systemImage: "dot.radiowaves.left.and.right") }
                     .buttonStyle(OutlineButtonStyle())
             }
         }
@@ -285,13 +285,13 @@ enum SearchFilter: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .all: return "Tümü"
-        case .songs: return "Şarkılar"
-        case .videos: return "Videolar"
-        case .albums: return "Albümler"
-        case .artists: return "Sanatçılar"
-        case .playlists: return "Çalma listeleri"
-        case .library: return "Kitaplığım"
+        case .all: return L("Tümü")
+        case .songs: return L("Şarkılar")
+        case .videos: return L("Videolar")
+        case .albums: return L("Albümler")
+        case .artists: return L("Sanatçılar")
+        case .playlists: return L("Çalma listeleri")
+        case .library: return L("Kitaplığım")
         }
     }
 

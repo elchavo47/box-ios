@@ -63,7 +63,7 @@ struct ListExportView: View {
     private var available: [ExportRow] {
         var items: [ExportRow] = []
         let favorites = library.favoriteTracks.count
-        if favorites > 0 { items.append(ExportRow(item: .favorites, name: "Beğenilenler", count: favorites)) }
+        if favorites > 0 { items.append(ExportRow(item: .favorites, name: L("Beğenilenler"), count: favorites)) }
         for playlist in library.playlists {
             items.append(ExportRow(item: .playlist(playlist.id), name: playlist.name, count: library.tracks(for: playlist).count))
         }
@@ -72,8 +72,8 @@ struct ListExportView: View {
 
     private var automatic: [ExportRow] {
         var items: [ExportRow] = []
-        if !library.recentlyPlayed.isEmpty { items.append(ExportRow(item: .recent, name: "Son çalınanlar", count: library.recentlyPlayed.count)) }
-        if !library.downloadedTracks.isEmpty { items.append(ExportRow(item: .downloads, name: "İndirilenler", count: library.downloadedTracks.count)) }
+        if !library.recentlyPlayed.isEmpty { items.append(ExportRow(item: .recent, name: L("Son çalınanlar"), count: library.recentlyPlayed.count)) }
+        if !library.downloadedTracks.isEmpty { items.append(ExportRow(item: .downloads, name: L("İndirilenler"), count: library.downloadedTracks.count)) }
         for list in SmartList.allCases {
             let count = tracks(for: .smart(list)).count
             if count > 0 { items.append(ExportRow(item: .smart(list), name: list.title, count: count)) }
@@ -105,17 +105,17 @@ struct ListExportView: View {
             List {
                 Section {
                     ForEach(available) { item in row(item) }
-                } header: { Text("Listelerin") }
+                } header: { Text(L("Listelerin")) }
                 if !automatic.isEmpty {
                     Section {
                         ForEach(automatic) { item in row(item) }
-                    } header: { Text("Otomatik listeler") }
+                    } header: { Text(L("Otomatik listeler")) }
                 }
                 Section {
                     Label {
                         Text(localCount > 0
-                             ? "\(localCount) şarkı kendi dosyan: adı ve sanatçısıyla eklenir. Dosyası olan cihazda otomatik eşleşir, olmayanda YouTube Music'te aranabilir."
-                             : "Şarkılar adı, sanatçısı ve YouTube kimliğiyle eklenir; müzik dosyaları dosyaya girmez.")
+                             ? L("{0} şarkı kendi dosyan: adı ve sanatçısıyla eklenir. Dosyası olan cihazda otomatik eşleşir, olmayanda YouTube Music'te aranabilir.", localCount)
+                             : L("Şarkılar adı, sanatçısı ve YouTube kimliğiyle eklenir; müzik dosyaları dosyaya girmez."))
                     } icon: { Image(systemName: "info.circle") }
                     .font(.footnote)
                     .foregroundColor(.boxSecondaryText)
@@ -125,13 +125,13 @@ struct ListExportView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .boxScreenBackground()
-            .navigationTitle("Dışa aktar")
+            .navigationTitle(L("Dışa aktar"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Kapat") { dismiss() } }
+                ToolbarItem(placement: .navigationBarLeading) { Button(L("Kapat")) { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     let all = Set((available + automatic).map(\.item))
-                    Button(selected == all ? "Hiçbiri" : "Tümü") {
+                    Button(selected == all ? L("Hiçbiri") : L("Tümü")) {
                         selected = selected == all ? [] : all
                     }
                 }
@@ -140,14 +140,14 @@ struct ListExportView: View {
                 HStack(spacing: 10) {
                     Button {
                         shareURL = SharedListFile.write(lists)
-                    } label: { Label("Paylaş", systemImage: "square.and.arrow.up") }
+                    } label: { Label(L("Paylaş"), systemImage: "square.and.arrow.up") }
                     .buttonStyle(PrimaryButtonStyle())
                     Button {
                         if let data = SharedListFile.data(for: lists) {
                             exportDocument = BoxListDocument(data: data)
                             showExporter = true
                         }
-                    } label: { Label("Dosyalara kaydet", systemImage: "folder") }
+                    } label: { Label(L("Dosyalara kaydet"), systemImage: "folder") }
                     .buttonStyle(PrimaryButtonStyle(filled: false))
                 }
                 .disabled(selected.isEmpty)
@@ -162,11 +162,11 @@ struct ListExportView: View {
             .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .boxPlaylist, defaultFilename: SharedListFile.fileName(for: lists)) { result in
                 if case .success = result {
                     Haptics.success()
-                    savedMessage = selected.count == 1 ? "Liste dosyası kaydedildi." : "\(selected.count) liste tek dosyada kaydedildi."
+                    savedMessage = selected.count == 1 ? L("Liste dosyası kaydedildi.") : L("{0} liste tek dosyada kaydedildi.", selected.count)
                 }
             }
-            .alert("Kaydedildi", isPresented: Binding(get: { savedMessage != nil }, set: { if !$0 { savedMessage = nil } })) {
-                Button("Tamam", role: .cancel) { dismiss() }
+            .alert(L("Kaydedildi"), isPresented: Binding(get: { savedMessage != nil }, set: { if !$0 { savedMessage = nil } })) {
+                Button(L("Tamam"), role: .cancel) { dismiss() }
             } message: { Text(savedMessage ?? "") }
         }
     }
@@ -182,7 +182,7 @@ struct ListExportView: View {
                     .foregroundColor(selected.contains(row.item) ? .accent : .boxSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name).foregroundColor(.white).lineLimit(1)
-                    Text("\(row.count) şarkı").font(.caption).foregroundColor(.boxSecondaryText)
+                    Text(L("{0} şarkı", row.count)).font(.caption).foregroundColor(.boxSecondaryText)
                 }
                 Spacer()
             }
@@ -274,7 +274,7 @@ struct ListImportView: View {
                         .listRowBackground(Color.white.opacity(0.06))
                     }
                 } header: {
-                    Text(request.lists.count == 1 ? "Liste" : "\(request.lists.count) liste")
+                    Text(request.lists.count == 1 ? L("Liste") : L("{0} liste", request.lists.count))
                 }
 
                 if missingTotal > 0 {
@@ -282,15 +282,15 @@ struct ListImportView: View {
                         if auth.isPremium {
                             Toggle(isOn: $searchMissing) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Bulunamayanları YouTube Music'te ara")
-                                    Text("\(missingTotal) şarkı bu cihazda yok; bulunanlar internetten çalar.")
+                                    Text(L("Bulunamayanları YouTube Music'te ara"))
+                                    Text(L("{0} şarkı bu cihazda yok; bulunanlar internetten çalar.", missingTotal))
                                         .font(.caption).foregroundColor(.boxSecondaryText)
                                 }
                             }
                             .tint(.accent)
                             .disabled(working)
                         } else {
-                            Label("\(missingTotal) şarkı bu cihazda yok ve eklenemeyecek. Premium ile YouTube Music'te aranıp eklenebilir.", systemImage: "info.circle")
+                            Label(L("{0} şarkı bu cihazda yok ve eklenemeyecek. Premium ile YouTube Music'te aranıp eklenebilir.", missingTotal), systemImage: "info.circle")
                                 .font(.footnote)
                                 .foregroundColor(.boxSecondaryText)
                         }
@@ -301,7 +301,7 @@ struct ListImportView: View {
                 if working {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Şarkılar aranıyor…").font(.subheadline)
+                            Text(L("Şarkılar aranıyor…")).font(.subheadline)
                             ProgressView(value: progress).tint(.accent)
                         }
                     }
@@ -311,18 +311,18 @@ struct ListImportView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .boxScreenBackground()
-            .navigationTitle("Listeyi içe aktar")
+            .navigationTitle(L("Listeyi içe aktar"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Vazgeç") { dismiss() }.disabled(working)
+                    Button(L("Vazgeç")) { dismiss() }.disabled(working)
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 Button {
                     Task { await runImport() }
                 } label: {
-                    if working { ProgressView().tint(.black) } else { Label(selected.count > 1 ? "\(selected.count) listeyi içe aktar" : "İçe aktar", systemImage: "square.and.arrow.down") }
+                    if working { ProgressView().tint(.black) } else { Label(selected.count > 1 ? L("{0} listeyi içe aktar", selected.count) : L("İçe aktar"), systemImage: "square.and.arrow.down") }
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(selected.isEmpty || working)
@@ -330,8 +330,8 @@ struct ListImportView: View {
                 .padding(.vertical, 12)
                 .background(Color.boxBackground.opacity(0.96).ignoresSafeArea())
             }
-            .alert("İçe aktarıldı", isPresented: Binding(get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
-                Button("Tamam", role: .cancel) {
+            .alert(L("İçe aktarıldı"), isPresented: Binding(get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
+                Button(L("Tamam"), role: .cancel) {
                     dismiss()
                     onImported(lastImported)
                 }
@@ -341,10 +341,10 @@ struct ListImportView: View {
     }
 
     private func detail(_ list: SharedPlaylist, _ summary: Summary) -> String {
-        var parts = ["\(list.count) şarkı"]
-        if !list.items.isEmpty { parts.append("\(list.items.count) internetten") }
+        var parts = [L("{0} şarkı", list.count)]
+        if !list.items.isEmpty { parts.append(L("{0} internetten", list.items.count)) }
         if let locals = list.locals, !locals.isEmpty {
-            parts.append(summary.missing.isEmpty ? "\(locals.count) dosya bu cihazda bulundu" : "\(summary.paths.count)/\(locals.count) dosya bu cihazda")
+            parts.append(summary.missing.isEmpty ? L("{0} dosya bu cihazda bulundu", locals.count) : L("{0}/{1} dosya bu cihazda", summary.paths.count, locals.count))
         }
         return parts.joined(separator: " • ")
     }
@@ -386,7 +386,7 @@ struct ListImportView: View {
         }
         Haptics.success()
         lastImported = imported.count == 1 ? imported.first : nil
-        let names = imported.count == 1 ? "\"\(imported[0].name)\" kitaplığına eklendi." : "\(imported.count) liste kitaplığına eklendi."
-        resultMessage = notFound > 0 ? names + " \(notFound) şarkı bulunamadığı için eklenmedi." : names
+        let names = imported.count == 1 ? L("\"{0}\" kitaplığına eklendi.", imported[0].name) : L("{0} liste kitaplığına eklendi.", imported.count)
+        resultMessage = notFound > 0 ? names + L(" {0} şarkı bulunamadığı için eklenmedi.", notFound) : names
     }
 }

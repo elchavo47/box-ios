@@ -195,7 +195,7 @@ final class DownloadManager: ObservableObject {
     private func attemptDownload(_ result: SearchResult) async -> Bool {
         guard let token = auth?.token, let library else {
             retryable[result.id] = false
-            update(result.id, .failed("Oturum bulunamadı."))
+            update(result.id, .failed(L("Oturum bulunamadı.")))
             return false
         }
 
@@ -207,7 +207,7 @@ final class DownloadManager: ObservableObject {
             )
 
             guard let url = URL(string: link.url) else {
-                throw APIError(message: "Geçersiz indirme bağlantısı.", status: 0)
+                throw APIError(message: L("Geçersiz indirme bağlantısı."), status: 0)
             }
 
             let id = result.id
@@ -254,7 +254,7 @@ final class DownloadManager: ObservableObject {
             if pending.isEmpty && running <= 1 { Haptics.success() }
             return true
         } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? "İndirme başarısız oldu."
+            let message = (error as? LocalizedError)?.errorDescription ?? L("İndirme başarısız oldu.")
             let status = (error as? APIError)?.status ?? 0
             // Kota bitti / yetki yok / geçersiz video: tekrar denemenin anlamı yok.
             retryable[result.id] = !(status == 400 || status == 401 || status == 403 || status == 404 || message.contains("Bugünlük"))
@@ -375,7 +375,7 @@ final class FileDownloader: NSObject, URLSessionDownloadDelegate {
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
 
         guard status == 200 else {
-            var message = "İndirme sunucusu hata verdi (\(status))."
+            var message = L("İndirme sunucusu hata verdi ({0}).", status)
             if let data = try? Data(contentsOf: location),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let detail = json["detail"] as? String {
@@ -402,9 +402,9 @@ final class FileDownloader: NSObject, URLSessionDownloadDelegate {
         if let error {
             let message: String
             if (error as? URLError)?.code == .timedOut {
-                message = "İndirme zaman aşımına uğradı."
+                message = L("İndirme zaman aşımına uğradı.")
             } else {
-                message = "Bağlantı koptu, tekrar dene."
+                message = L("Bağlantı koptu, tekrar dene.")
             }
             resume(with: .failure(APIError(message: message, status: 0)))
         }

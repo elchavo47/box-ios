@@ -161,12 +161,20 @@ enum Formatters {
 
     static func longDuration(_ seconds: Double) -> String {
         let minutes = Int(seconds / 60)
-        if minutes < 60 { return "\(minutes) dk" }
-        return "\(minutes / 60) sa \(minutes % 60) dk"
+        if minutes < 60 { return L("{0} dk", minutes) }
+        return L("{0} sa {1} dk", minutes / 60, minutes % 60)
     }
 
     static func bytes(_ count: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+        count.formatted(.byteCount(style: .file).locale(Lang.shared.locale))
+    }
+
+    /// "3 dakika önce" (seçili dilde).
+    static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        f.locale = Lang.shared.locale
+        return f.localizedString(for: date, relativeTo: Date())
     }
 }
 

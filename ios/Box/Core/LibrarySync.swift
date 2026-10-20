@@ -317,7 +317,7 @@ extension LibraryStore {
             saveSyncState()
             syncStatus = .idle
         } catch {
-            syncStatus = .failed((error as? APIError)?.message ?? "Kitaplık eşitlenemedi.")
+            syncStatus = .failed((error as? APIError)?.message ?? L("Kitaplık eşitlenemedi."))
         }
     }
 

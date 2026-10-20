@@ -16,15 +16,15 @@ struct AccountView: View {
                 }
             }
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle("Hesap")
+            .navigationTitle(L("Hesap"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("Ayarlar")
+                        .accessibilityLabel(L("Ayarlar"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Bitti") { dismiss() }
+                    Button(L("Bitti")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }
@@ -60,31 +60,31 @@ private struct AuthFormView: View {
                     .padding(.top, 24)
 
                 VStack(spacing: 6) {
-                    Text(isRegister ? "Box'a katıl" : "Tekrar hoş geldin")
+                    Text(isRegister ? L("Box'a katıl") : L("Tekrar hoş geldin"))
                         .font(.system(size: 26, weight: .bold))
-                    Text(isRegister && !server.registrationOpen ? "Yeni kayıtlar şu an kapalı." : "Premium ayrıcalıkların hesabına bağlı kalsın.")
+                    Text(isRegister && !server.registrationOpen ? L("Yeni kayıtlar şu an kapalı.") : L("Premium ayrıcalıkların hesabına bağlı kalsın."))
                         .font(.subheadline)
                         .foregroundColor(.boxSecondaryText)
                         .multilineTextAlignment(.center)
                 }
 
                 HStack(spacing: 8) {
-                    Button("Giriş yap") { withAnimation { isRegister = false } }
+                    Button(L("Giriş yap")) { withAnimation { isRegister = false } }
                         .buttonStyle(ChipButtonStyle(selected: !isRegister))
-                    Button("Kayıt ol") { withAnimation { isRegister = true } }
+                    Button(L("Kayıt ol")) { withAnimation { isRegister = true } }
                         .buttonStyle(ChipButtonStyle(selected: isRegister))
                 }
 
                 VStack(spacing: 12) {
                     if isRegister {
-                        field("İsim", text: $name, icon: "person")
+                        field(L("İsim"), text: $name, icon: "person")
                             .textContentType(.name)
                             .focused($focused, equals: .name)
                             .submitLabel(.next)
                             .onSubmit { focused = .email }
                     }
 
-                    field("E-posta", text: $email, icon: "envelope")
+                    field(L("E-posta"), text: $email, icon: "envelope")
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -93,7 +93,7 @@ private struct AuthFormView: View {
                         .submitLabel(.next)
                         .onSubmit { focused = .password }
 
-                    secureField("Şifre" + (isRegister ? " (en az 8 karakter)" : ""), text: $password)
+                    secureField(L("Şifre") + (isRegister ? L(" (en az 8 karakter)") : ""), text: $password)
                         .textContentType(isRegister ? .newPassword : .password)
                         .focused($focused, equals: .password)
                         .submitLabel(.go)
@@ -113,7 +113,7 @@ private struct AuthFormView: View {
                     if auth.isWorking {
                         ProgressView().tint(.black)
                     } else {
-                        Text(isRegister ? "Hesap oluştur" : "Giriş yap")
+                        Text(isRegister ? L("Hesap oluştur") : L("Giriş yap"))
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -122,7 +122,7 @@ private struct AuthFormView: View {
 
                 HStack(spacing: 12) {
                     Rectangle().fill(Color.boxStroke).frame(height: 1)
-                    Text("veya").font(.footnote).foregroundColor(.boxSecondaryText)
+                    Text(L("veya")).font(.footnote).foregroundColor(.boxSecondaryText)
                     Rectangle().fill(Color.boxStroke).frame(height: 1)
                 }
 
@@ -178,11 +178,11 @@ private struct AuthFormView: View {
                     try await auth.signInWithApple(result)
                     Haptics.success()
                 } catch {
-                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple ile giriş yapılamadı."
+                    errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Apple ile giriş yapılamadı.")
                 }
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple ile giriş yapılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Apple ile giriş yapılamadı.")
         }
     }
 
@@ -199,7 +199,7 @@ private struct AuthFormView: View {
                 }
                 password = ""
             } catch {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bir hata oluştu."
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Bir hata oluştu.")
             }
         }
     }
@@ -243,10 +243,10 @@ private struct ProfileView: View {
             }
         } label: {
             HStack {
-                Label("Bildirimler", systemImage: "bell")
+                Label(L("Bildirimler"), systemImage: "bell")
                     .foregroundColor(.white)
                 Spacer()
-                Text(push.status == .authorized || push.status == .provisional ? "Açık" : push.status == .notDetermined ? "Aç" : "Kapalı")
+                Text(push.status == .authorized || push.status == .provisional ? L("Açık") : push.status == .notDetermined ? L("Aç") : L("Kapalı"))
                     .foregroundColor(push.status == .authorized || push.status == .provisional ? .accent : .boxSecondaryText)
             }
         }
@@ -261,11 +261,11 @@ private struct ProfileView: View {
                     try await auth.linkApple(result)
                     Haptics.success()
                 } catch {
-                    errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple bağlanamadı."
+                    errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Apple bağlanamadı.")
                 }
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Apple bağlanamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Apple bağlanamadı.")
         }
     }
 
@@ -277,19 +277,20 @@ private struct ProfileView: View {
                 try await auth.uploadAvatar(image)
                 Haptics.success()
             } catch {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Fotoğraf yüklenemedi."
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Fotoğraf yüklenemedi.")
             }
         }
     }
 
     private var syncFooter: String {
-        if case .failed(let message) = library.syncStatus { return message + " Değişikliklerin bu cihazda saklanıyor, bağlantı gelince gönderilir." }
+        if case .failed(let message) = library.syncStatus { return message + L(" Değişikliklerin bu cihazda saklanıyor, bağlantı gelince gönderilir.") }
         if let date = library.syncState.lastSync {
             let f = RelativeDateTimeFormatter()
             f.unitsStyle = .full
-            return "Listelerin ve beğenilerin hesabına kayıtlı; çıkış yapıp başka cihazdan girince de gelir. Son eşitleme: \(f.localizedString(for: date, relativeTo: Date()))."
+            f.locale = Lang.shared.locale
+            return L("Listelerin ve beğenilerin hesabına kayıtlı; çıkış yapıp başka cihazdan girince de gelir. Son eşitleme: {0}.", f.localizedString(for: date, relativeTo: Date()))
         }
-        return "Listelerin ve beğenilerin hesabına kaydedilir; çıkış yapıp başka cihazdan girince de gelir."
+        return L("Listelerin ve beğenilerin hesabına kaydedilir; çıkış yapıp başka cihazdan girince de gelir.")
     }
 
     var body: some View {
@@ -311,7 +312,7 @@ private struct ProfileView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Profil fotoğrafını değiştir")
+                    .accessibilityLabel(L("Profil fotoğrafını değiştir"))
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(user.name)
@@ -330,7 +331,7 @@ private struct ProfileView: View {
                             do { try await auth.removeAvatar() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
                         }
                     } label: {
-                        Label("Profil fotoğrafını kaldır", systemImage: "person.crop.circle.badge.minus")
+                        Label(L("Profil fotoğrafını kaldır"), systemImage: "person.crop.circle.badge.minus")
                     }
                 }
             }
@@ -340,7 +341,7 @@ private struct ProfileView: View {
                 NavigationLink {
                     SettingsView()
                 } label: {
-                    Label("Ayarlar", systemImage: "gearshape")
+                    Label(L("Ayarlar"), systemImage: "gearshape")
                 }
                 notificationsRow
             }
@@ -349,13 +350,13 @@ private struct ProfileView: View {
             Section {
                 if user.appleLinked == true {
                     HStack {
-                        Label("Apple ile giriş", systemImage: "apple.logo")
+                        Label(L("Apple ile giriş"), systemImage: "apple.logo")
                         Spacer()
-                        Text("Bağlı").foregroundColor(.accent)
+                        Text(L("Bağlı")).foregroundColor(.accent)
                     }
                     if user.hasPassword != false {
                         Button(role: .destructive) { showUnlink = true } label: {
-                            Label("Apple bağlantısını kaldır", systemImage: "link.badge.plus")
+                            Label(L("Apple bağlantısını kaldır"), systemImage: "link.badge.plus")
                         }
                     }
                 } else {
@@ -372,32 +373,32 @@ private struct ProfileView: View {
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                 }
             } header: {
-                Text("Giriş yöntemi")
+                Text(L("Giriş yöntemi"))
             } footer: {
                 Text(user.appleLinked == true
-                     ? (user.hasPassword == false ? "Bu hesap Apple ile açıldı." : "E-posta ve şifrenle ya da Apple ile giriş yapabilirsin.")
-                     : "Bağlarsan bir dahaki sefere şifre yazmadan Apple ile girersin.")
+                     ? (user.hasPassword == false ? L("Bu hesap Apple ile açıldı.") : L("E-posta ve şifrenle ya da Apple ile giriş yapabilirsin."))
+                     : L("Bağlarsan bir dahaki sefere şifre yazmadan Apple ile girersin."))
             }
             .listRowBackground(Color.boxSurface2)
 
             if user.premium, let quota = auth.quota {
-                Section("Bugünkü kullanım") {
-                    stat("İndirme", quota.downloadsLimit > 0 ? "\(quota.downloadsUsed) / \(quota.downloadsLimit)" : "\(quota.downloadsUsed)", icon: "arrow.down.circle")
-                    stat("Arama", quota.searchesLimit > 0 ? "\(quota.searchesUsed) / \(quota.searchesLimit)" : "\(quota.searchesUsed)", icon: "magnifyingglass")
+                Section(L("Bugünkü kullanım")) {
+                    stat(L("İndirme"), quota.downloadsLimit > 0 ? "\(quota.downloadsUsed) / \(quota.downloadsLimit)" : "\(quota.downloadsUsed)", icon: "arrow.down.circle")
+                    stat(L("Arama"), quota.searchesLimit > 0 ? "\(quota.searchesUsed) / \(quota.searchesLimit)" : "\(quota.searchesUsed)", icon: "magnifyingglass")
                 }
                 .listRowBackground(Color.boxSurface2)
             }
 
             Section {
-                stat("Şarkı", "\(library.tracks.count)", icon: "music.note")
-                stat("Çalma listesi", "\(library.playlists.count)", icon: "music.note.list")
-                stat("Beğenilen", "\(library.favorites.count)", icon: "heart.fill")
-                stat("Kullanılan alan", Formatters.bytes(library.totalSize), icon: "internaldrive")
+                stat(L("Şarkı"), "\(library.tracks.count)", icon: "music.note")
+                stat(L("Çalma listesi"), "\(library.playlists.count)", icon: "music.note.list")
+                stat(L("Beğenilen"), "\(library.favorites.count)", icon: "heart.fill")
+                stat(L("Kullanılan alan"), Formatters.bytes(library.totalSize), icon: "internaldrive")
                 Button {
                     library.requestSync(immediately: true)
                 } label: {
                     HStack {
-                        Label("Hesaba kaydet", systemImage: "arrow.triangle.2.circlepath.icloud")
+                        Label(L("Hesaba kaydet"), systemImage: "arrow.triangle.2.circlepath.icloud")
                         Spacer()
                         switch library.syncStatus {
                         case .syncing: ProgressView().tint(.white)
@@ -407,7 +408,7 @@ private struct ProfileView: View {
                     }
                 }
             } header: {
-                Text("Kitaplığın")
+                Text(L("Kitaplığın"))
             } footer: {
                 Text(syncFooter)
             }
@@ -416,7 +417,7 @@ private struct ProfileView: View {
             if user.premium {
                 Section {
                     HStack {
-                        Label("Dinleme önbelleği", systemImage: "icloud.and.arrow.down")
+                        Label(L("Dinleme önbelleği"), systemImage: "icloud.and.arrow.down")
                         Spacer()
                         Text(Formatters.bytes(cacheSize)).foregroundColor(.boxSecondaryText)
                     }
@@ -424,46 +425,46 @@ private struct ProfileView: View {
                         stream.clear()
                         cacheSize = 0
                     } label: {
-                        Label("Önbelleği temizle", systemImage: "trash")
+                        Label(L("Önbelleği temizle"), systemImage: "trash")
                     }
                     .disabled(cacheSize == 0)
                     if let error = player.lastStreamError {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Son akış hatası").font(.footnote.weight(.semibold))
+                            Text(L("Son akış hatası")).font(.footnote.weight(.semibold))
                             Text(error).font(.caption).foregroundColor(.boxSecondaryText).textSelection(.enabled)
                         }
                     }
                 } footer: {
-                    Text("İndirmeden dinlediğin şarkılar tekrar beklememen için burada tutulur, kitaplıkta görünmez. Yer azalınca en eskileri kendiliğinden silinir.")
+                    Text(L("İndirmeden dinlediğin şarkılar tekrar beklememen için burada tutulur, kitaplıkta görünmez. Yer azalınca en eskileri kendiliğinden silinir."))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
 
-            Section("Hesap") {
+            Section(L("Hesap")) {
                 Button {
                     newName = user.name
                     showRename = true
                 } label: {
-                    Label("İsmi değiştir", systemImage: "pencil")
+                    Label(L("İsmi değiştir"), systemImage: "pencil")
                 }
 
                 NavigationLink {
                     DevicesView()
                 } label: {
-                    Label("Cihazlarım", systemImage: "iphone.gen3")
+                    Label(L("Cihazlarım"), systemImage: "iphone.gen3")
                 }
 
                 Button {
                     showLogoutConfirm = true
                 } label: {
-                    Label("Çıkış yap", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label(L("Çıkış yap"), systemImage: "rectangle.portrait.and.arrow.right")
                 }
 
                 Button(role: .destructive) {
                     deletePassword = ""
                     showDelete = true
                 } label: {
-                    Label("Hesabı sil", systemImage: "trash")
+                    Label(L("Hesabı sil"), systemImage: "trash")
                 }
             }
             .listRowBackground(Color.boxSurface2)
@@ -473,7 +474,7 @@ private struct ProfileView: View {
                     Spacer()
                     VStack(spacing: 4) {
                         BoxWordmark(markSize: 18)
-                        Text("Sürüm \(AppConfig.appVersion) • AYD Works")
+                        Text(L("Sürüm {0} • AYD Works", AppConfig.appVersion))
                             .font(.caption2)
                             .foregroundColor(.boxSecondaryText)
                     }
@@ -489,13 +490,13 @@ private struct ProfileView: View {
                 uploading = true
                 defer { uploading = false; photoItem = nil }
                 guard let data = try? await item.loadTransferable(type: Data.self) else {
-                    errorMessage = "Fotoğraf açılamadı."
+                    errorMessage = L("Fotoğraf açılamadı.")
                     return
                 }
                 // Büyük fotoğrafı belleği yormadan küçült, sonra ayarlama ekranını aç.
                 let image = await Task.detached(priority: .userInitiated) { ImageDownsampler.image(from: data, maxPixel: 2048) }.value
                 guard let image else {
-                    errorMessage = "Fotoğraf açılamadı."
+                    errorMessage = L("Fotoğraf açılamadı.")
                     return
                 }
                 cropping = CropItem(image: image)
@@ -509,9 +510,9 @@ private struct ProfileView: View {
         }
         .refreshable { await auth.refresh() }
         .task { cacheSize = stream.totalSize }
-        .alert("İsmini değiştir", isPresented: $showRename) {
-            TextField("İsim", text: $newName)
-            Button("Kaydet") {
+        .alert(L("İsmini değiştir"), isPresented: $showRename) {
+            TextField(L("İsim"), text: $newName)
+            Button(L("Kaydet")) {
                 Task {
                     do {
                         try await auth.updateName(newName.trimmingCharacters(in: .whitespaces))
@@ -520,27 +521,27 @@ private struct ProfileView: View {
                     }
                 }
             }
-            Button("Vazgeç", role: .cancel) {}
+            Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog("Çıkış yapılsın mı?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
-            Button("Çıkış yap", role: .destructive) {
+        .confirmationDialog(L("Çıkış yapılsın mı?"), isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button(L("Çıkış yap"), role: .destructive) {
                 Task { await auth.logout() }
             }
         }
-        .confirmationDialog("Apple bağlantısı kaldırılsın mı?", isPresented: $showUnlink, titleVisibility: .visible) {
-            Button("Kaldır", role: .destructive) {
+        .confirmationDialog(L("Apple bağlantısı kaldırılsın mı?"), isPresented: $showUnlink, titleVisibility: .visible) {
+            Button(L("Kaldır"), role: .destructive) {
                 Task {
                     do { try await auth.unlinkApple() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
                 }
             }
         } message: {
-            Text("Sonra yalnızca e-posta ve şifrenle giriş yaparsın.")
+            Text(L("Sonra yalnızca e-posta ve şifrenle giriş yaparsın."))
         }
-        .alert("Hesabı sil", isPresented: $showDelete) {
+        .alert(L("Hesabı sil"), isPresented: $showDelete) {
             if user.hasPassword != false {
-                SecureField("Şifren", text: $deletePassword)
+                SecureField(L("Şifren"), text: $deletePassword)
             }
-            Button("Kalıcı olarak sil", role: .destructive) {
+            Button(L("Kalıcı olarak sil"), role: .destructive) {
                 Task {
                     do {
                         try await auth.deleteAccount(password: deletePassword)
@@ -549,15 +550,15 @@ private struct ProfileView: View {
                     }
                 }
             }
-            Button("Vazgeç", role: .cancel) {}
+            Button(L("Vazgeç"), role: .cancel) {}
         } message: {
-            Text("Hesabın ve sunucudaki bilgilerin silinir. Cihazındaki müzik dosyaları silinmez.")
+            Text(L("Hesabın ve sunucudaki bilgilerin silinir. Cihazındaki müzik dosyaları silinmez."))
         }
-        .alert("Hata", isPresented: Binding(
+        .alert(L("Hata"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("Tamam", role: .cancel) {}
+            Button(L("Tamam"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -576,7 +577,7 @@ private struct ProfileView: View {
             .padding(.vertical, 3)
             .background(Capsule().fill(Color.accent))
         } else {
-            Text("Ücretsiz plan")
+            Text(L("Ücretsiz plan"))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.boxSecondaryText)
                 .padding(.horizontal, 8)
@@ -586,11 +587,11 @@ private struct ProfileView: View {
     }
 
     private var premiumText: String {
-        guard let until = user.premiumUntilDate else { return "PREMIUM" }
+        guard let until = user.premiumUntilDate else { return L("PREMIUM") }
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "tr_TR")
-        formatter.dateFormat = "d MMM yyyy"
-        return "PREMIUM • \(formatter.string(from: until))"
+        formatter.locale = Lang.shared.locale
+        formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
+        return L("PREMIUM • {0}", formatter.string(from: until))
     }
 
     private func stat(_ title: String, _ value: String, icon: String) -> some View {

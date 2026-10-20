@@ -68,7 +68,7 @@ enum FileService {
         let cleaned = name.components(separatedBy: invalid).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmed = String(cleaned.prefix(120))
-        return trimmed.isEmpty ? "Adsız" : trimmed
+        return trimmed.isEmpty ? L("Adsız") : trimmed
     }
 
     static func uniqueURL(for fileName: String, in folder: URL) -> URL {

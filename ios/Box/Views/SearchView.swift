@@ -110,14 +110,14 @@ struct SearchView: View {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.white)
                     }
-                    .accessibilityLabel("Geri")
+                    .accessibilityLabel(L("Geri"))
                 } else {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.boxSecondaryText)
                 }
 
-                TextField(auth.isPremium ? "Şarkı, sanatçı ara" : "Kitaplığında ara", text: $query)
+                TextField(auth.isPremium ? L("Şarkı, sanatçı ara") : L("Kitaplığında ara"), text: $query)
                     .focused($focused)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -136,7 +136,7 @@ struct SearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.boxSecondaryText)
                     }
-                    .accessibilityLabel("Temizle")
+                    .accessibilityLabel(L("Temizle"))
                 }
             }
             .font(.system(size: 17))
@@ -190,17 +190,17 @@ struct SearchView: View {
         OfflineBanner().padding(.bottom, 12)
         if auth.isPremium && !downloads.sortedItems.isEmpty {
             HStack {
-                Text("İndirmeler")
+                Text(L("İndirmeler"))
                     .font(.system(size: 20, weight: .bold))
                 Spacer()
                 if downloads.failedCount > 0 {
-                    Button("Tekrar dene (\(downloads.failedCount))") { downloads.retryFailed() }
+                    Button(L("Tekrar dene ({0})", downloads.failedCount)) { downloads.retryFailed() }
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.orange)
                         .padding(.trailing, 10)
                 }
                 if downloads.sortedItems.contains(where: { !$0.state.isActive }) {
-                    Button("Temizle") { downloads.clearFinished() }
+                    Button(L("Temizle")) { downloads.clearFinished() }
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.boxSecondaryText)
                 }
@@ -226,7 +226,7 @@ struct SearchView: View {
         }
 
         if auth.isPremium && !history.results.isEmpty {
-            Text("Son aramalar")
+            Text(L("Son aramalar"))
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.boxSecondaryText)
                 .padding(.horizontal, 16)
@@ -286,7 +286,7 @@ struct SearchView: View {
                         .foregroundColor(.white.opacity(0.8))
                         .frame(width: 40, height: 44)
                 }
-                .accessibilityLabel("Aramaya taşı")
+                .accessibilityLabel(L("Aramaya taşı"))
                 Button {
                     withAnimation { history.remove(query: item) }
                 } label: {
@@ -295,7 +295,7 @@ struct SearchView: View {
                         .foregroundColor(.white.opacity(0.5))
                         .frame(width: 36, height: 44)
                 }
-                .accessibilityLabel("Geçmişten sil")
+                .accessibilityLabel(L("Geçmişten sil"))
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
@@ -306,21 +306,21 @@ struct SearchView: View {
                 submit(item)
             }
             .contextMenu {
-                Button(role: .destructive) { history.remove(query: item) } label: { Label("Geçmişten sil", systemImage: "trash") }
+                Button(role: .destructive) { history.remove(query: item) } label: { Label(L("Geçmişten sil"), systemImage: "trash") }
             }
         }
 
         if history.queries.isEmpty && history.results.isEmpty && downloads.sortedItems.isEmpty {
             EmptyStateView(
                 icon: auth.isPremium ? "magnifyingglass" : "music.note.list",
-                title: auth.isPremium ? "Ne dinlemek istersin?" : "Kitaplığında ara",
+                title: auth.isPremium ? L("Ne dinlemek istersin?") : L("Kitaplığında ara"),
                 message: auth.isPremium
-                    ? "Şarkı ya da sanatçı ara; dokun ve hemen dinle, istersen indir."
-                    : "Şarkı, sanatçı ya da albüm adı yaz."
+                    ? L("Şarkı ya da sanatçı ara; dokun ve hemen dinle, istersen indir.")
+                    : L("Şarkı, sanatçı ya da albüm adı yaz.")
             )
             .padding(.top, 40)
         } else if !history.queries.isEmpty {
-            Button("Arama geçmişini temizle") { history.clear() }
+            Button(L("Arama geçmişini temizle")) { history.clear() }
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.boxSecondaryText)
                 .frame(maxWidth: .infinity)
@@ -343,7 +343,7 @@ struct SearchView: View {
     @ViewBuilder
     private var quotaLine: some View {
         if let quota = auth.quota, let left = quota.downloadsLeft {
-            Text("Bugün \(left) indirme hakkın kaldı")
+            Text(L("Bugün {0} indirme hakkın kaldı", left))
                 .font(.footnote)
                 .foregroundColor(.boxSecondaryText)
                 .padding(.horizontal, 16)
@@ -356,11 +356,11 @@ struct SearchView: View {
         if isSearching {
             ForEach(0..<6, id: \.self) { _ in SkeletonRow().padding(.horizontal, 16).padding(.vertical, 6) }
         } else if let errorMessage {
-            EmptyStateView(icon: "exclamationmark.triangle", title: "Bir sorun oldu", message: errorMessage, actionTitle: "Tekrar dene") {
+            EmptyStateView(icon: "exclamationmark.triangle", title: L("Bir sorun oldu"), message: errorMessage, actionTitle: L("Tekrar dene")) {
                 submit(submitted)
             }
         } else if top == nil && items.isEmpty && results.isEmpty {
-            EmptyStateView(icon: "magnifyingglass", title: "Sonuç yok", message: "Başka bir şey aramayı dene.")
+            EmptyStateView(icon: "magnifyingglass", title: L("Sonuç yok"), message: L("Başka bir şey aramayı dene."))
         } else if top != nil || !items.isEmpty {
             quotaLine
             if let top {
@@ -370,7 +370,7 @@ struct SearchView: View {
             }
             let others = items.filter { item in !(top?.children ?? []).contains(where: { $0.id == item.id }) }
             if !others.isEmpty {
-                Text(top == nil ? "Sonuçlar" : "Diğer sonuçlar")
+                Text(top == nil ? L("Sonuçlar") : L("Diğer sonuçlar"))
                     .font(.system(size: 21, weight: .bold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 16)
@@ -399,13 +399,13 @@ struct SearchView: View {
         if isSearching {
             ForEach(0..<6, id: \.self) { _ in SkeletonRow().padding(.horizontal, 16).padding(.vertical, 6) }
         } else if results.isEmpty {
-            EmptyStateView(icon: "music.note", title: "Şarkı bulunamadı", message: errorMessage ?? "Başka bir şey aramayı dene.")
+            EmptyStateView(icon: "music.note", title: L("Şarkı bulunamadı"), message: errorMessage ?? L("Başka bir şey aramayı dene."))
         } else {
             let songs = results.map(MusicItem.song)
             HStack(spacing: 10) {
-                Button { play(songs, nil, false) } label: { Label("Hepsini dinle", systemImage: "play.fill") }
+                Button { play(songs, nil, false) } label: { Label(L("Hepsini dinle"), systemImage: "play.fill") }
                     .buttonStyle(PrimaryButtonStyle())
-                Button { play(songs, nil, true) } label: { Label("Karıştır", systemImage: "shuffle") }
+                Button { play(songs, nil, true) } label: { Label(L("Karıştır"), systemImage: "shuffle") }
                     .buttonStyle(OutlineButtonStyle())
             }
             .padding(.horizontal, 16)
@@ -431,12 +431,12 @@ struct SearchView: View {
                     .padding(.vertical, 6)
             }
         } else if let kindError {
-            EmptyStateView(icon: "exclamationmark.triangle", title: "Yüklenemedi", message: kindError, actionTitle: "Tekrar dene") {
+            EmptyStateView(icon: "exclamationmark.triangle", title: L("Yüklenemedi"), message: kindError, actionTitle: L("Tekrar dene")) {
                 kindItems[kind] = nil
                 loadKind(kind)
             }
         } else if kindItems[kind] != nil {
-            EmptyStateView(icon: "magnifyingglass", title: "Sonuç yok", message: "Bu türde sonuç bulunamadı.")
+            EmptyStateView(icon: "magnifyingglass", title: L("Sonuç yok"), message: L("Bu türde sonuç bulunamadı."))
         }
     }
 
@@ -444,7 +444,7 @@ struct SearchView: View {
     private var localList: some View {
         let tracks = localResults
         if tracks.isEmpty {
-            EmptyStateView(icon: "music.note", title: "Kitaplığında yok", message: auth.isPremium ? "YouTube sekmesinde aramayı dene." : "Başka bir şey aramayı dene.")
+            EmptyStateView(icon: "music.note", title: L("Kitaplığında yok"), message: auth.isPremium ? L("YouTube sekmesinde aramayı dene.") : L("Başka bir şey aramayı dene."))
         }
         ForEach(tracks) { track in
             TrackRow(track: track)
@@ -494,7 +494,7 @@ struct SearchView: View {
                 topArtist = nil
                 top = nil
                 items = []
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama yapılamadı."
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("Arama yapılamadı.")
                 if (error as? APIError)?.status == 403 { await auth.refresh() }
             }
         }
@@ -557,7 +557,7 @@ struct SearchView: View {
                 kindItems[kind] = response.items ?? response.results.map(MusicItem.song)
             } catch {
                 guard text == submitted else { return }
-                kindError = (error as? LocalizedError)?.errorDescription ?? "Sonuçlar alınamadı."
+                kindError = (error as? LocalizedError)?.errorDescription ?? L("Sonuçlar alınamadı.")
             }
         }
     }
@@ -646,11 +646,11 @@ private struct DownloadRow: View {
 
     private var statusText: String {
         switch item.state {
-        case .preparing: return "Hazırlanıyor… (biraz sürebilir)"
-        case .downloading: return "İndiriliyor"
-        case .processing: return "Kitaplığa ekleniyor"
-        case .done: return "Kitaplıkta • çalmak için dokun"
-        case .failed(let message): return message + " • tekrar denemek için dokun"
+        case .preparing: return L("Hazırlanıyor… (biraz sürebilir)")
+        case .downloading: return L("İndiriliyor")
+        case .processing: return L("Kitaplığa ekleniyor")
+        case .done: return L("Kitaplıkta • çalmak için dokun")
+        case .failed(let message): return message + L(" • tekrar denemek için dokun")
         }
     }
 

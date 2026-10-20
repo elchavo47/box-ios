@@ -44,7 +44,7 @@ struct Track: Identifiable, Hashable {
     }
 
     var displayArtist: String {
-        artist.isEmpty ? "Bilinmeyen sanatçı" : artist
+        artist.isEmpty ? L("Bilinmeyen sanatçı") : artist
     }
 }
 

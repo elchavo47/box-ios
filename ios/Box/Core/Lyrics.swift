@@ -96,7 +96,7 @@ final class LyricsService: ObservableObject {
             return Lyrics(lines: lines, synced: false)
         }
         if response.instrumental == true {
-            return Lyrics(lines: [LyricLine(id: 0, time: nil, text: "♪ Enstrümantal ♪")], synced: false)
+            return Lyrics(lines: [LyricLine(id: 0, time: nil, text: L("♪ Enstrümantal ♪"))], synced: false)
         }
         return nil
     }

@@ -8,9 +8,9 @@ struct OnboardingView: View {
     @State private var page = 0
 
     private let pages: [(icon: String, title: String, text: String)] = [
-        ("folder.badge.plus", "Müziğini getir", "Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamada \"Box ile aç\" de. Klasörlerin olduğu gibi kalır."),
-        ("music.note.list", "Kitaplığını düzenle", "Çalma listeleri oluştur, sevdiklerini beğen, kapakları değiştir. Akıllı listeler en çok dinlediklerini kendiliğinden toplar."),
-        ("moon.zzz.fill", "Sana göre", "Uyku zamanlayıcısı, şarkı sözleri, radyo, ekolayzer ve dinlediklerine göre öneriler. Hepsi Ayarlar'da."),
+        ("folder.badge.plus", L("Müziğini getir"), L("Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamada \"Box ile aç\" de. Klasörlerin olduğu gibi kalır.")),
+        ("music.note.list", L("Kitaplığını düzenle"), L("Çalma listeleri oluştur, sevdiklerini beğen, kapakları değiştir. Akıllı listeler en çok dinlediklerini kendiliğinden toplar.")),
+        ("moon.zzz.fill", L("Sana göre"), L("Uyku zamanlayıcısı, şarkı sözleri, radyo, ekolayzer ve dinlediklerine göre öneriler. Hepsi Ayarlar'da.")),
     ]
 
     var body: some View {
@@ -23,7 +23,7 @@ struct OnboardingView: View {
                 HStack {
                     BoxWordmark(markSize: 24)
                     Spacer()
-                    Button("Geç") { finish() }
+                    Button(L("Geç")) { finish() }
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.boxSecondaryText)
                 }
@@ -66,7 +66,7 @@ struct OnboardingView: View {
                 .animation(.spring(response: 0.3), value: page)
                 .padding(.bottom, 22)
 
-                Button(page == pages.count - 1 ? "Başla" : "Devam") {
+                Button(page == pages.count - 1 ? L("Başla") : L("Devam")) {
                     if page < pages.count - 1 {
                         withAnimation { page += 1 }
                     } else {
@@ -125,8 +125,8 @@ struct LyricsSheet: View {
                     Spacer()
                     VStack(spacing: 10) {
                         Image(systemName: "text.quote").font(.system(size: 38)).foregroundColor(.white.opacity(0.6))
-                        Text("Bu şarkının sözleri bulunamadı").font(.headline)
-                        Text("Sözler lrclib.net'ten geliyor; az bilinen şarkılarda olmayabilir.")
+                        Text(L("Bu şarkının sözleri bulunamadı")).font(.headline)
+                        Text(L("Sözler lrclib.net'ten geliyor; az bilinen şarkılarda olmayabilir."))
                             .font(.subheadline).foregroundColor(.white.opacity(0.6)).multilineTextAlignment(.center)
                     }
                     .padding(32)
@@ -172,7 +172,7 @@ private struct LyricsBody: View {
                                 if let time = line.time { onSeek(time) }
                             }
                     }
-                    Text(lyrics.synced ? "Sözler: lrclib.net" : "Sözler: lrclib.net • senkron değil")
+                    Text(lyrics.synced ? L("Sözler: lrclib.net") : L("Sözler: lrclib.net • senkron değil"))
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.5))
                         .padding(.top, 20)
@@ -198,8 +198,8 @@ struct OfflineBanner: View {
             HStack(spacing: 10) {
                 Image(systemName: "wifi.slash")
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("İnternet yok").font(.system(size: 14, weight: .semibold))
-                    Text("İndirdiklerin ve önbellektekiler çalmaya devam eder.").font(.system(size: 12)).opacity(0.75)
+                    Text(L("İnternet yok")).font(.system(size: 14, weight: .semibold))
+                    Text(L("İndirdiklerin ve önbellektekiler çalmaya devam eder.")).font(.system(size: 12)).opacity(0.75)
                 }
                 Spacer(minLength: 0)
             }
@@ -550,7 +550,7 @@ struct HeartButton: View {
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
-        .accessibilityLabel(liked ? "Beğenilerden çıkar" : "Beğen")
+        .accessibilityLabel(liked ? L("Beğenilerden çıkar") : L("Beğen"))
     }
 }
 

@@ -49,35 +49,35 @@ struct TagEditorView: View {
                     .listRowBackground(Color.clear)
                 }
 
-                Section("Bilgiler") {
-                    TextField("Şarkı adı", text: $title)
-                    TextField("Sanatçı", text: $artist)
-                    TextField("Albüm", text: $album)
+                Section(L("Bilgiler")) {
+                    TextField(L("Şarkı adı"), text: $title)
+                    TextField(L("Sanatçı"), text: $artist)
+                    TextField(L("Albüm"), text: $album)
                 }
                 .listRowBackground(Color.boxSurface2)
 
                 Section {
-                    Button("Kapağı kaldır", role: .destructive) {
+                    Button(L("Kapağı kaldır"), role: .destructive) {
                         cover = nil
                         removeCover = true
                     }
-                    Button("Orijinal bilgilere dön") {
+                    Button(L("Orijinal bilgilere dön")) {
                         library.resetTags(of: track)
                         dismiss()
                     }
                 } footer: {
-                    Text("Değişiklikler yalnızca Box'ta görünür; dosyanın kendisine dokunulmaz.")
+                    Text(L("Değişiklikler yalnızca Box'ta görünür; dosyanın kendisine dokunulmaz."))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
             .scrollContentBackground(.hidden)
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle("Bilgileri düzenle")
+            .navigationTitle(L("Bilgileri düzenle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Vazgeç") { dismiss() } }
+                ToolbarItem(placement: .navigationBarLeading) { Button(L("Vazgeç")) { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Kaydet") {
+                    Button(L("Kaydet")) {
                         library.editTags(of: track, title: title, artist: artist, album: album, cover: cover, removeCover: removeCover)
                         Haptics.success()
                         dismiss()
@@ -128,27 +128,27 @@ struct SummaryView: View {
     }
 
     private var topArtists: [(String, Double)] {
-        library.stats.byArtist.filter { $0.key != "Bilinmeyen sanatçı" }.sorted { $0.value > $1.value }.prefix(5).map { ($0.key, $0.value) }
+        library.stats.byArtist.filter { $0.key != L("Bilinmeyen sanatçı") }.sorted { $0.value > $1.value }.prefix(5).map { ($0.key, $0.value) }
     }
 
     private var topTracks: [(String, String, Double)] {
         library.stats.byTrack.sorted { $0.value > $1.value }.prefix(5).map { item in
             let track = library.resolve(path: item.key)
-            return (track?.title ?? library.stats.titles[item.key] ?? "Şarkı", track?.displayArtist ?? "", item.value)
+            return (track?.title ?? library.stats.titles[item.key] ?? L("Şarkı"), track?.displayArtist ?? "", item.value)
         }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ChipBar(items: Range.allCases, selection: $range) { $0.rawValue }
+                ChipBar(items: Range.allCases, selection: $range) { L($0.rawValue) }
                     .padding(.horizontal, -16)
 
                 card
                     .padding(.top, 4)
 
                 if totalSeconds < 60 {
-                    Text("Box'ta müzik dinledikçe burası dolacak. İstatistikler sadece bu telefonda tutulur.")
+                    Text(L("Box'ta müzik dinledikçe burası dolacak. İstatistikler sadece bu telefonda tutulur."))
                         .font(.subheadline)
                         .foregroundColor(.boxSecondaryText)
                 }
@@ -158,7 +158,7 @@ struct SummaryView: View {
                     renderer.scale = 3
                     shareImage = renderer.uiImage
                 } label: {
-                    Label("Kartı paylaş", systemImage: "square.and.arrow.up")
+                    Label(L("Kartı paylaş"), systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(totalSeconds < 60)
@@ -166,7 +166,7 @@ struct SummaryView: View {
             .padding(16)
         }
         .boxScreenBackground()
-        .navigationTitle("Box Özeti")
+        .navigationTitle(L("Box Özeti"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: Binding(get: { shareImage.map(ShareImage.init) }, set: { shareImage = $0?.image })) { item in
             ShareSheet(items: [item.image])
@@ -178,25 +178,25 @@ struct SummaryView: View {
             HStack {
                 BoxWordmark(markSize: 20)
                 Spacer()
-                Text(range.rawValue.uppercased()).font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.black.opacity(0.6))
+                Text(L(range.rawValue).uppercased(with: Lang.shared.locale)).font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.black.opacity(0.6))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(Int(totalSeconds / 60))")
                     .font(.system(size: 56, weight: .heavy))
                     .foregroundColor(.black)
-                Text("dakika müzik • \(activeDays) gün")
+                Text(L("dakika müzik • {0} gün", activeDays))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.black.opacity(0.7))
             }
             if !topArtists.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("EN ÇOK DİNLEDİĞİN SANATÇILAR").font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(.black.opacity(0.55))
+                    Text(L("EN ÇOK DİNLEDİĞİN SANATÇILAR")).font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(.black.opacity(0.55))
                     ForEach(Array(topArtists.enumerated()), id: \.offset) { index, item in
                         HStack {
                             Text("\(index + 1)").font(.system(size: 15, weight: .heavy)).frame(width: 20, alignment: .leading)
                             Text(item.0).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                             Spacer()
-                            Text("\(Int(item.1 / 60)) dk").font(.system(size: 13, weight: .medium)).opacity(0.6)
+                            Text(L("{0} dk", Int(item.1 / 60))).font(.system(size: 13, weight: .medium)).opacity(0.6)
                         }
                         .foregroundColor(.black)
                     }
@@ -204,7 +204,7 @@ struct SummaryView: View {
             }
             if !topTracks.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("EN ÇOK DİNLEDİĞİN ŞARKILAR").font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(.black.opacity(0.55))
+                    Text(L("EN ÇOK DİNLEDİĞİN ŞARKILAR")).font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(.black.opacity(0.55))
                     ForEach(Array(topTracks.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline) {
                             Text("\(index + 1)").font(.system(size: 15, weight: .heavy)).frame(width: 20, alignment: .leading)

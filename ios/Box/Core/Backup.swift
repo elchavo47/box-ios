@@ -59,7 +59,7 @@ enum SharedListFile {
     }
 
     static func fileName(for lists: [SharedPlaylist]) -> String {
-        lists.count == 1 ? lists[0].name : "Box listeleri (\(lists.count))"
+        lists.count == 1 ? lists[0].name : L("Box listeleri ({0})", lists.count)
     }
 
     /// Paylaşım ekranı için geçici dosya.

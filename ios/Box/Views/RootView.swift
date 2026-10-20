@@ -66,12 +66,12 @@ struct RootView: View {
 
 
             Color.clear
-                .alert("Şarkı açılamadı", isPresented: Binding(
+                .alert(L("Şarkı açılamadı"), isPresented: Binding(
                     get: { player.errorMessage != nil && !player.showFullPlayer },
                     set: { if !$0 { player.errorMessage = nil } }
                 )) {
-                    Button("Sonrakine geç") { player.errorMessage = nil; player.next() }
-                    Button("Tamam", role: .cancel) { player.errorMessage = nil }
+                    Button(L("Sonrakine geç")) { player.errorMessage = nil; player.next() }
+                    Button(L("Tamam"), role: .cancel) { player.errorMessage = nil }
                 } message: {
                     Text(player.errorMessage ?? "")
                 }
@@ -163,10 +163,10 @@ struct BoxDeck: View {
     }
 
     private let items: [Item] = [
-        Item(tab: .home, title: "Ana Sayfa", icon: "house", selectedIcon: "house.fill"),
-        Item(tab: .search, title: "Ara", icon: "magnifyingglass", selectedIcon: "magnifyingglass"),
-        Item(tab: .library, title: "Kitaplık", icon: "square.stack", selectedIcon: "square.stack.fill"),
-        Item(tab: .files, title: "Dosyalar", icon: "folder", selectedIcon: "folder.fill"),
+        Item(tab: .home, title: L("Ana Sayfa"), icon: "house", selectedIcon: "house.fill"),
+        Item(tab: .search, title: L("Ara"), icon: "magnifyingglass", selectedIcon: "magnifyingglass"),
+        Item(tab: .library, title: L("Kitaplık"), icon: "square.stack", selectedIcon: "square.stack.fill"),
+        Item(tab: .files, title: L("Dosyalar"), icon: "folder", selectedIcon: "folder.fill"),
     ]
 
     var body: some View {
@@ -316,7 +316,7 @@ struct AccountButton: View {
                 }
             }
         }
-        .accessibilityLabel("Hesap")
+        .accessibilityLabel(L("Hesap"))
     }
 }
 
@@ -326,9 +326,9 @@ private struct UpdateRequiredView: View {
             Color.boxBackground.ignoresSafeArea()
             VStack(spacing: 18) {
                 BoxMark(size: 72)
-                Text("Yeni sürüm hazır")
+                Text(L("Yeni sürüm hazır"))
                     .font(.title2.weight(.bold))
-                Text("Box'u kullanmaya devam etmek için uygulamayı TestFlight'tan güncelle.")
+                Text(L("Box'u kullanmaya devam etmek için uygulamayı TestFlight'tan güncelle."))
                     .font(.subheadline)
                     .foregroundColor(.boxSecondaryText)
                     .multilineTextAlignment(.center)
@@ -336,7 +336,7 @@ private struct UpdateRequiredView: View {
                 Button {
                     if let url = URL(string: "itms-beta://") { UIApplication.shared.open(url) }
                 } label: {
-                    Text("TestFlight'ı aç")
+                    Text(L("TestFlight'ı aç"))
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(width: 220)
@@ -364,7 +364,7 @@ private struct AnnouncementCard: View {
                 HStack(spacing: 12) {
                     BoxMark(size: 34)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("BOX DUYURU")
+                        Text(L("BOX DUYURU"))
                             .font(.system(size: 11, weight: .bold))
                             .tracking(1.2)
                             .foregroundColor(.accent)
@@ -387,7 +387,7 @@ private struct AnnouncementCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
                 Button(action: close) {
-                    Text("Tamam")
+                    Text(L("Tamam"))
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 4)

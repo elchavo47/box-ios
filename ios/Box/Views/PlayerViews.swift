@@ -19,7 +19,7 @@ struct MiniPlayerBar: View {
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
-                        Text(player.isBuffering ? "Hazırlanıyor…" : track.displayArtist)
+                        Text(player.isBuffering ? L("Hazırlanıyor…") : track.displayArtist)
                             .font(.system(size: 13))
                             .foregroundColor(.boxSecondaryText)
                             .lineLimit(1)
@@ -44,7 +44,7 @@ struct MiniPlayerBar: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                     }
-                    .accessibilityLabel(player.isPlaying ? "Duraklat" : "Çal")
+                    .accessibilityLabel(player.isPlaying ? L("Duraklat") : L("Çal"))
 
                     Button {
                         player.next()
@@ -55,7 +55,7 @@ struct MiniPlayerBar: View {
                             .frame(width: 38, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .accessibilityLabel("Sonraki")
+                    .accessibilityLabel(L("Sonraki"))
                 }
                 .padding(.leading, 10)
                 .padding(.trailing, 6)
@@ -176,7 +176,7 @@ struct FullPlayerView: View {
                     }
                     .frame(width: width, height: proxy.size.height)
                 } else {
-                    EmptyStateView(icon: "music.note", title: "Çalan bir şey yok", message: "Kitaplıktan bir şarkı seç.")
+                    EmptyStateView(icon: "music.note", title: L("Çalan bir şey yok"), message: L("Kitaplıktan bir şarkı seç."))
                 }
             }
             .frame(width: width, height: proxy.size.height)
@@ -200,9 +200,9 @@ struct FullPlayerView: View {
         .onChange(of: player.current) { newValue in
             if newValue == nil { dismiss() }
         }
-        .alert("Şarkı açılamadı", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
-            Button("Sonrakine geç") { player.errorMessage = nil; player.next() }
-            Button("Tamam", role: .cancel) { player.errorMessage = nil }
+        .alert(L("Şarkı açılamadı"), isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
+            Button(L("Sonrakine geç")) { player.errorMessage = nil; player.next() }
+            Button(L("Tamam"), role: .cancel) { player.errorMessage = nil }
         } message: {
             Text(player.errorMessage ?? "")
         }
@@ -234,7 +234,7 @@ struct FullPlayerView: View {
                     .frame(width: 48, height: 48)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("Kapat")
+            .accessibilityLabel(L("Kapat"))
 
             Spacer(minLength: 0)
 
@@ -243,11 +243,11 @@ struct FullPlayerView: View {
                     SongVideoToggle()
                 } else {
                     VStack(spacing: 1) {
-                        Text("ŞİMDİ ÇALIYOR")
+                        Text(L("ŞİMDİ ÇALIYOR"))
                             .font(.system(size: 10, weight: .bold))
                             .tracking(1.4)
                             .foregroundColor(.white.opacity(0.6))
-                        Text(track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album)
+                        Text(track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : L("{0} şarkı sırada", player.upNext.count)) : track.album)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                     }
@@ -370,7 +370,7 @@ struct FullPlayerView: View {
                 }
             }
             .buttonStyle(PressableStyle(scale: 0.92))
-            .accessibilityLabel(player.isPlaying ? "Duraklat" : "Çal")
+            .accessibilityLabel(player.isPlaying ? L("Duraklat") : L("Çal"))
 
             Spacer(minLength: 0)
             controlButton("forward.end.fill", size: 28) { player.next() }
@@ -415,7 +415,7 @@ struct FullPlayerView: View {
             Spacer(minLength: 0)
 
             Menu {
-                Picker("Hız", selection: Binding(get: { player.playbackRate }, set: { player.setRate($0) })) {
+                Picker(L("Hız"), selection: Binding(get: { player.playbackRate }, set: { player.setRate($0) })) {
                     ForEach([Float(0.5), 0.75, 1, 1.25, 1.5, 2], id: \.self) { rate in
                         Text(rateLabel(rate)).tag(rate)
                     }
@@ -426,7 +426,7 @@ struct FullPlayerView: View {
                     .foregroundColor(player.playbackRate == 1 ? .white.opacity(0.8) : .accent)
                     .frame(minWidth: 44, minHeight: 44)
             }
-            .accessibilityLabel("Çalma hızı")
+            .accessibilityLabel(L("Çalma hızı"))
 
             Spacer(minLength: 0)
 
@@ -438,7 +438,7 @@ struct FullPlayerView: View {
                     .foregroundColor(.white.opacity(0.85))
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("Şarkı sözleri")
+            .accessibilityLabel(L("Şarkı sözleri"))
 
             Spacer(minLength: 0)
 
@@ -450,7 +450,7 @@ struct FullPlayerView: View {
                     .foregroundColor(.white.opacity(0.85))
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("Sıra")
+            .accessibilityLabel(L("Sıra"))
         }
     }
 
@@ -477,14 +477,14 @@ private struct SleepBadge: View {
                 Image(systemName: player.sleepTimer.isActive ? "moon.zzz.fill" : "moon.zzz")
                     .font(.system(size: 18, weight: .semibold))
                 if let remaining = player.sleepRemaining {
-                    Text(player.sleepTimer == .endOfTrack ? "Şarkı sonu" : Formatters.time(remaining))
+                    Text(player.sleepTimer == .endOfTrack ? L("Şarkı sonu") : Formatters.time(remaining))
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                 }
             }
             .foregroundColor(player.sleepTimer.isActive ? .accent : .white.opacity(0.85))
             .frame(minWidth: 44, minHeight: 44)
         }
-        .accessibilityLabel("Uyku zamanlayıcısı")
+        .accessibilityLabel(L("Uyku zamanlayıcısı"))
     }
 }
 
@@ -542,7 +542,7 @@ struct Scrubber: View {
             .foregroundColor(.white.opacity(dragging ? 0.95 : 0.6))
         }
         .accessibilityElement()
-        .accessibilityLabel("Konum")
+        .accessibilityLabel(L("Konum"))
         .accessibilityValue(Formatters.time(shown))
         .accessibilityAdjustableAction { direction in
             switch direction {
@@ -642,8 +642,8 @@ struct SleepTimerSheet: View {
                             HStack {
                                 Image(systemName: "moon.zzz.fill").foregroundColor(.accent)
                                 Text(player.sleepTimer == .endOfTrack
-                                     ? "Bu şarkı bitince duracak"
-                                     : "Müzik \(Formatters.time(player.sleepRemaining ?? 0)) sonra duracak")
+                                     ? L("Bu şarkı bitince duracak")
+                                     : L("Müzik {0} sonra duracak", Formatters.time(player.sleepRemaining ?? 0)))
                                     .font(.subheadline.weight(.semibold))
                                     .monospacedDigit()
                                 Spacer()
@@ -653,7 +653,7 @@ struct SleepTimerSheet: View {
                             player.cancelSleepTimer()
                             dismiss()
                         } label: {
-                            Text("Zamanlayıcıyı kapat")
+                            Text(L("Zamanlayıcıyı kapat"))
                         }
                     }
                     .listRowBackground(Color.boxSurface2)
@@ -666,7 +666,7 @@ struct SleepTimerSheet: View {
                             dismiss()
                         } label: {
                             HStack {
-                                Text(minutes < 60 ? "\(minutes) dakika" : (minutes == 60 ? "1 saat" : "1,5 saat"))
+                                Text(minutes < 60 ? L("{0} dakika", minutes) : (minutes == 60 ? L("1 saat") : L("1,5 saat")))
                                     .foregroundColor(.white)
                                 Spacer()
                             }
@@ -677,7 +677,7 @@ struct SleepTimerSheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Text("Bu şarkının sonunda").foregroundColor(.white)
+                            Text(L("Bu şarkının sonunda")).foregroundColor(.white)
                             Spacer()
                             if player.sleepTimer == .endOfTrack {
                                 Image(systemName: "checkmark").foregroundColor(.accent)
@@ -685,13 +685,13 @@ struct SleepTimerSheet: View {
                         }
                     }
                 } footer: {
-                    Text("Son 10 saniyede ses yavaşça kısılır. Ekran kilitliyken de çalışır.")
+                    Text(L("Son 10 saniyede ses yavaşça kısılır. Ekran kilitliyken de çalışır."))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
             .scrollContentBackground(.hidden)
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle("Uyku zamanlayıcısı")
+            .navigationTitle(L("Uyku zamanlayıcısı"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -713,14 +713,14 @@ struct QueueView: View {
                     Section {
                         TrackRow(track: current, showMenu: false)
                     } header: {
-                        Text("Şimdi çalıyor")
+                        Text(L("Şimdi çalıyor"))
                     }
                     .listRowBackground(Color.clear)
                 }
 
                 Section {
                     if player.upNext.isEmpty {
-                        Text("Sırada şarkı yok")
+                        Text(L("Sırada şarkı yok"))
                             .foregroundColor(.boxSecondaryText)
                             .listRowBackground(Color.clear)
                     }
@@ -738,10 +738,10 @@ struct QueueView: View {
                     .onMove { player.moveInQueue(from: $0, to: $1) }
                 } header: {
                     HStack {
-                        Text("Sıradakiler")
+                        Text(L("Sıradakiler"))
                         Spacer()
                         if !player.upNext.isEmpty {
-                            Text("\(player.upNext.count) şarkı • \(Formatters.longDuration(player.upNext.reduce(0) { $0 + $1.duration }))")
+                            Text(L("{0} şarkı • {1}", player.upNext.count, Formatters.longDuration(player.upNext.reduce(0) { $0 + $1.duration })))
                         }
                     }
                 }
@@ -749,7 +749,7 @@ struct QueueView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle("Sıra")
+            .navigationTitle(L("Sıra"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -763,21 +763,21 @@ struct QueueView: View {
                         } label: {
                             Image(systemName: "text.badge.plus")
                         }
-                        .accessibilityLabel("Sırayı liste olarak kaydet")
-                        Button("Bitti") { dismiss() }
+                        .accessibilityLabel(L("Sırayı liste olarak kaydet"))
+                        Button(L("Bitti")) { dismiss() }
                             .fontWeight(.semibold)
                     }
                 }
             }
-            .alert("Sırayı liste olarak kaydet", isPresented: $showSave) {
-                TextField("Liste adı", text: $saveName)
-                Button("Kaydet") {
+            .alert(L("Sırayı liste olarak kaydet"), isPresented: $showSave) {
+                TextField(L("Liste adı"), text: $saveName)
+                Button(L("Kaydet")) {
                     library.createPlaylist(name: saveName.trimmingCharacters(in: .whitespaces), tracks: player.queue)
                     Haptics.success()
                 }
-                Button("Vazgeç", role: .cancel) {}
+                Button(L("Vazgeç"), role: .cancel) {}
             } message: {
-                Text("\(player.queue.count) şarkı yeni bir listeye eklenecek.")
+                Text(L("{0} şarkı yeni bir listeye eklenecek.", player.queue.count))
             }
         }
     }
@@ -792,10 +792,10 @@ private struct SongVideoToggle: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            segment(icon: "headphones", label: "Şarkı", active: !player.videoMode) {
+            segment(icon: "headphones", label: L("Şarkı"), active: !player.videoMode) {
                 Task { await player.setVideoMode(false) }
             }
-            segment(icon: "play.rectangle.fill", label: "Video", active: player.videoMode) {
+            segment(icon: "play.rectangle.fill", label: L("Video"), active: player.videoMode) {
                 Task { await player.setVideoMode(true) }
             }
         }
@@ -810,7 +810,7 @@ private struct SongVideoToggle: View {
             action()
         } label: {
             HStack(spacing: 5) {
-                if label == "Video" && player.videoLoading {
+                if label == L("Video") && player.videoLoading {
                     ProgressView().tint(.white).scaleEffect(0.7)
                 } else {
                     Image(systemName: icon).font(.system(size: 13, weight: .semibold))

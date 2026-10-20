@@ -16,7 +16,7 @@ final class FeedStore: ObservableObject {
         var score: [String: Int] = [:]
         for track in library.tracks {
             let name = track.displayArtist
-            guard name != "Bilinmeyen sanatçı" else { continue }
+            guard name != L("Bilinmeyen sanatçı") else { continue }
             score[name, default: 0] += 1 + (library.playCounts[track.relativePath] ?? 0) * 3
         }
         for (offset, track) in library.recentlyPlayed.prefix(10).enumerated() {
@@ -46,7 +46,7 @@ final class FeedStore: ObservableObject {
     }
 
     func genre(_ key: String, token: String?) async throws -> GenreResponse {
-        guard let token else { throw APIError(message: "Giriş yapman gerekiyor.", status: 401) }
+        guard let token else { throw APIError(message: L("Giriş yapman gerekiyor."), status: 401) }
         return try await APIClient.shared.send("feed/genre", query: ["key": key], token: token)
     }
 
