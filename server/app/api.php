@@ -212,7 +212,7 @@ switch ($route) {
             $live = boxSignedDownload($videoId, '/stream', 6 * 3600);
         } catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }
         // url: anında çalma (VDS /stream, parça parça), file_url: tam dosya (önbellek için)
-        jsonOut(['ok' => true, 'url' => $live['url'], 'file_url' => $file['url'], 'expires_at' => $live['expires_at']]);
+        jsonOut(['ok' => true, 'url' => $live['url'], 'video_url' => $live['url'] . '&kind=video', 'file_url' => $file['url'], 'expires_at' => $live['expires_at']]);
 
     case 'download':
         $u = boxApiUser();

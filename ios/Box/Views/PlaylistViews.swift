@@ -18,7 +18,11 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var stream: StreamCache
     @Environment(\.dismiss) private var dismiss
+
+    private var missing: [SearchResult] { tracks.compactMap(\.remote) }
+    private var activeDownloads: Int { missing.filter { downloads.state(for: $0.id)?.isActive == true }.count }
 
     @State private var showPicker = false
     @State private var showRename = false
@@ -98,6 +102,7 @@ struct PlaylistDetailView: View {
         .boxScreenBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: missing.count) { stream.warm(missing, limit: 8) }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { item in
             guard let item, case .playlist(let id) = source else { return }
@@ -231,9 +236,36 @@ struct PlaylistDetailView: View {
                     Label("Karıştır", systemImage: "shuffle")
                 }
                 .buttonStyle(PrimaryButtonStyle(filled: false))
+
+                if !missing.isEmpty || activeDownloads > 0 {
+                    Button {
+                        downloads.download(all: missing)
+                        Haptics.success()
+                    } label: {
+                        ZStack {
+                            Circle().fill(Color.white.opacity(0.1))
+                            if activeDownloads > 0 {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .frame(width: 46, height: 46)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("İndirilmemiş \(missing.count) şarkıyı indir")
+                }
             }
             .disabled(tracks.isEmpty)
             .opacity(tracks.isEmpty ? 0.5 : 1)
+
+            if !missing.isEmpty {
+                Text(activeDownloads > 0 ? "\(activeDownloads) şarkı iniyor • \(missing.count) indirilmedi" : "\(missing.count) şarkı indirilmedi • internetten çalar")
+                    .font(.footnote)
+                    .foregroundColor(.boxSecondaryText)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

@@ -54,6 +54,9 @@ final class PlayerManager: ObservableObject {
     /// İnternetten dinlenen şarkı hazırlanıyor.
     @Published private(set) var isBuffering = false
     @Published var errorMessage: String?
+    /// Şarkının videosu oynatılıyor (YouTube Music'teki Şarkı / Video anahtarı).
+    @Published private(set) var videoMode = false
+    @Published private(set) var videoLoading = false
 
     let clock = PlaybackClock()
 
@@ -64,6 +67,17 @@ final class PlayerManager: ObservableObject {
     /// Anında çalma bağlantısı (parça parça iner).
     var liveRemote: ((SearchResult) async throws -> URL)?
     var prefetchRemote: ((SearchResult) -> Void)?
+    var videoURLFor: ((String) async throws -> URL)?
+    /// Yerel (indirilmiş) şarkının YouTube kimliği; videosu varsa izlenebilir.
+    var videoIDFor: ((Track) -> String?)?
+
+    /// Video katmanı için.
+    var avPlayer: AVPlayer { player }
+
+    var currentVideoID: String? {
+        guard let current else { return nil }
+        return current.remote?.id ?? videoIDFor?(current)
+    }
     private var itemObservers: Set<AnyCancellable> = []
     private var loadToken = 0
 
@@ -97,7 +111,12 @@ final class PlayerManager: ObservableObject {
         observeInterruptions()
 
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.saveState(force: true) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.saveState(force: true)
+                // Arka planda video oynamaz: kaldığı yerden sese geç.
+                if self.videoMode { await self.setVideoMode(false) }
+            }
         }
     }
 
@@ -427,8 +446,37 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    // MARK: - Video
+
+    func setVideoMode(_ on: Bool) async {
+        guard let track = current, on != videoMode || videoLoading else { return }
+        let time = clock.currentTime
+        let wasPlaying = isPlaying
+        if on {
+            guard let id = currentVideoID, let resolver = videoURLFor else { return }
+            videoLoading = true
+            do {
+                let url = try await resolver(id)
+                guard current?.id == track.id else { videoLoading = false; return }
+                loadToken += 1
+                isPlaying = wasPlaying
+                videoMode = true
+                videoLoading = false
+                startItem(track: track, url: url, autoplay: wasPlaying, startAt: time, record: false, streaming: true, video: true)
+            } catch {
+                videoLoading = false
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Video açılamadı."
+            }
+        } else {
+            videoMode = false
+            videoLoading = false
+            loadCurrent(autoplay: wasPlaying, startAt: time, record: false)
+        }
+    }
+
     private func loadCurrent(autoplay: Bool, startAt: Double = 0, record: Bool = true) {
         guard let track = current else { return }
+        if record { videoMode = false; videoLoading = false }
         loadToken += 1
         let token = loadToken
 
@@ -482,7 +530,7 @@ final class PlayerManager: ObservableObject {
         }
     }
 
-    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool, streaming: Bool = false) {
+    private func startItem(track: Track, url: URL, autoplay: Bool, startAt: Double, record: Bool, streaming: Bool = false, video: Bool = false) {
         let item = AVPlayerItem(url: url)
         item.audioTimePitchAlgorithm = .timeDomain
         item.preferredForwardBufferDuration = streaming ? 8 : 0
@@ -496,7 +544,10 @@ final class PlayerManager: ObservableObject {
             .sink { [weak self] status in
                 guard let self, token == self.loadToken else { return }
                 if status == .failed {
-                    if streaming, let remote = track.remote {
+                    if video {
+                        self.errorMessage = "Video oynatılamadı, şarkıya dönülüyor."
+                        Task { await self.setVideoMode(false) }
+                    } else if streaming, let remote = track.remote {
                         self.itemObservers.removeAll()
                         Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: self.clock.currentTime, record: false) }
                     } else {

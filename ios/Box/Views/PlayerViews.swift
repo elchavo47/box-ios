@@ -118,6 +118,7 @@ private struct MiniProgress: View {
 
 struct FullPlayerView: View {
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
@@ -140,8 +141,20 @@ struct FullPlayerView: View {
 
                         Spacer(minLength: 8)
 
-                        artwork(track, side: artSide)
-                            .frame(width: width)
+                        Group {
+                            if player.videoMode {
+                                VideoSurface(player: player.avPlayer)
+                                    .frame(width: width, height: width * 9 / 16)
+                                    .background(Color.black)
+                                    .overlay {
+                                        if player.isBuffering { ProgressView().tint(.white).scaleEffect(1.3) }
+                                    }
+                            } else {
+                                artwork(track, side: artSide)
+                            }
+                        }
+                        .frame(width: width)
+                        .animation(.easeInOut(duration: 0.25), value: player.videoMode)
 
                         Spacer(minLength: 8)
 
@@ -149,8 +162,6 @@ struct FullPlayerView: View {
                             titleRow(track)
                             Scrubber(clock: player.clock) { player.seek(to: $0) }
                             controls
-                            VolumeRow()
-                                .frame(height: 34)
                             bottomBar
                         }
                         .padding(.horizontal, 24)
@@ -220,14 +231,20 @@ struct FullPlayerView: View {
 
             Spacer(minLength: 0)
 
-            VStack(spacing: 1) {
-                Text("ŞİMDİ ÇALIYOR")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.4)
-                    .foregroundColor(.white.opacity(0.6))
-                Text(track.isRemote ? "İnternetten dinleniyor" : (track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album))
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
+            Group {
+                if player.currentVideoID != nil && auth.isPremium {
+                    SongVideoToggle()
+                } else {
+                    VStack(spacing: 1) {
+                        Text("ŞİMDİ ÇALIYOR")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundColor(.white.opacity(0.6))
+                        Text(track.album.isEmpty ? (player.upNext.isEmpty ? "Box" : "\(player.upNext.count) şarkı sırada") : track.album)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
 
@@ -553,44 +570,6 @@ struct MarqueeText: View {
 
 // MARK: - Ses ve AirPlay
 
-private struct VolumeRow: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "speaker.fill")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.6))
-            SystemVolumeSlider()
-                .frame(height: 34)
-            Image(systemName: "speaker.wave.3.fill")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.6))
-        }
-    }
-}
-
-private struct SystemVolumeSlider: UIViewRepresentable {
-    func makeUIView(context: Context) -> MPVolumeView {
-        let view = MPVolumeView(frame: .zero)
-        view.tintColor = .white
-        if let slider = view.subviews.compactMap({ $0 as? UISlider }).first {
-            slider.minimumTrackTintColor = .white
-            slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.2)
-            slider.setThumbImage(Self.thumb, for: .normal)
-        }
-        return view
-    }
-
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
-
-    private static let thumb: UIImage = {
-        let size = CGSize(width: 12, height: 12)
-        return UIGraphicsImageRenderer(size: size).image { ctx in
-            UIColor.white.setFill()
-            ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
-        }
-    }()
-}
-
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
@@ -736,5 +715,75 @@ struct QueueView: View {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Video
+
+/// YouTube Music'teki gibi Şarkı / Video anahtarı.
+private struct SongVideoToggle: View {
+    @EnvironmentObject private var player: PlayerManager
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment(icon: "headphones", label: "Şarkı", active: !player.videoMode) {
+                Task { await player.setVideoMode(false) }
+            }
+            segment(icon: "play.rectangle.fill", label: "Video", active: player.videoMode) {
+                Task { await player.setVideoMode(true) }
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.black.opacity(0.35)))
+    }
+
+    private func segment(icon: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            guard !active else { return }
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                if label == "Video" && player.videoLoading {
+                    ProgressView().tint(.white).scaleEffect(0.7)
+                } else {
+                    Image(systemName: icon).font(.system(size: 13, weight: .semibold))
+                }
+                Text(label).font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundColor(active ? .black : .white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Capsule().fill(active ? Color.white : Color.clear))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Oynatıcının görüntüsünü gösteren katman.
+struct VideoSurface: UIViewRepresentable {
+    let player: AVPlayer
+
+    final class LayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    }
+
+    func makeUIView(context: Context) -> LayerView {
+        let view = LayerView()
+        view.playerLayer.player = player
+        view.playerLayer.videoGravity = .resizeAspect
+        view.backgroundColor = .black
+        return view
+    }
+
+    func updateUIView(_ uiView: LayerView, context: Context) {
+        if uiView.playerLayer.player !== player { uiView.playerLayer.player = player }
+    }
+
+    static func dismantleUIView(_ uiView: LayerView, coordinator: ()) {
+        uiView.playerLayer.player = nil
     }
 }

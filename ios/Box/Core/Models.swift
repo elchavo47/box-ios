@@ -1,6 +1,10 @@
 import Foundation
 
 struct Track: Identifiable, Hashable {
+    /// Kimlik dosya yoludur; aynı şarkının iki kopyası (ör. internet şarkısı) eşit sayılır.
+    static func == (lhs: Track, rhs: Track) -> Bool { lhs.relativePath == rhs.relativePath }
+    func hash(into hasher: inout Hasher) { hasher.combine(relativePath) }
+
     /// Belgeler klasörüne göre göreli yol; kimlik olarak kullanılır.
     let relativePath: String
     let url: URL
@@ -30,7 +34,7 @@ struct Track: Identifiable, Hashable {
             artist: result.channel,
             album: "",
             duration: Double(result.duration),
-            addedAt: Date(),
+            addedAt: Date(timeIntervalSince1970: 0),
             fileSize: 0,
             remote: result
         )
@@ -146,6 +150,7 @@ struct DownloadLinkResponse: Decodable {
     let expiresAt: Int
     /// Yalnızca dinleme bağlantısında: tam dosyanın adresi (önbellek için).
     let fileUrl: String?
+    let videoUrl: String?
 }
 
 struct FeedSection: Decodable, Identifiable, Hashable {

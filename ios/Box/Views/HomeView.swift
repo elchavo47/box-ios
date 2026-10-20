@@ -19,6 +19,7 @@ struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var feed: FeedStore
+    @EnvironmentObject private var stream: StreamCache
 
     @State private var path = NavigationPath()
     @State private var filter: HomeFilter = .all
@@ -63,7 +64,10 @@ struct HomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .task(id: auth.isPremium) {
-                if auth.isPremium { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library)) }
+                if auth.isPremium {
+                    await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library))
+                    stream.warm(feed.sections.flatMap { $0.items.prefix(2) }, limit: 6)
+                }
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 HomeRouteView(route: route)

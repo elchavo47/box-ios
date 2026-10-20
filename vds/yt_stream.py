@@ -29,6 +29,11 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 client = httpx.AsyncClient(timeout=httpx.Timeout(20.0, read=60.0), follow_redirects=True, http2=False)
 
 _cache: dict[str, tuple[str, float]] = {}
+FORMATS = {
+    "audio": "140/bestaudio[ext=m4a]/bestaudio",
+    # Sesli ve görüntülü tek dosya (Range ile oynatılabilir); çoğunlukla 360p.
+    "video": "18/b[ext=mp4][vcodec!=none][acodec!=none]",
+}
 _locks: dict[str, asyncio.Lock] = {}
 
 
@@ -48,19 +53,20 @@ def check_signature(v: str, exp: str, sig: str) -> None:
         raise HTTPException(403, "Geçersiz imza.")
 
 
-async def audio_url(v: str, fresh: bool = False) -> str:
-    """yt-dlp ile m4a ses akışının doğrudan adresini bulur (birkaç saat önbellekte tutulur)."""
+async def audio_url(v: str, fresh: bool = False, kind: str = "audio") -> str:
+    """yt-dlp ile akışın doğrudan adresini bulur (birkaç saat önbellekte tutulur)."""
     now = time.time()
-    cached = _cache.get(v)
+    key = f"{kind}:{v}"
+    cached = _cache.get(key)
     if cached and not fresh and cached[1] > now:
         return cached[0]
-    lock = _locks.setdefault(v, asyncio.Lock())
+    lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
-        cached = _cache.get(v)
+        cached = _cache.get(key)
         if cached and not fresh and cached[1] > time.time():
             return cached[0]
         proc = await asyncio.create_subprocess_exec(
-            *YTDLP, *EXTRA, "-f", "140/bestaudio[ext=m4a]/bestaudio", "-g", "--no-playlist", "--no-warnings",
+            *YTDLP, *EXTRA, "-f", FORMATS.get(kind, FORMATS["audio"]), "-g", "--no-playlist", "--no-warnings",
             f"https://www.youtube.com/watch?v={v}",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
@@ -73,7 +79,7 @@ async def audio_url(v: str, fresh: bool = False) -> str:
         if proc.returncode != 0 or not url.startswith("http"):
             raise HTTPException(502, "Bu şarkı şu an çalınamıyor.")
         expire = parse_qs(urlparse(url).query).get("expire", [str(int(time.time()) + 3600)])[0]
-        _cache[v] = (url, min(float(expire) - 300, time.time() + 5 * 3600))
+        _cache[key] = (url, min(float(expire) - 300, time.time() + 5 * 3600))
         if len(_cache) > 2000:
             for key in sorted(_cache, key=lambda k: _cache[k][1])[:500]:
                 _cache.pop(key, None)
@@ -81,20 +87,33 @@ async def audio_url(v: str, fresh: bool = False) -> str:
 
 
 @app.get("/stream/health")
-async def health():
+async def health(v: str = ""):
+    """?v=VIDEO ile yt-dlp'nin bu şarkıyı kaç ms'de hazırladığını gösterir (teşhis için)."""
+    if v and VIDEO_ID.match(v):
+        started = time.time()
+        try:
+            await audio_url(v)
+            return {"ok": True, "cached": len(_cache), "resolve_ms": int((time.time() - started) * 1000)}
+        except HTTPException as e:
+            return {"ok": False, "error": e.detail}
     return {"ok": True, "cached": len(_cache)}
 
 
 @app.api_route("/stream", methods=["GET", "HEAD"])
-async def stream(request: Request, v: str = "", exp: str = "", sig: str = ""):
+async def stream(request: Request, v: str = "", exp: str = "", sig: str = "", kind: str = "audio", warm: str = ""):
     check_signature(v, exp, sig)
+    kind = "video" if kind == "video" else "audio"
+    if warm:
+        # Uygulama sıradaki şarkıları önceden ısıtır: adres hazır olsun, veri gönderme.
+        await audio_url(v, kind=kind)
+        return JSONResponse({"ok": True})
 
     headers = {}
     if "range" in request.headers:
         headers["Range"] = request.headers["range"]
 
     for attempt in range(2):
-        url = await audio_url(v, fresh=attempt > 0)
+        url = await audio_url(v, fresh=attempt > 0, kind=kind)
         upstream = await client.send(client.build_request(request.method, url, headers=headers), stream=True)
         if upstream.status_code in (403, 404, 410) and attempt == 0:
             await upstream.aclose()  # adresin süresi dolmuş: yenisini al
@@ -114,6 +133,6 @@ async def stream(request: Request, v: str = "", exp: str = "", sig: str = ""):
         upstream.aiter_raw(65536),
         status_code=upstream.status_code,
         headers=out_headers,
-        media_type="audio/mp4",
+        media_type="video/mp4" if kind == "video" else "audio/mp4",
         background=BackgroundTask(upstream.aclose),
     )

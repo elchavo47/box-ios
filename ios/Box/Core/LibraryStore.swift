@@ -245,6 +245,11 @@ final class LibraryStore: ObservableObject {
         return track(forPath: legacy)
     }
 
+    /// İndirilmiş dosyanın YouTube kimliği (videosunu açmak için).
+    func videoID(forPath path: String) -> String? {
+        videoPaths.first { $0.value == path }?.key
+    }
+
     func setDownloadedPath(_ path: String, for videoID: String) {
         videoPaths[videoID] = path
         Self.save(videoPaths, to: videoPathsFile)

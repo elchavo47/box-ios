@@ -7,6 +7,7 @@ struct SearchView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var history: SearchHistory
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var stream: StreamCache
 
     @State private var query = ""
     @State private var submitted = ""
@@ -370,6 +371,7 @@ struct SearchView: View {
                 let response: SearchResponse = try await APIClient.shared.send("search", query: ["q": trimmed], token: token)
                 guard !Task.isCancelled else { return }
                 results = response.results
+                stream.warm(response.results, limit: 5)
             } catch {
                 guard !Task.isCancelled else { return }
                 results = []

@@ -16,7 +16,7 @@ Box anında dinleme servisi - VDS kurulumu (Ubuntu, root)
    [Service]
    EnvironmentFile=/etc/yt-api.env
    WorkingDirectory=/opt
-   ExecStart=/usr/bin/env python3 -m uvicorn yt_stream:app --host 127.0.0.1 --port 8011 --workers 2
+   ExecStart=/usr/bin/env python3 -m uvicorn yt_stream:app --host 127.0.0.1 --port 8011 --workers 1
    Restart=always
 
    [Install]

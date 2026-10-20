@@ -70,6 +70,11 @@ struct BoxApp: App {
                         return try await stream.liveURL(result)
                     }
                     player.prefetchRemote = { [weak stream] result in stream?.prepareLink(result) }
+                    player.videoURLFor = { [weak stream] id in
+                        guard let stream else { throw APIError(message: "Hazır değil.", status: 0) }
+                        return try await stream.videoURL(id)
+                    }
+                    player.videoIDFor = { [weak library] track in library?.videoID(forPath: track.relativePath) }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()

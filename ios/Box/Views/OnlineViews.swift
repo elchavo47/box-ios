@@ -197,6 +197,7 @@ struct GenreView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var stream: StreamCache
 
     @State private var results: [SearchResult] = []
     @State private var loading = true
@@ -250,6 +251,7 @@ struct GenreView: View {
         error = nil
         do {
             results = try await feed.genre(genre.key, token: auth.token).results
+            stream.warm(results, limit: 4)
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Bir sorun oldu."
         }

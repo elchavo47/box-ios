@@ -72,22 +72,59 @@ final class StreamCache: ObservableObject {
         return url
     }
 
-    private var links: [String: (url: URL, expires: Date)] = [:]
+    private var links: [String: (url: URL, video: URL?, expires: Date)] = [:]
+    private var linkTasks: [String: Task<(url: URL, video: URL?, expires: Date), Error>] = [:]
+    private var warmed: [String: Date] = [:]
+
+    private func link(for videoID: String) async throws -> (url: URL, video: URL?, expires: Date) {
+        if let cached = links[videoID], cached.expires > Date() { return cached }
+        if let task = linkTasks[videoID] { return try await task.value }
+        let task = Task<(url: URL, video: URL?, expires: Date), Error> { [weak self] in
+            guard let token = self?.auth?.token else { throw APIError(message: "Dinlemek için giriş yap.", status: 401) }
+            let response: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": videoID], token: token)
+            guard let url = URL(string: response.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
+            return (url, response.videoUrl.flatMap(URL.init(string:)), Date(timeIntervalSince1970: TimeInterval(response.expiresAt - 300)))
+        }
+        linkTasks[videoID] = task
+        defer { linkTasks[videoID] = nil }
+        let value = try await task.value
+        links[videoID] = value
+        return value
+    }
 
     /// Anında çalma bağlantısı (VDS /stream). Şarkı inerken çalmaya başlar.
     func liveURL(_ result: SearchResult) async throws -> URL {
-        if let cached = links[result.id], cached.expires > Date() { return cached.url }
-        guard let token = auth?.token else { throw APIError(message: "Dinlemek için giriş yap.", status: 401) }
-        let link: DownloadLinkResponse = try await APIClient.shared.send("stream", query: ["video_id": result.id], token: token)
-        guard let url = URL(string: link.url) else { throw APIError(message: "Geçersiz bağlantı.", status: 0) }
-        links[result.id] = (url, Date(timeIntervalSince1970: TimeInterval(link.expiresAt - 300)))
-        return url
+        try await link(for: result.id).url
     }
 
-    /// Sıradaki şarkının bağlantısını önceden al (anında başlasın).
+    /// Video olarak izlemek için bağlantı.
+    func videoURL(_ videoID: String) async throws -> URL {
+        let value = try await link(for: videoID)
+        guard let video = value.video else { throw APIError(message: "Video şu an açılamıyor.", status: 0) }
+        return video
+    }
+
+    /// Sıradaki şarkının bağlantısını önceden al ve VDS'de hazırlat (dokununca anında başlasın).
     func prepareLink(_ result: SearchResult) {
-        guard !isCached(result.id) else { return }
-        Task { _ = try? await liveURL(result) }
+        warm([result])
+    }
+
+    /// Listedeki ilk şarkıları VDS'de önceden hazırlatır (yt-dlp gecikmesi dokunmadan önce biter).
+    func warm(_ results: [SearchResult], limit: Int = 6) {
+        let now = Date()
+        let targets = results.filter { !isCached($0.id) && (warmed[$0.id].map { now.timeIntervalSince($0) > 4 * 3600 } ?? true) }.prefix(limit)
+        for result in targets {
+            warmed[result.id] = now
+            Task {
+                guard let value = try? await link(for: result.id),
+                      var components = URLComponents(url: value.url, resolvingAgainstBaseURL: false) else { return }
+                components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "warm", value: "1")]
+                guard let warmURL = components.url else { return }
+                var request = URLRequest(url: warmURL)
+                request.timeoutInterval = 60
+                _ = try? await URLSession.shared.data(for: request)
+            }
+        }
     }
 
     /// Sıradaki şarkıyı arka planda hazırlar.
