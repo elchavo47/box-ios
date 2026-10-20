@@ -94,6 +94,7 @@ struct BoxApp: App {
                     player.crossfade = { AppSettings.shared.crossfadeSeconds }
                     player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
                     downloads.network = network
+                    player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     await library.refresh()
                     player.restoreIfNeeded(tracks: library.tracks)
                     await server.refresh()
@@ -127,6 +128,18 @@ struct BoxApp: App {
                             await auth.refresh()
                         }
                     }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .boxShortcut)) { note in
+                    guard let raw = note.object as? String, let action = BoxShortcutAction(rawValue: raw) else { return }
+                    switch action {
+                    case .favorites: player.play(library.favoriteTracks, startAt: 0, shuffled: true)
+                    case .shuffle: player.play(library.tracks, startAt: 0, shuffled: true)
+                    case .recent: player.play(library.recentlyPlayed, startAt: 0)
+                    case .resume: player.resume()
+                    }
+                }
+                .onChange(of: scenePhase) { phase in
+                    if phase == .background { library.flushStats() }
                 }
                 .onChange(of: library.tracks) { tracks in
                     player.handleLibraryChange(validPaths: Set(tracks.map(\.relativePath)))

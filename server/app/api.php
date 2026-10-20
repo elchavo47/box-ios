@@ -166,6 +166,8 @@ switch ($route) {
         try { $results = boxSearch($q); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 502); }
         q('INSERT INTO search_log(day,user_id,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$u['id']]);
+        $term = mb_substr(mb_strtolower(preg_replace('/\s+/u', ' ', $q)), 0, 120);
+        if ($term !== '') q('INSERT INTO search_terms(day,term,n) VALUES(CURDATE(),?,1) ON DUPLICATE KEY UPDATE n=n+1', [$term]);
         jsonOut(['ok' => true, 'results' => $results]);
 
     case 'feed':
@@ -234,7 +236,7 @@ switch ($route) {
         throttle('download:' . $u['id'], 90, 60);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
-        $limit = (int)configValue('premium_daily_downloads', 150);
+        $limit = boxQuota($u)['downloads_limit'];
         if ($limit > 0 && boxTodayDownloads((int)$u['id']) >= $limit) jsonOut(['ok' => false, 'error' => 'Bugünlük indirme hakkın doldu, yarın tekrar dene.'], 429);
         try { $link = boxSignedDownload($videoId); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }

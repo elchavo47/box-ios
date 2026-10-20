@@ -50,6 +50,7 @@ function panelPages(): array {
         'player' => ['users', 'Kullanıcı dosyası', null, $all],
         'premium' => ['bolt', 'Premium', 'Kullanıcılar', $all],
         'downloads' => ['download', 'İndirmeler', 'Kullanıcılar', $all],
+        'stats' => ['chart', 'İstatistikler', 'Kullanıcılar', $all],
         'app' => ['sliders', 'Uygulama ayarları', 'Uygulama', ['admin']],
         'services' => ['server', 'Servisler', 'Uygulama', ['admin', 'viewer']],
         'health' => ['pulse', 'API sağlığı', 'Uygulama', ['admin', 'viewer']],
@@ -72,7 +73,7 @@ function actionAllowed(string $role, string $action): bool {
     if ($role === 'admin') return true;
     $everyone = ['logout', 'profile', 'session_revoke', 'sessions_revoke', 'totp_begin', 'totp_enable', 'totp_disable', 'totp_regen', 'migration_ack', 'device_remove'];
     $map = [
-        'support' => ['premium_grant', 'premium_revoke', 'user_note', 'user_ban', 'user_unban', 'user_logout_all', 'user_rename'],
+        'support' => ['premium_grant', 'premium_revoke', 'user_note', 'user_ban', 'user_unban', 'user_logout_all', 'user_rename', 'user_quota'],
         'viewer' => [],
     ];
     return in_array($action, $everyone, true) || in_array($action, $map[$role] ?? [], true);

@@ -20,6 +20,7 @@ CREATE TABLE users (
   ban_reason VARCHAR(255) NULL DEFAULT NULL,
   note TEXT NULL,
   app_version VARCHAR(20) NULL DEFAULT NULL,
+  daily_downloads INT UNSIGNED NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME NULL DEFAULT NULL,
   last_seen_at DATETIME NULL DEFAULT NULL,
@@ -61,6 +62,14 @@ CREATE TABLE downloads (
   KEY idx_downloads_user (user_id, created_at),
   KEY idx_downloads_time (created_at),
   CONSTRAINT fk_downloads_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE search_terms (
+  day DATE NOT NULL,
+  term VARCHAR(120) NOT NULL,
+  n INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, term),
+  KEY idx_search_terms_term (term)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE search_log (

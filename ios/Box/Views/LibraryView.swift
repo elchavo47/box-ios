@@ -204,6 +204,25 @@ struct LibraryView: View {
             }
         }
 
+        playlistRow(title: "Box Özeti", subtitle: "Dinleme istatistiklerin", route: .summary) {
+            ZStack {
+                LinearGradient(colors: [Color.accent, Color(red: 0.62, green: 0.95, blue: 0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "chart.bar.fill").foregroundColor(.black)
+            }
+        }
+
+        ForEach(SmartList.allCases, id: \.self) { list in
+            let count = list == .mostPlayed ? library.mostPlayed.count : (list == .forgotten ? library.forgotten.count : library.addedThisMonth.count)
+            if count > 0 {
+                playlistRow(title: list.title, subtitle: "Akıllı liste • \(count) şarkı", route: .smart(list)) {
+                    ZStack {
+                        Color.boxSurface2
+                        Image(systemName: list.icon).foregroundColor(.accent)
+                    }
+                }
+            }
+        }
+
         if !library.recentlyPlayed.isEmpty {
             playlistRow(title: "Son çalınanlar", subtitle: "Otomatik liste • \(library.recentlyPlayed.count) şarkı", route: .recent) {
                 PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)

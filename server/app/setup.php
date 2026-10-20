@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 10;
+const BOX_SCHEMA_VERSION = 11;
 
 function boxVersion(): string {
     static $version = null;
@@ -97,6 +97,7 @@ function ensureSchema(bool $force = false): void {
         $add('users', 'note', 'note TEXT NULL AFTER ban_reason');
         $add('users', 'app_version', 'app_version VARCHAR(20) NULL DEFAULT NULL AFTER note');
         $add('users', 'last_seen_at', 'last_seen_at DATETIME NULL DEFAULT NULL AFTER last_login_at');
+        $add('users', 'daily_downloads', 'daily_downloads INT UNSIGNED NULL DEFAULT NULL AFTER app_version');
         if (!$hasIndex('users', 'idx_users_premium')) { q('ALTER TABLE users ADD INDEX idx_users_premium(is_premium,premium_until)'); $note('Dizin eklendi', 'users.idx_users_premium'); }
         if (!$hasIndex('users', 'idx_users_seen')) { q('ALTER TABLE users ADD INDEX idx_users_seen(last_seen_at)'); $note('Dizin eklendi', 'users.idx_users_seen'); }
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');

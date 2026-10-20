@@ -7,6 +7,28 @@ enum HomeRoute: Hashable {
     case recent
     case group(kind: GroupKind, name: String)
     case genre(FeedGenre)
+    case smart(SmartList)
+    case summary
+}
+
+enum SmartList: String, Hashable, CaseIterable {
+    case mostPlayed, forgotten, thisMonth
+
+    var title: String {
+        switch self {
+        case .mostPlayed: return "En çok dinlediklerin"
+        case .forgotten: return "Uzun süredir dinlemediklerin"
+        case .thisMonth: return "Bu ay eklenenler"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .mostPlayed: return "flame.fill"
+        case .forgotten: return "hourglass"
+        case .thisMonth: return "calendar"
+        }
+    }
 }
 
 enum GroupKind: String, Hashable {
@@ -484,6 +506,14 @@ struct HomeRouteView: View {
             PlaylistDetailView(source: .tracks(title: "Son çalınanlar", icon: "clock", tracks: library.recentlyPlayed))
         case .genre(let genre):
             GenreView(genre: genre)
+        case .summary:
+            SummaryView()
+        case .smart(let list):
+            PlaylistDetailView(source: .tracks(
+                title: list.title,
+                icon: list.icon,
+                tracks: list == .mostPlayed ? library.mostPlayed : (list == .forgotten ? library.forgotten : library.addedThisMonth)
+            ))
         case .group(let kind, let name):
             let groups = kind == .artist ? library.artists : library.albums
             PlaylistDetailView(source: .tracks(

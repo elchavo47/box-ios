@@ -676,7 +676,10 @@ struct SleepTimerSheet: View {
 
 struct QueueView: View {
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showSave = false
+    @State private var saveName = ""
 
     var body: some View {
         NavigationStack {
@@ -728,9 +731,28 @@ struct QueueView: View {
                     EditButton()
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Bitti") { dismiss() }
-                        .fontWeight(.semibold)
+                    HStack(spacing: 14) {
+                        Button {
+                            saveName = ""
+                            showSave = true
+                        } label: {
+                            Image(systemName: "text.badge.plus")
+                        }
+                        .accessibilityLabel("Sırayı liste olarak kaydet")
+                        Button("Bitti") { dismiss() }
+                            .fontWeight(.semibold)
+                    }
                 }
+            }
+            .alert("Sırayı liste olarak kaydet", isPresented: $showSave) {
+                TextField("Liste adı", text: $saveName)
+                Button("Kaydet") {
+                    library.createPlaylist(name: saveName.trimmingCharacters(in: .whitespaces), tracks: player.queue)
+                    Haptics.success()
+                }
+                Button("Vazgeç", role: .cancel) {}
+            } message: {
+                Text("\(player.queue.count) şarkı yeni bir listeye eklenecek.")
             }
         }
     }

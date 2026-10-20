@@ -63,7 +63,12 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
         }
     }
 
-    // MARK: - İndirme
+    // MARK: - İndirme (parça parça, Range ile)
+
+    /// İlk parça küçük tutulur ki çalma hemen başlasın; sonrakiler daha büyük.
+    private var nextOffset: Int64 = 0
+    private var chunkReceived: Int64 = 0
+    private var rangeSupported = true
 
     private func startIfNeeded() {
         guard session == nil, !finished, !failed else { return }
@@ -72,44 +77,84 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
         reader = try? FileHandle(forReadingFrom: tempURL)
 
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForRequest = 45
         config.timeoutIntervalForResource = 1800
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         let delegateQueue = OperationQueue()
         delegateQueue.maxConcurrentOperationCount = 1
         delegateQueue.underlyingQueue = queue
         session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
-        task = session?.dataTask(with: remoteURL)
+        requestNextChunk()
+    }
+
+    private func requestNextChunk() {
+        guard let session, !finished, !failed else { return }
+        var request = URLRequest(url: remoteURL)
+        if rangeSupported {
+            let size: Int64 = nextOffset == 0 ? 256 * 1024 : 2 * 1024 * 1024
+            var end = nextOffset + size - 1
+            if contentLength > 0 { end = min(end, contentLength - 1) }
+            request.setValue("bytes=\(nextOffset)-\(end)", forHTTPHeaderField: "Range")
+        }
+        chunkReceived = 0
+        task = session.dataTask(with: request)
         task?.resume()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             completionHandler(.cancel)
             fail("Akış sunucusu \(status) döndü.")
             return
         }
-        contentLength = max(response.expectedContentLength, 0)
+        if status == 206, let range = http?.value(forHTTPHeaderField: "Content-Range"),
+           let total = range.split(separator: "/").last.flatMap({ Int64($0) }) {
+            contentLength = total
+        } else {
+            // Sunucu parça desteklemiyor: tamamını tek seferde al.
+            if nextOffset > 0 {
+                completionHandler(.cancel)
+                fail("Sunucu parça parça gönderemiyor.")
+                return
+            }
+            rangeSupported = false
+            contentLength = max(response.expectedContentLength, 0)
+        }
         completionHandler(.allow)
         processPending()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard let writer else { return }
-        writer.seekToEndOfFile()
+        writer.seek(toFileOffset: UInt64(downloaded))
         writer.write(data)
         downloaded += Int64(data.count)
+        chunkReceived += Int64(data.count)
         processPending()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error {
             if (error as? URLError)?.code == .cancelled { return }
+            retries += 1
+            if retries <= 3, rangeSupported {
+                // Kopan parçayı kaldığı yerden yeniden iste.
+                nextOffset = downloaded
+                queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.requestNextChunk() }
+                return
+            }
             fail("Bağlantı koptu: \(error.localizedDescription)")
             return
         }
-        try? writer?.synchronizeFile()
+        retries = 0
+        nextOffset = downloaded
+        if rangeSupported, contentLength > 0, downloaded < contentLength, chunkReceived > 0 {
+            requestNextChunk()
+            return
+        }
+        writer?.synchronizeFile()
         finished = true
         if contentLength == 0 { contentLength = downloaded }
         processPending()
@@ -118,6 +163,8 @@ final class ProgressiveAsset: NSObject, AVAssetResourceLoaderDelegate, URLSessio
         session.finishTasksAndInvalidate()
         self.session = nil
     }
+
+    private var retries = 0
 
     private func fail(_ message: String) {
         guard !failed else { return }

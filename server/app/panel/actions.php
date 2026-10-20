@@ -250,7 +250,7 @@ function panelAction(array $admin): string|array {
 
     /* ================= Box: kullanıcılar ve premium ================= */
 
-    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_delete'], true)) {
+    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_delete', 'user_quota'], true)) {
         $uid = (int)($_POST['user_id'] ?? 0);
         $u = boxFindUser($uid);
         if (!$u) throw new RuntimeException('Kullanıcı bulunamadı.');
@@ -292,6 +292,13 @@ function panelAction(array $admin): string|array {
                 q('UPDATE users SET display_name=?, email=? WHERE id=?', [$name, $email, $uid]);
                 logAdmin((int)$admin['id'], 'user_rename', ['user_id' => $uid, 'email_changed' => $email !== $u['email']]);
                 return 'Bilgiler güncellendi.';
+            case 'user_quota':
+                $raw = trim((string)($_POST['daily_downloads'] ?? ''));
+                if ($raw !== '' && (!ctype_digit($raw) || (int)$raw > 100000)) throw new RuntimeException('Günlük hak 0 ile 100.000 arasında bir sayı olmalı (boş = genel ayar).');
+                $value = $raw === '' ? null : (int)$raw;
+                q('UPDATE users SET daily_downloads=? WHERE id=?', [$value, $uid]);
+                logAdmin((int)$admin['id'], 'user_quota', ['user_id' => $uid, 'daily_downloads' => $value]);
+                return $value === null ? 'Genel ayar kullanılacak (' . (int)configValue('premium_daily_downloads', 150) . ').' : ($value === 0 ? 'Bu kullanıcı için sınır kaldırıldı.' : "Günlük indirme hakkı $value olarak ayarlandı.");
             case 'user_logout_all':
                 $n = q('DELETE FROM tokens WHERE user_id=?', [$uid])->rowCount();
                 logAdmin((int)$admin['id'], 'user_logout_all', ['user_id' => $uid, 'count' => $n]);

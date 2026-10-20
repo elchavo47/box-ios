@@ -219,6 +219,7 @@ struct TrackMenu: View {
     @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var auth: AuthStore
     @State private var showNewPlaylist = false
+    @State private var showTagEditor = false
     @State private var newPlaylistName = ""
 
     var body: some View {
@@ -305,6 +306,12 @@ struct TrackMenu: View {
                 Label("Listeye ekle", systemImage: "text.badge.plus")
             }
 
+            Button {
+                showTagEditor = true
+            } label: {
+                Label("Bilgileri düzenle", systemImage: "pencil")
+            }
+
             ShareLink(item: track.url) {
                 Label("Paylaş", systemImage: "square.and.arrow.up")
             }
@@ -317,6 +324,7 @@ struct TrackMenu: View {
                 extra
             }
         } label: { menuIcon }
+        .sheet(isPresented: $showTagEditor) { TagEditorView(track: track) }
         .alert("Yeni çalma listesi", isPresented: $showNewPlaylist) {
             TextField("Liste adı", text: $newPlaylistName)
             Button("Oluştur") {

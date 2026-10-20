@@ -97,7 +97,19 @@ actor ArtworkCache {
         missing.remove(url.path)
     }
 
+    private var overrides: [String: URL] = [:]
+
+    /// Kullanıcının seçtiği kapaklar (dosya yolu → resim dosyası).
+    func setOverrides(_ map: [String: URL]) {
+        overrides = map
+    }
+
     private func loadFull(_ url: URL) async -> UIImage? {
+        if let custom = overrides[url.standardizedFileURL.path], let image = UIImage(contentsOfFile: custom.path) {
+            let prepared = Self.prepare(image)
+            large.setObject(prepared, forKey: url.path as NSString)
+            return prepared
+        }
         let key = url.path
         if let cached = large.object(forKey: key as NSString) { return cached }
         if let task = inFlight[key] { return await task.value }

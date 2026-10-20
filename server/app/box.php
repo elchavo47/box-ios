@@ -117,7 +117,7 @@ function boxTodaySearches(int $userId): int {
 }
 
 function boxQuota(array $u): array {
-    $dl = (int)configValue('premium_daily_downloads', 150);
+    $dl = isset($u['daily_downloads']) && $u['daily_downloads'] !== null ? (int)$u['daily_downloads'] : (int)configValue('premium_daily_downloads', 150);
     $se = (int)configValue('premium_daily_searches', 400);
     $usedDl = boxTodayDownloads((int)$u['id']);
     $usedSe = boxTodaySearches((int)$u['id']);
@@ -443,6 +443,7 @@ function boxDailyCleanup(): void {
     q('DELETE FROM login_attempts WHERE attempted_at<DATE_SUB(NOW(),INTERVAL 2 DAY)');
     q('DELETE FROM tokens WHERE expires_at<NOW()');
     q('DELETE FROM search_log WHERE day<DATE_SUB(CURDATE(),INTERVAL 120 DAY)');
+    q('DELETE FROM search_terms WHERE day<DATE_SUB(CURDATE(),INTERVAL 90 DAY)');
     q('DELETE FROM api_metrics WHERE bucket<DATE_SUB(NOW(),INTERVAL 30 DAY)');
     q("DELETE FROM site_settings WHERE setting_key LIKE 'yt\\_units\\_%' AND setting_key<?", ['yt_units_' . date('Y-m-d', strtotime('-40 days'))]);
     foreach (glob(nbPrivateDir('cache') . '/*.json') ?: [] as $f) if (time() - (int)@filemtime($f) > 86400) @unlink($f);

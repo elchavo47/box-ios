@@ -42,6 +42,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 
   <?php card('Hesap'); ?>
     <?php if (can('user_rename')): formStart('user_rename', 'stack'); hidden('user_id', $uid); field('İsim', 'display_name', $u['display_name'], 'text', ['required' => true]); field('E-posta', 'email', $u['email'], 'email', ['required' => true]); echo '<div class="row-actions">' . button('Kaydet', 'ghost') . '</div>'; formEnd(); endif ?>
+    <?php if (can('premium_grant')): formStart('user_quota', 'stack'); hidden('user_id', $uid); field('Günlük indirme hakkı', 'daily_downloads', $u['daily_downloads'] === null ? '' : (string)$u['daily_downloads'], 'number', ['min' => 0, 'placeholder' => 'Genel: ' . (int)configValue('premium_daily_downloads', 150), 'hint' => 'Boş bırakırsan genel ayar geçerli. 0 = sınırsız.']); echo '<div class="row-actions">' . button('Kaydet', 'ghost') . '</div>'; formEnd(); endif ?>
     <?php if (can('user_note')): formStart('user_note', 'stack'); hidden('user_id', $uid); area('Ekip notu', 'note', (string)$u['note'], ['hint' => 'Yalnızca panelde görünür.']); echo '<div class="row-actions">' . button('Notu kaydet', 'ghost') . '</div>'; formEnd(); endif ?>
   <?php cardEnd(); ?>
 </div>

@@ -16,6 +16,23 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var videoPaths: [String: String] = [:]
     /// Dinlenen / beğenilen internet şarkılarının bilgileri ("yt:ID" → sonuç).
     @Published private(set) var remoteMeta: [String: SearchResult] = [:]
+    /// Kullanıcının düzelttiği şarkı bilgileri (dosyaya dokunmadan).
+    @Published private(set) var tagOverrides: [String: TagOverride] = [:]
+    @Published private(set) var stats = ListenStats()
+
+    struct TagOverride: Codable, Equatable {
+        var title: String?
+        var artist: String?
+        var album: String?
+        var coverFile: String?
+    }
+
+    struct ListenStats: Codable {
+        var byDay: [String: Double] = [:]
+        var byArtist: [String: Double] = [:]
+        var byTrack: [String: Double] = [:]
+        var titles: [String: String] = [:]
+    }
 
     let documents: URL
     private let supportDirectory: URL
@@ -28,6 +45,9 @@ final class LibraryStore: ObservableObject {
     private var historyFile: URL { supportDirectory.appendingPathComponent("history.json") }
     private var videoPathsFile: URL { supportDirectory.appendingPathComponent("video-paths.json") }
     private var remoteMetaFile: URL { supportDirectory.appendingPathComponent("remote-meta.json") }
+    private var tagsFile: URL { supportDirectory.appendingPathComponent("tag-overrides.json") }
+    private var statsFile: URL { supportDirectory.appendingPathComponent("listen-stats.json") }
+    private var statsSaveTask: Task<Void, Never>?
 
     private struct History: Codable {
         var recent: [String]
@@ -51,6 +71,9 @@ final class LibraryStore: ObservableObject {
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
         videoPaths = Self.load([String: String].self, from: videoPathsFile) ?? [:]
         remoteMeta = Self.load([String: SearchResult].self, from: remoteMetaFile) ?? [:]
+        tagOverrides = Self.load([String: TagOverride].self, from: tagsFile) ?? [:]
+        stats = Self.load(ListenStats.self, from: statsFile) ?? ListenStats()
+        registerCoverOverrides()
         if let history = Self.load(History.self, from: historyFile) {
             recentPaths = history.recent
             playCounts = history.counts
@@ -114,12 +137,13 @@ final class LibraryStore: ObservableObject {
 
             guard let meta else { continue }
 
+            let tag = tagOverrides[path]
             found.append(Track(
                 relativePath: path,
                 url: url,
-                title: meta.title,
-                artist: meta.artist,
-                album: meta.album,
+                title: tag?.title ?? meta.title,
+                artist: tag?.artist ?? meta.artist,
+                album: tag?.album ?? meta.album,
                 duration: meta.duration,
                 addedAt: values.creationDate ?? modified,
                 fileSize: size
@@ -141,7 +165,8 @@ final class LibraryStore: ObservableObject {
         let size = Int64(values.fileSize ?? 0)
         let meta = await Self.readMetadata(url: url, modified: modified, size: size)
         metadataCache[path] = meta
-        let track = Track(relativePath: path, url: url, title: meta.title, artist: meta.artist, album: meta.album, duration: meta.duration, addedAt: values.creationDate ?? modified, fileSize: size)
+        let tag = tagOverrides[path]
+        let track = Track(relativePath: path, url: url, title: tag?.title ?? meta.title, artist: tag?.artist ?? meta.artist, album: tag?.album ?? meta.album, duration: meta.duration, addedAt: values.creationDate ?? modified, fileSize: size)
         var updated = tracks.filter { $0.relativePath != path }
         let insertAt = updated.firstIndex { $0.title.localizedCaseInsensitiveCompare(track.title) == .orderedDescending } ?? updated.count
         updated.insert(track, at: insertAt)
@@ -221,6 +246,124 @@ final class LibraryStore: ObservableObject {
             }
         }
         return result
+    }
+
+    // MARK: - Etiket düzenleme
+
+    /// Şarkının adını, sanatçısını, albümünü ve kapağını Box içinde değiştirir (dosya bozulmaz).
+    func editTags(of track: Track, title: String, artist: String, album: String, cover: UIImage?, removeCover: Bool) {
+        let path = track.relativePath
+        var tag = tagOverrides[path] ?? TagOverride()
+        tag.title = title.trimmingCharacters(in: .whitespaces).isEmpty ? nil : title.trimmingCharacters(in: .whitespaces)
+        tag.artist = artist.trimmingCharacters(in: .whitespaces).isEmpty ? nil : artist.trimmingCharacters(in: .whitespaces)
+        tag.album = album.trimmingCharacters(in: .whitespaces).isEmpty ? nil : album.trimmingCharacters(in: .whitespaces)
+        if removeCover, let old = tag.coverFile {
+            try? FileManager.default.removeItem(at: coversDirectory.appendingPathComponent(old))
+            tag.coverFile = nil
+        }
+        if let cover {
+            try? FileManager.default.createDirectory(at: coversDirectory, withIntermediateDirectories: true)
+            let prepared = ArtworkCache.downscale(ArtworkCache.squareCrop(cover.normalizedOrientation()), maxSide: 900)
+            let name = "tag-\(UUID().uuidString).jpg"
+            if let data = prepared.jpegData(compressionQuality: 0.88), (try? data.write(to: coversDirectory.appendingPathComponent(name))) != nil {
+                if let old = tag.coverFile { try? FileManager.default.removeItem(at: coversDirectory.appendingPathComponent(old)) }
+                tag.coverFile = name
+            }
+        }
+        tagOverrides[path] = tag
+        Self.save(tagOverrides, to: tagsFile)
+        if let index = tracks.firstIndex(where: { $0.relativePath == path }) {
+            let meta = metadataCache[path]
+            tracks[index].title = tag.title ?? meta?.title ?? tracks[index].title
+            tracks[index].artist = tag.artist ?? meta?.artist ?? ""
+            tracks[index].album = tag.album ?? meta?.album ?? ""
+        }
+        registerCoverOverrides()
+        let url = track.url
+        Task {
+            await ArtworkCache.shared.invalidate(url)
+            NotificationCenter.default.post(name: .boxArtworkReady, object: url)
+        }
+    }
+
+    func resetTags(of track: Track) {
+        if let file = tagOverrides[track.relativePath]?.coverFile {
+            try? FileManager.default.removeItem(at: coversDirectory.appendingPathComponent(file))
+        }
+        tagOverrides[track.relativePath] = nil
+        Self.save(tagOverrides, to: tagsFile)
+        registerCoverOverrides()
+        Task { await refresh() }
+        let url = track.url
+        Task {
+            await ArtworkCache.shared.invalidate(url)
+            NotificationCenter.default.post(name: .boxArtworkReady, object: url)
+        }
+    }
+
+    private func registerCoverOverrides() {
+        var map: [String: URL] = [:]
+        for (path, tag) in tagOverrides {
+            guard let file = tag.coverFile else { continue }
+            map[documents.appendingPathComponent(path).standardizedFileURL.path] = coversDirectory.appendingPathComponent(file)
+        }
+        Task { await ArtworkCache.shared.setOverrides(map) }
+    }
+
+    // MARK: - Dinleme istatistikleri
+
+    func addListen(_ track: Track, seconds: Double) {
+        let day = Self.dayKey(Date())
+        stats.byDay[day, default: 0] += seconds
+        stats.byArtist[track.displayArtist, default: 0] += seconds
+        stats.byTrack[track.relativePath, default: 0] += seconds
+        if stats.titles[track.relativePath] == nil { stats.titles[track.relativePath] = track.title }
+        statsSaveTask?.cancel()
+        statsSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            Self.save(self.stats, to: self.statsFile)
+        }
+    }
+
+    func flushStats() {
+        Self.save(stats, to: statsFile)
+    }
+
+    static func dayKey(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    // MARK: - Akıllı listeler
+
+    var mostPlayed: [Track] {
+        playCounts.sorted { $0.value > $1.value }.prefix(25).compactMap { resolve(path: $0.key) }
+    }
+
+    var forgotten: [Track] {
+        let recent = Set(recentPaths.prefix(40))
+        return tracks.filter { (playCounts[$0.relativePath] ?? 0) > 0 && !recent.contains($0.relativePath) }
+            .sorted { (playCounts[$0.relativePath] ?? 0) > (playCounts[$1.relativePath] ?? 0) }
+            .prefix(50).map { $0 }
+    }
+
+    var addedThisMonth: [Track] {
+        let cutoff = Date().addingTimeInterval(-30 * 86400)
+        return tracks.filter { $0.addedAt >= cutoff }.sorted { $0.addedAt > $1.addedAt }
+    }
+
+    /// Çalan sırayı (yerel ve internet şarkıları) yeni bir liste olarak kaydeder.
+    @discardableResult
+    func createPlaylist(name: String, tracks list: [Track]) -> Playlist {
+        let local = list.filter { !$0.isRemote }.map(\.relativePath)
+        let remote = list.compactMap(\.remote)
+        let playlist = Playlist(name: name.isEmpty ? "Sıram" : name, paths: local, remote: remote.isEmpty ? nil : remote)
+        playlists.append(playlist)
+        savePlaylists()
+        return playlist
     }
 
     // MARK: - Yedekleme ve paylaşma

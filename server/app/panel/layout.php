@@ -12,6 +12,7 @@ $descriptions = [
     'player' => 'Hesap bilgileri, premium geçmişi, indirmeler ve açık oturumlar.',
     'premium' => 'Premium üyeler, yakında bitecekler ve son premium hareketleri.',
     'downloads' => 'Premium kullanıcıların indirdiği şarkılar ve günlük kullanım.',
+    'stats' => 'Aktif kullanıcılar, indirme ve arama eğilimleri, en çok arananlar.',
     'app' => 'Uygulamanın uzaktan ayarları: bakım modu, duyuru, zorunlu güncelleme ve kotalar. Değişiklikler uygulamaya anında yansır.',
     'services' => 'VDS indirme servisi ve YouTube arama anahtarı: durum, kota ve ayarlar.',
     'health' => 'Uygulama API isteklerinin yanıt süresi ve hata oranı.',

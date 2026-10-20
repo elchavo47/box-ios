@@ -77,6 +77,8 @@ final class PlayerManager: ObservableObject {
     /// Sıra bitince benzer şarkılarla devam etmek için (otomatik radyo).
     var radioProvider: ((Track, [String]) async -> [Track])?
     var autoRadioEnabled: () -> Bool = { false }
+    /// Dinleme süresi (istatistik / Box Özeti için).
+    var onListen: ((Track, Double) -> Void)?
     /// Çevrimdışıyken çalınamayacak şarkıları atlamak için.
     var isPlayable: ((Track) -> Bool)?
     /// Şarkılar arası yumuşak geçiş (saniye) ve ses efektleri.
@@ -728,6 +730,17 @@ final class PlayerManager: ObservableObject {
             }
         }
         fadeInStarted = crossfade() > 0 && record ? Date() : nil
+        if streaming, let remote = track.remote {
+            // 8 saniyede çalmaya başlayamazsa dosyayı indirip çal.
+            let token = loadToken
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                guard let self, token == self.loadToken, self.player.currentItem === item,
+                      self.isBuffering, self.clock.currentTime < 0.5 else { return }
+                self.lastStreamError = "Akış 8 saniyede başlamadı; şarkı indirilerek çalınıyor."
+                self.progressive?.cancel()
+                Task { await self.fallbackToFile(track: track, remote: remote, token: token, startAt: 0, record: false) }
+            }
+        }
 
         itemObservers.removeAll()
         let token = loadToken
@@ -843,6 +856,7 @@ final class PlayerManager: ObservableObject {
                 }
                 if self.isPlaying { self.saveState() }
                 if self.videoMode { self.syncVideo() }
+                if self.isPlaying, !self.isBuffering, let track = self.current { self.onListen?(track, 0.25) }
             }
         }
     }
