@@ -5,8 +5,8 @@ import UIKit
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var tracks: [Track] = [] { didSet { tracksChanged() } }
-    @Published private(set) var playlists: [Playlist] = []
-    @Published private(set) var favorites: Set<String> = []
+    @Published var playlists: [Playlist] = []
+    @Published var favorites: Set<String> = []
     @Published private(set) var isScanning = false
     @Published private(set) var hasScanned = false
     /// Son çalınanlar (en yeni başta, en fazla 60).
@@ -21,6 +21,21 @@ final class LibraryStore: ObservableObject {
     /// Dinleme istatistikleri. Saniyede birkaç kez güncellendiği için yayınlanmaz;
     /// yayınlansaydı kitaplığı izleyen bütün ekranlar sürekli yeniden çizilirdi (kasma).
     private(set) var stats = ListenStats()
+
+    // MARK: Hesaba kayıt (LibrarySync.swift)
+    /// Sunucuya gönderilmeyi bekleyen değişiklikler; uygulama kapansa da kaybolmaz.
+    var syncState = LibrarySyncState()
+    /// Son kaydedilen hâl: neyin değiştiğini bulmak için (her değişiklik buradan geçer).
+    var savedPlaylists: [UUID: Playlist] = [:]
+    var savedOrder: [UUID] = []
+    var savedFavorites: Set<String> = []
+    /// Sunucudan gelen hâl uygulanırken değişiklikler "bekleyen" sayılmaz.
+    var applyingRemote = false
+    var syncTask: Task<Void, Never>?
+    var syncDebounce: Task<Void, Never>?
+    var pendingResync = false
+    var syncToken: () -> String? = { nil }
+    @Published var syncStatus: LibrarySyncStatus = .idle
 
     /// Hızlı arama tabloları (her satırda tüm kitaplığı taramamak için).
     private var trackByPath: [String: Track] = [:]
@@ -81,6 +96,8 @@ final class LibraryStore: ObservableObject {
     private var remoteMetaFile: URL { supportDirectory.appendingPathComponent("remote-meta.json") }
     private var tagsFile: URL { supportDirectory.appendingPathComponent("tag-overrides.json") }
     private var statsFile: URL { supportDirectory.appendingPathComponent("listen-stats.json") }
+    var syncStateFile: URL { supportDirectory.appendingPathComponent("library-sync.json") }
+    var accountsDirectory: URL { supportDirectory.appendingPathComponent("accounts", isDirectory: true) }
     private var lastStatsSave = Date()
 
     private struct History: Codable {
@@ -102,6 +119,7 @@ final class LibraryStore: ObservableObject {
 
         playlists = Self.load([Playlist].self, from: playlistsFile) ?? []
         favorites = Set(Self.load([String].self, from: favoritesFile) ?? [])
+        syncState = Self.load(LibrarySyncState.self, from: syncStateFile) ?? LibrarySyncState()
         metadataCache = Self.load([String: CachedMetadata].self, from: metadataFile) ?? [:]
         videoPaths = Self.load([String: String].self, from: videoPathsFile) ?? [:]
         rebuildVideoIndex()
@@ -113,6 +131,8 @@ final class LibraryStore: ObservableObject {
             recentPaths = history.recent
             playCounts = history.counts
         }
+        canonicalizeFavorites()
+        markSaved()
     }
 
     // MARK: - Tarama
@@ -444,7 +464,7 @@ final class LibraryStore: ObservableObject {
         for path in backup.recentPaths.reversed() where !recentPaths.contains(path) { recentPaths.append(path) }
         playCounts.merge(backup.playCounts) { max($0, $1) }
         savePlaylists()
-        Self.save(Array(favorites), to: favoritesFile)
+        saveFavorites()
         Self.save(remoteMeta, to: remoteMetaFile)
         Self.save(videoPaths, to: videoPathsFile)
         saveHistory()
@@ -673,9 +693,19 @@ final class LibraryStore: ObservableObject {
 
     func toggleFavorite(_ track: Track) {
         if let remote = track.remote { remember(remote) }
-        if !track.isRemote, let id = videoID(forPath: track.relativePath), favorites.contains("yt:" + id) {
-            favorites.remove("yt:" + id)
-            Self.save(Array(favorites), to: favoritesFile)
+        // Box'a indirilmiş şarkı YouTube kimliğiyle beğenilir: hesapta her cihazda aynı şarkı olsun.
+        if !track.isRemote, let id = videoID(forPath: track.relativePath) {
+            let key = "yt:" + id
+            if favorites.contains(key) || favorites.contains(track.relativePath) {
+                favorites.remove(key)
+                favorites.remove(track.relativePath)
+            } else {
+                if remoteMeta[key] == nil {
+                    remember(SearchResult(id: id, title: track.title, channel: track.artist, thumbnail: nil, duration: Int(track.duration)))
+                }
+                favorites.insert(key)
+            }
+            saveFavorites()
             return
         }
         if favorites.contains(track.relativePath) {
@@ -683,7 +713,7 @@ final class LibraryStore: ObservableObject {
         } else {
             favorites.insert(track.relativePath)
         }
-        Self.save(Array(favorites), to: favoritesFile)
+        saveFavorites()
     }
 
     // MARK: - Çalma listeleri
@@ -758,9 +788,61 @@ final class LibraryStore: ObservableObject {
         playlists.first { $0.id == id }
     }
 
-    private func savePlaylists() {
+    /// Bütün liste değişiklikleri buradan geçer: neyin değiştiğini bulur, hesaba gönderilecekler arasına ekler.
+    func savePlaylists() {
+        if !applyingRemote { recordPlaylistChanges() }
         Self.save(playlists, to: playlistsFile)
+        if !applyingRemote { scheduleSync() }
     }
+
+    func saveFavorites() {
+        if !applyingRemote { recordFavoriteChanges() }
+        Self.save(Array(favorites), to: favoritesFile)
+        if !applyingRemote { scheduleSync() }
+    }
+
+    /// Sunucudan gelen hâli diske yazar (bekleyen değişiklik sayılmaz).
+    func persistLibrary() {
+        Self.save(playlists, to: playlistsFile)
+        Self.save(Array(favorites), to: favoritesFile)
+        Self.save(remoteMeta, to: remoteMetaFile)
+        saveSyncState()
+    }
+
+    func saveSyncState() {
+        Self.save(syncState, to: syncStateFile)
+    }
+
+    /// Hesap değişiminde: listeleri, beğenileri ve bekleyen değişiklikleri doğrudan değiştirir.
+    func replaceLibrary(playlists newPlaylists: [Playlist], favorites newFavorites: Set<String>, state: LibrarySyncState) {
+        applyingRemote = true
+        playlists = newPlaylists
+        favorites = newFavorites
+        syncState = state
+        applyingRemote = false
+        persistLibrary()
+        markSaved()
+    }
+
+    /// Diskteki hâlin bir kopyası (hesap arşivi için).
+    func archiveFiles() -> (playlists: [Playlist], favorites: [String]) {
+        (playlists, Array(favorites))
+    }
+
+    static func loadJSON<T: Decodable>(_ type: T.Type, from url: URL) -> T? { load(type, from: url) }
+    static func saveJSON<T: Encodable>(_ value: T, to url: URL) { save(value, to: url) }
+
+    func mergeRemoteMeta(_ items: [SearchResult]) {
+        var changed = false
+        for item in items where remoteMeta["yt:" + item.id] == nil {
+            remoteMeta["yt:" + item.id] = item
+            changed = true
+        }
+        if changed { Self.save(remoteMeta, to: remoteMetaFile) }
+    }
+
+    var coversFolder: URL { coversDirectory }
+    func coverCacheRemove(_ file: String) { coverCache.removeObject(forKey: file as NSString) }
 
     // MARK: - Dosya işlemleri sonrası güncelleme
 
@@ -794,7 +876,7 @@ final class LibraryStore: ObservableObject {
         metadataCache = newCache
 
         savePlaylists()
-        Self.save(Array(favorites), to: favoritesFile)
+        saveFavorites()
         Self.save(metadataCache, to: metadataFile)
     }
 
@@ -818,7 +900,7 @@ final class LibraryStore: ObservableObject {
         saveHistory()
 
         savePlaylists()
-        Self.save(Array(favorites), to: favoritesFile)
+        saveFavorites()
     }
 
     // MARK: - İçe aktarma

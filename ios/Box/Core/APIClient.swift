@@ -44,6 +44,7 @@ final class APIClient {
         method: String = "GET",
         query: [String: String] = [:],
         body: [String: Any]? = nil,
+        bodyData: Data? = nil,
         token: String? = nil,
         as type: T.Type = T.self
     ) async throws -> T {
@@ -65,6 +66,10 @@ final class APIClient {
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } else if let bodyData {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = bodyData
+            request.timeoutInterval = 90
         }
 
         let data: Data

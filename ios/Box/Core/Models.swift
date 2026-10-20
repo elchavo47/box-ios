@@ -58,6 +58,21 @@ struct Playlist: Identifiable, Codable, Hashable {
     var sourceID: String?
     /// Kullanıcının seçtiği kapak (Application Support/Box/covers içindeki dosya adı).
     var coverFile: String?
+    /// Hesaba kayıt: son değişiklik zamanı ve sunucudaki kapağın adresi (bu cihazdaki kapak onunla aynıysa).
+    var updatedAt: Date?
+    var coverURL: String?
+
+    /// Hesapla eşitlenen içerik (kapak ve zaman damgası hariç); değişti mi diye karşılaştırmak için.
+    var syncContent: SyncContent {
+        SyncContent(name: name, paths: paths, remote: remote ?? [], sourceID: sourceID)
+    }
+
+    struct SyncContent: Equatable {
+        let name: String
+        let paths: [String]
+        let remote: [SearchResult]
+        let sourceID: String?
+    }
 
     init(id: UUID = UUID(), name: String, paths: [String] = [], createdAt: Date = Date(), remote: [SearchResult]? = nil, sourceID: String? = nil) {
         self.id = id

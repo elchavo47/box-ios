@@ -52,6 +52,18 @@ if (preg_match('#^/api/v1/avatar/([a-f0-9]{32}\.(jpg|png))$#', $path, $am)) {
     exit;
 }
 
+// Çalma listesi kapağı (adı tahmin edilemez)
+if (preg_match('#^/api/v1/pcover/([a-f0-9]{32}\.jpg)$#', $path, $cm)) {
+    $file = boxLibCoverDir() . '/' . $cm[1];
+    if (!is_file($file)) { http_response_code(404); exit; }
+    header('Content-Type: image/jpeg');
+    header('Content-Length: ' . filesize($file));
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header_remove('Content-Security-Policy');
+    readfile($file);
+    exit;
+}
+
 apiIpThrottle();
 
 /* ---------------- Rota çözümü ---------------- */
@@ -241,6 +253,37 @@ switch ($route) {
         q('INSERT INTO push_devices(user_id,token,environment,app_version,last_seen_at) VALUES(?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), environment=VALUES(environment), app_version=VALUES(app_version), last_seen_at=NOW()', [$u['id'], $token, $env, $ver]);
         jsonOut(['ok' => true]);
 
+    case 'me/library':
+        // Hesaba bağlı kitaplık: GET güncel hali, POST değişiklikleri uygula ve güncel hali dön.
+        if ($method === 'POST') {
+            $b = body(6 * 1024 * 1024);
+            $u = boxApiUser();
+            throttle('library:' . $u['id'], 120, 600);
+            try { boxLibApply((int)$u['id'], $b); }
+            catch (PDOException $e) { nbReport($e); jsonOut(['ok' => false, 'error' => 'Kitaplık kaydedilemedi, birazdan tekrar denenecek.'], 500); }
+        } else {
+            $u = boxApiUser();
+            throttle('library-get:' . $u['id'], 120, 600);
+        }
+        jsonOut(['ok' => true] + boxLibState((int)$u['id']));
+
+    case 'me/library/cover':
+        $need('POST');
+        $b = body(2 * 1024 * 1024);
+        $u = boxApiUser();
+        throttle('pcover:' . $u['id'], 60, 3600);
+        $pid = boxLibUuid($b['id'] ?? null);
+        if (!$pid) jsonOut(['ok' => false, 'error' => 'Liste bulunamadı.'], 404);
+        try {
+            if (($b['remove'] ?? false) === true) $url = boxLibSetCover((int)$u['id'], $pid, null);
+            else {
+                $binary = is_string($b['image'] ?? null) ? base64_decode($b['image'], true) : false;
+                if ($binary === false) jsonOut(['ok' => false, 'error' => 'Kapak okunamadı.'], 400);
+                $url = boxLibSetCover((int)$u['id'], $pid, $binary);
+            }
+        } catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 400); }
+        jsonOut(['ok' => true, 'cover_url' => $url]);
+
     case 'me/delete':
         $need('POST');
         $u = boxApiUser();
@@ -251,6 +294,7 @@ switch ($route) {
         }
         boxAppleRevoke($u);
         boxDeleteAvatarFile($u['avatar_file'] ?? null);
+        boxLibDeleteUserFiles((int)$u['id']);
         q('DELETE FROM users WHERE id=?', [$u['id']]);
         // Silinen premium üye izleme parmak izini değiştirir; kendi işlemimiz olduğunu bildir (yanlış alarm olmasın).
         if ((int)$u['is_premium'] === 1) watchRefresh();

@@ -313,6 +313,7 @@ function panelAction(array $admin): string|array {
                 if (mb_strtolower(trim((string)($_POST['confirm_email'] ?? ''))) !== mb_strtolower((string)$u['email'])) throw new RuntimeException('Onay için kullanıcının e-postasını aynen yaz.');
                 boxAppleRevoke($u);
                 boxDeleteAvatarFile($u['avatar_file'] ?? null);
+                boxLibDeleteUserFiles($uid);
                 q('DELETE FROM users WHERE id=?', [$uid]);
                 logAdmin((int)$admin['id'], 'user_delete', ['user_id' => $uid, 'email' => $u['email']]);
                 watchRefresh();

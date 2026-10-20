@@ -26,6 +26,7 @@ CREATE TABLE users (
   apple_sub VARCHAR(120) NULL DEFAULT NULL,
   apple_refresh TEXT NULL,
   expiry_notified_for DATETIME NULL DEFAULT NULL,
+  library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME NULL DEFAULT NULL,
   last_seen_at DATETIME NULL DEFAULT NULL,
@@ -96,6 +97,34 @@ CREATE TABLE notifications (
   KEY idx_notif_user (user_id, id),
   KEY idx_notif_target (target, id),
   CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_playlists (
+  user_id INT UNSIGNED NOT NULL,
+  pid CHAR(36) NOT NULL,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  items MEDIUMTEXT NOT NULL,
+  source_id VARCHAR(120) NULL DEFAULT NULL,
+  cover_file VARCHAR(64) NULL DEFAULT NULL,
+  position INT NOT NULL DEFAULT 0,
+  created_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  deleted TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, pid),
+  KEY idx_upl_user (user_id, deleted, position),
+  CONSTRAINT fk_upl_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_favorites (
+  user_id INT UNSIGNED NOT NULL,
+  key_hash CHAR(40) NOT NULL,
+  item_key TEXT NOT NULL,
+  meta TEXT NULL,
+  liked TINYINT(1) NOT NULL DEFAULT 1,
+  updated_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, key_hash),
+  KEY idx_ufav_user (user_id, liked, updated_at),
+  CONSTRAINT fk_ufav_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE push_log (

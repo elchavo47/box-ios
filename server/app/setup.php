@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 14;
+const BOX_SCHEMA_VERSION = 15;
 
 function boxVersion(): string {
     static $version = null;
@@ -107,6 +107,8 @@ function ensureSchema(bool $force = false): void {
         if (!$hasIndex('users', 'uq_users_apple')) { q('ALTER TABLE users ADD UNIQUE INDEX uq_users_apple(apple_sub)'); $note('Dizin eklendi', 'users.uq_users_apple'); }
         if (!$hasIndex('users', 'idx_users_premium')) { q('ALTER TABLE users ADD INDEX idx_users_premium(is_premium,premium_until)'); $note('Dizin eklendi', 'users.idx_users_premium'); }
         if (!$hasIndex('users', 'idx_users_seen')) { q('ALTER TABLE users ADD INDEX idx_users_seen(last_seen_at)'); $note('Dizin eklendi', 'users.idx_users_seen'); }
+        // 3.0: hesaba bağlı kitaplık (listeler ve beğeniler tabloları şemadan oluşur)
+        $add('users', 'library_order_at', 'library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER expiry_notified_for');
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');
 
         // Eski admin tablosu: password_hash -> password, rol/durum/2FA alanları

@@ -96,7 +96,11 @@ struct BoxApp: App {
                         default: router?.tab = .home
                         }
                     }
+                    library.syncToken = { [weak auth] in auth?.token }
+                    auth.beforeLogout = { [weak library] in await library?.syncNow() }
+                    auth.onAccountDeleted = { [weak library] id in library?.forgetAccount(id) }
                     await library.refresh()
+                    library.activateAccount(auth.user?.id)
                     player.restoreIfNeeded(tracks: library.tracks)
                     // Kaldığı yerden devam eden sırada internet şarkısı varsa ve premium yoksa çıkar.
                     if !auth.isPremium { player.dropRemoteTracks() }
@@ -135,6 +139,8 @@ struct BoxApp: App {
                     }
                 }
                 .onChange(of: auth.user?.id) { id in
+                    // Listeler ve beğeniler hesaba ait: çıkışta kaldırılır, girişte o hesabınki gelir.
+                    library.activateAccount(id)
                     // Başka bir hesaba geçildiyse önceki hesabın aramaları görünmesin.
                     guard let id else { return }
                     let key = "box.lastUserID"
@@ -177,6 +183,7 @@ struct BoxApp: App {
                             await library.refresh()
                             await server.refresh()
                             await auth.refresh()
+                            library.requestSync(immediately: true)
                         }
                     }
                 }

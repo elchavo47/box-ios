@@ -107,12 +107,13 @@ function jsonOut(mixed $data, int $code = 200): never {
     exit;
 }
 
-function body(): array {
+/** İstek gövdesi (JSON). $max: bu istek için izin verilen boyut; ilk çağrı belirler. */
+function body(int $max = 256 * 1024): array {
     static $cache = null;
     if ($cache !== null) return $cache;
-    $raw = file_get_contents('php://input', false, null, 0, 256 * 1024 + 1);
+    $raw = file_get_contents('php://input', false, null, 0, $max + 1);
     if ($raw === false || $raw === '') return $cache = $_POST;
-    if (strlen($raw) > 256 * 1024) jsonOut(['ok' => false, 'error' => 'İstek boyutu çok büyük.'], 413);
+    if (strlen($raw) > $max) jsonOut(['ok' => false, 'error' => 'İstek boyutu çok büyük.'], 413);
     $value = json_decode($raw, true);
     return $cache = (is_array($value) ? $value : $_POST);
 }
@@ -266,6 +267,7 @@ require_once ROOT . '/app/hardening.php';
 require_once ROOT . '/app/guard.php';
 require_once ROOT . '/app/box.php';
 require_once ROOT . '/app/apple.php';
+require_once ROOT . '/app/library.php';
 
 if (PHP_SAPI !== 'cli') {
     $setup = setupState();

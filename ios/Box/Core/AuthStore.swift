@@ -8,6 +8,10 @@ final class AuthStore: ObservableObject {
     @Published var isWorking = false
     @Published private(set) var quota: Quota?
 
+    /// Çıkıştan önce: hesaba gönderilmemiş kitaplık değişiklikleri gönderilsin.
+    var beforeLogout: (() async -> Void)?
+    var onAccountDeleted: ((Int) -> Void)?
+
     private let tokenKey = "box.token"
     private let userCacheKey = "box.cachedUser"
 
@@ -120,6 +124,15 @@ final class AuthStore: ObservableObject {
     }
 
     func logout() async {
+        if token != nil, let beforeLogout {
+            // Ağ yoksa uzun bekletme: en fazla birkaç saniye (bekleyenler cihazda saklanır).
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await beforeLogout() }
+                group.addTask { try? await Task.sleep(nanoseconds: 6_000_000_000) }
+                await group.next()
+                group.cancelAll()
+            }
+        }
         if let token {
             await PushManager.shared.unregister(session: token)
             _ = try? await APIClient.shared.send("auth/logout", method: "POST", token: token, as: EmptyResponse.self)
@@ -137,7 +150,9 @@ final class AuthStore: ObservableObject {
         _ = try await APIClient.shared.send(
             "me/delete", method: "POST", body: body, token: token, as: EmptyResponse.self
         )
+        let id = user?.id
         clear()
+        if let id { onAccountDeleted?(id) }
     }
 
     private func store(token: String, user: BoxUser) {
