@@ -82,6 +82,7 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 24)
             }
+            .background(alignment: .top) { HomeGlow() }
             .boxScreenBackground()
             .refreshable {
                 await library.refresh()
@@ -548,5 +549,37 @@ struct HomeRouteView: View {
                 tracks: groups.first { $0.name == name }?.tracks ?? []
             ))
         }
+    }
+}
+
+
+/// Ana sayfanın üstündeki renk geçişi. Çalan şarkının kapak renginden gelir;
+/// bir şey çalmıyorsa Box yeşili. Şarkı değişince yavaşça yeni renge döner.
+private struct HomeGlow: View {
+    @EnvironmentObject private var player: PlayerManager
+
+    private var tint: Color {
+        if let color = player.artworkColor { return Color(color) }
+        return .accentDeep
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            LinearGradient(
+                stops: [
+                    .init(color: tint.opacity(0.62), location: 0),
+                    .init(color: tint.opacity(0.28), location: 0.45),
+                    .init(color: tint.opacity(0), location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            // Sol üstte hafif bir parlama: düz geçişten daha canlı durur.
+            RadialGradient(colors: [tint.opacity(0.45), .clear], center: .topLeading, startRadius: 0, endRadius: 360)
+        }
+        .frame(height: 480)
+        .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .animation(.easeInOut(duration: 1.2), value: player.artworkColor)
     }
 }
