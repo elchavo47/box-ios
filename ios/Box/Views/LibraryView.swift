@@ -233,7 +233,7 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
         }
 
-        // 2) Son çalınanlar ve beğenilenler.
+        // 2) İndirilenler, son çalınanlar ve beğenilenler.
         Text(L("Hızlı erişim"))
             .font(.system(size: 20, weight: .bold))
             .foregroundColor(.white)
@@ -241,6 +241,16 @@ struct LibraryView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .moveDisabled(true)
+        playlistRow(title: L("İndirilenler"), subtitle: L("{0} şarkı", library.downloadedTracks.count), route: .downloads) {
+            if library.downloadedTracks.isEmpty {
+                ZStack {
+                    LinearGradient(colors: [Color.boxSurface2, Color.boxSurface], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Image(systemName: "arrow.down.circle.fill").font(.system(size: 22)).foregroundColor(.accent)
+                }
+            } else {
+                PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 56, cornerRadius: 0)
+            }
+        }
         if !library.recentlyPlayed.isEmpty {
             playlistRow(title: L("Son çalınanlar"), subtitle: L("{0} şarkı", library.recentlyPlayed.count), route: .recent) {
                 PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
@@ -263,11 +273,6 @@ struct LibraryView: View {
 
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
-                if !library.downloadedTracks.isEmpty {
-                    autoTile(title: L("İndirilenler"), subtitle: L("{0} şarkı", library.downloadedTracks.count), route: .downloads) {
-                        PlaylistCover(tracks: library.downloadedTracks, icon: "arrow.down", size: 120, cornerRadius: 0)
-                    }
-                }
                 ForEach(SmartList.allCases, id: \.self) { list in
                     let count = list == .mostPlayed ? library.mostPlayed.count : (list == .forgotten ? library.forgotten.count : library.addedThisMonth.count)
                     if count > 0 {

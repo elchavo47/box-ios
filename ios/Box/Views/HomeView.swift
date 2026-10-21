@@ -116,6 +116,7 @@ struct HomeView: View {
                 }
                 .accessibilityLabel(L("Ara"))
             }
+            if !auth.isPremium { PremiumHeaderButton() }
             if auth.isLoggedIn { InboxButton() }
             AccountButton()
         }

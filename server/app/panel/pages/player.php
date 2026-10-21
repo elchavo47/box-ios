@@ -42,13 +42,22 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 
 <div class="cols-2">
   <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Panelden açık. Süre eklersen mevcut bitişin üstüne eklenir.' : ($store ? (boxStoreUnlocks() === 'all' ? 'App Store\'dan satın aldı: ayara göre bütün özellikler açık. Aşağıdan tek tek kapatabilirsin.' : 'App Store\'dan satın aldı: tarayıcıdan indirme, ekolayzer ve kilitli klasör açık. YouTube özelliklerini aşağıdan istersen aç.') : 'Panelden açınca bütün özellikler açık gelir; aşağıdan tek tek kapatabilirsin.')); ?>
+    <?php if ($store && !$isPrem): ?>
+    <div class="store-status">
+      <?=pill("App Store", "good")?>
+      <b><?=h(boxStoreProductName((string)$store['product_id']))?></b>
+      <span><?=$store['expires_at'] ? 'Yenilenme / bitiş: ' . h(nbDate((string)$store['expires_at'], 'd.m.Y H:i')) : 'Tek seferlik, bitişi yok'?><?=$store['environment'] === 'sandbox' ? ' · test (sandbox)' : ''?></span>
+    </div>
+    <p class="ios-section-title">Panelden ek Premium</p>
+    <p class="ios-footnote" style="margin-top:0">Kullanıcı zaten App Store'dan Premium. Burası isteğe bağlı: panelden süre verirsen o süre boyunca bütün özellikler açılır ve abonelik bitse de Premium kalır.</p>
+    <?php endif ?>
     <?php formStart('premium_grant', 'stack'); hidden('user_id', $uid); ?>
     <div class="segmented" role="radiogroup" aria-label="Süre">
       <?php foreach ([7 => '1 hafta', 30 => '1 ay', 90 => '3 ay', 365 => '1 yıl', 0 => 'Süresiz'] as $d => $l): ?>
       <label><input type="radio" name="days" value="<?=$d?>"<?=$d === 30 ? ' checked' : ''?>><span><?=h($l)?></span></label>
       <?php endforeach ?>
     </div>
-    <div class="btn-row"><?=button($isPrem ? 'Süre ekle' : 'Premium aç', 'primary', ['icon' => 'bolt'])?></div>
+    <div class="btn-row"><?=button($isPrem ? 'Süre ekle' : ($store ? 'Panelden de Premium ver' : 'Premium aç'), $store && !$isPrem ? 'ghost' : 'primary', ['icon' => 'bolt'])?></div>
     <?php formEnd(); ?>
     <?php if ($isPrem): formStart('premium_revoke'); hidden('user_id', $uid); echo button('Premiumu kapat', 'danger ghost', ['confirm' => 'Premium hemen kapanacak. Emin misin?']); formEnd(); endif ?>
     <?php $effective = boxHasPremium($u) ? boxFeatures($u) : array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), boxFeaturesOff($u)));

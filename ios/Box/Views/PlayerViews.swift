@@ -478,20 +478,21 @@ struct FullPlayerView: View {
                 showEQ = true
                 Haptics.tap()
             } label: {
-                Image(systemName: "slider.vertical.3")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(eqActive ? .accent : .white.opacity(0.85))
-                    .frame(width: 44, height: 44)
-                    .overlay(alignment: .topTrailing) {
-                        if !auth.has(.eq) {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.black)
-                                .padding(3)
-                                .background(Circle().fill(Color.accent))
-                                .offset(x: -4, y: 6)
-                        }
-                    }
+                HStack(spacing: 4) {
+                    Image(systemName: auth.has(.eq) ? "slider.vertical.3" : "lock.fill")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("EQ")
+                        .font(.system(size: 14, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(eqActive ? .black : .white)
+                .padding(.horizontal, 11)
+                .frame(height: 32)
+                .background(
+                    Capsule().fill(eqActive ? Color.accent : Color.white.opacity(0.16))
+                )
+                .overlay(Capsule().strokeBorder(eqActive ? Color.clear : Color.white.opacity(0.25), lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .animation(.easeOut(duration: 0.2), value: eqActive)
             }
             .accessibilityLabel(L("Ekolayzer"))
 

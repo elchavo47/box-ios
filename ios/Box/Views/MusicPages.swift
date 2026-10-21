@@ -519,6 +519,45 @@ struct InboxButton: View {
     }
 }
 
+/// Ana sayfada zilin yanında: Premium'u olmayanlara "Premium" düğmesi.
+struct PremiumHeaderButton: View {
+    @EnvironmentObject private var router: AppRouter
+    @State private var shine = false
+
+    var body: some View {
+        Button {
+            router.showPremium = true
+            Haptics.tap()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "bolt.fill").font(.system(size: 12, weight: .black))
+                Text("Premium").font(.system(size: 14, weight: .bold))
+            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(
+                Capsule().fill(LinearGradient(colors: [Color.accent, Color.accentMid], startPoint: .topLeading, endPoint: .bottomTrailing))
+            )
+            .overlay(
+                // Ara sıra üstünden geçen parıltı.
+                Capsule()
+                    .fill(LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: 34)
+                    .offset(x: shine ? 70 : -70)
+                    .mask(Capsule())
+            )
+            .clipShape(Capsule())
+            .shadow(color: Color.accent.opacity(0.45), radius: 8)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(L("Premium'a geç"))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).delay(1).repeatForever(autoreverses: false)) { shine = true }
+        }
+    }
+}
+
 struct InboxView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var router: AppRouter
