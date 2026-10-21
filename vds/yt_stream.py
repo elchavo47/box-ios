@@ -755,6 +755,46 @@ async def music_moods(hl: str = "tr", exp: str = "", sig: str = ""):
     return {"ok": True, "results": await cached("moods:" + hl, 24 * 3600, run)}
 
 
+def mood_playlists(params: str, language: str) -> tuple[list, list]:
+    """get_mood_playlists'in hataya dayanıklı hali: YouTube kategori sayfalarına liste olmayan öğeler
+    (tek şarkılar) da koyuyor; ytmusicapi bunlarda bütün sayfayı KeyError ile düşürüyor.
+    Listeler ve sayfadaki tek şarkılar ayrı ayrı döner; okunamayan öğe atlanır."""
+    from ytmusicapi.navigation import nav, SINGLE_COLUMN_TAB, SECTION_LIST, GRID_ITEMS, CAROUSEL_CONTENTS
+    from ytmusicapi.parsers.browsing import parse_playlist
+
+    response = ytm(language)._send_request("browse", {"browseId": "FEmusic_moods_and_genres_category", "params": params})
+    playlists, songs = [], []
+    for section in nav(response, SINGLE_COLUMN_TAB + SECTION_LIST, True) or []:
+        if "gridRenderer" in section:
+            path = GRID_ITEMS
+        elif "musicCarouselShelfRenderer" in section:
+            path = CAROUSEL_CONTENTS
+        elif "musicImmersiveCarouselShelfRenderer" in section:
+            path = ["musicImmersiveCarouselShelfRenderer", "contents"]
+        else:
+            continue
+        for result in nav(section, path, True) or []:
+            data = result.get("musicTwoRowItemRenderer") if isinstance(result, dict) else None
+            if not data:
+                continue
+            try:
+                playlists.append(parse_playlist(data))
+                continue
+            except Exception:
+                pass
+            # Liste değilse tek şarkı olabilir.
+            video = nav(data, ["navigationEndpoint", "watchEndpoint", "videoId"], True) \
+                or nav(data, ["thumbnailOverlay", "musicItemThumbnailOverlayRenderer", "content", "musicPlayButtonRenderer",
+                              "playNavigationEndpoint", "watchEndpoint", "videoId"], True)
+            title = nav(data, ["title", "runs", 0, "text"], True)
+            if video and title:
+                runs = nav(data, ["subtitle", "runs"], True) or []
+                artist = "".join(r.get("text", "") for r in runs).split(" • ")[-1].strip()
+                songs.append({"videoId": video, "title": title, "artists": [{"name": artist}] if artist else [],
+                              "thumbnails": nav(data, ["thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails"], True) or []})
+    return playlists, songs
+
+
 @app.get("/stream/music/mood")
 async def music_mood(params: str = "", exp: str = "", sig: str = ""):
     """Bir ruh hali/tür kategorisinin şarkıları: kategorinin ilk listelerinden karışık."""
@@ -763,9 +803,20 @@ async def music_mood(params: str = "", exp: str = "", sig: str = ""):
         raise HTTPException(400, "Geçersiz kategori.")
 
     def run():
-        playlists = ytm_call("get_mood_playlists", params, languages=("tr", "en"))[:3]
+        playlists, songs, last = [], [], None
+        for language in ("tr", "en"):
+            try:
+                playlists, songs = mood_playlists(params, language)
+                if playlists or songs:
+                    break
+            except Exception as e:
+                last = e
+                note_error("mood", e, params)
+                log.warning("music mood (%s) failed\n%s", language, traceback.format_exc(limit=4))
+        if not playlists and not songs and last is not None:
+            raise last
         tracks, seen = [], set()
-        for pl in playlists:
+        for pl in playlists[:3]:
             if not pl.get("playlistId"):
                 continue
             try:
@@ -777,6 +828,11 @@ async def music_mood(params: str = "", exp: str = "", sig: str = ""):
                 if t and t["id"] not in seen:
                     seen.add(t["id"])
                     tracks.append(t)
+        for i in songs:
+            t = safe_parse(track, i)
+            if t and t["id"] not in seen:
+                seen.add(t["id"])
+                tracks.append(t)
         return tracks[:60]
 
     return {"ok": True, "results": await cached(f"mood:{params}", 12 * 3600, run)}
