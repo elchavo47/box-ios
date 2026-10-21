@@ -67,13 +67,15 @@ struct DevicesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
-        .confirmationDialog(L("{0} cihazından çıkış yapılsın mı?", confirm?.name ?? L("Cihaz")), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
+        .alert(L("{0} cihazından çıkış yapılsın mı?", confirm?.name ?? L("Cihaz")), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
             Button(L("Çıkış yap"), role: .destructive) {
                 if let device = confirm { Task { await logout(["id": device.id]) } }
             }
+            Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog(L("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?"), isPresented: $confirmOthers, titleVisibility: .visible) {
+        .alert(L("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?"), isPresented: $confirmOthers) {
             Button(L("Hepsinden çıkış yap"), role: .destructive) { Task { await logout(["others": true]) } }
+            Button(L("Vazgeç"), role: .cancel) {}
         }
     }
 

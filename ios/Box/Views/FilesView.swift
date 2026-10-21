@@ -144,13 +144,12 @@ struct FolderView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog(
+        .alert(
             deleteTarget.map { L("\"{0}\" silinsin mi?", $0.name) } ?? "",
             isPresented: Binding(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
-            ),
-            titleVisibility: .visible
+            )
         ) {
             Button(L("Sil"), role: .destructive) {
                 guard let target = deleteTarget else { return }
@@ -159,6 +158,7 @@ struct FolderView: View {
                     library.pathDeleted(target.url)
                 }
             }
+            Button(L("Vazgeç"), role: .cancel) {}
         } message: {
             if deleteTarget?.isDirectory == true {
                 Text(L("Klasörün içindeki her şey silinir."))

@@ -523,17 +523,19 @@ private struct ProfileView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog(L("Çıkış yapılsın mı?"), isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+        .alert(L("Çıkış yapılsın mı?"), isPresented: $showLogoutConfirm) {
             Button(L("Çıkış yap"), role: .destructive) {
                 Task { await auth.logout() }
             }
+            Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog(L("Apple bağlantısı kaldırılsın mı?"), isPresented: $showUnlink, titleVisibility: .visible) {
+        .alert(L("Apple bağlantısı kaldırılsın mı?"), isPresented: $showUnlink) {
             Button(L("Kaldır"), role: .destructive) {
                 Task {
                     do { try await auth.unlinkApple() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
                 }
             }
+            Button(L("Vazgeç"), role: .cancel) {}
         } message: {
             Text(L("Sonra yalnızca e-posta ve şifrenle giriş yaparsın."))
         }

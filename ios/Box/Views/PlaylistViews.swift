@@ -159,10 +159,9 @@ struct PlaylistDetailView: View {
             default: ListExportView(preselected: [.favorites])
             }
         }
-        .confirmationDialog(
+        .alert(
             L("Bugünlük indirme hakkın yetmiyor"),
-            isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } })
         ) {
             if let list = quotaPrompt, let left = auth.quota?.downloadsLeft, left > 0 {
                 Button(L("İlk {0} şarkıyı indir", left)) {
@@ -277,13 +276,14 @@ struct PlaylistDetailView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .confirmationDialog(L("Bu liste silinsin mi? Şarkılar silinmez."), isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+        .alert(L("Bu liste silinsin mi? Şarkılar silinmez."), isPresented: $showDeleteConfirm) {
             Button(L("Listeyi sil"), role: .destructive) {
                 if case .playlist(let id) = source {
                     library.deletePlaylist(id)
                     dismiss()
                 }
             }
+            Button(L("Vazgeç"), role: .cancel) {}
         }
     }
 
