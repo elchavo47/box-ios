@@ -144,24 +144,20 @@ struct FolderView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .alert(
+        .boxConfirm(
             deleteTarget.map { L("\"{0}\" silinsin mi?", $0.name) } ?? "",
             isPresented: Binding(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
-            )
+            ),
+            icon: deleteTarget?.isDirectory == true ? "folder.badge.minus" : "trash",
+            message: deleteTarget?.isDirectory == true ? L("Klasörün içindeki her şey silinir.") : nil,
+            confirmTitle: L("Sil")
         ) {
-            Button(L("Sil"), role: .destructive) {
-                guard let target = deleteTarget else { return }
-                perform {
-                    try FileService.delete(target.url)
-                    library.pathDeleted(target.url)
-                }
-            }
-            Button(L("Vazgeç"), role: .cancel) {}
-        } message: {
-            if deleteTarget?.isDirectory == true {
-                Text(L("Klasörün içindeki her şey silinir."))
+            guard let target = deleteTarget else { return }
+            perform {
+                try FileService.delete(target.url)
+                library.pathDeleted(target.url)
             }
         }
         .sheet(item: $moveTarget) { item in

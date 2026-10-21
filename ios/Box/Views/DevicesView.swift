@@ -67,15 +67,21 @@ struct DevicesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
-        .alert(L("{0} cihazından çıkış yapılsın mı?", confirm?.name ?? L("Cihaz")), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
-            Button(L("Çıkış yap"), role: .destructive) {
-                if let device = confirm { Task { await logout(["id": device.id]) } }
-            }
-            Button(L("Vazgeç"), role: .cancel) {}
+        .boxConfirm(
+            L("{0} cihazından çıkış yapılsın mı?", confirm?.name ?? L("Cihaz")),
+            isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+            icon: confirm?.name.hasPrefix("iPad") == true ? "ipad" : "iphone",
+            confirmTitle: L("Çıkış yap")
+        ) {
+            if let device = confirm { Task { await logout(["id": device.id]) } }
         }
-        .alert(L("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?"), isPresented: $confirmOthers) {
-            Button(L("Hepsinden çıkış yap"), role: .destructive) { Task { await logout(["others": true]) } }
-            Button(L("Vazgeç"), role: .cancel) {}
+        .boxConfirm(
+            L("Bu cihaz dışındaki bütün cihazlardan çıkış yapılsın mı?"),
+            isPresented: $confirmOthers,
+            icon: "iphone.slash",
+            confirmTitle: L("Hepsinden çıkış yap")
+        ) {
+            Task { await logout(["others": true]) }
         }
     }
 

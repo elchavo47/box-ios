@@ -523,21 +523,25 @@ private struct ProfileView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .alert(L("Çıkış yapılsın mı?"), isPresented: $showLogoutConfirm) {
-            Button(L("Çıkış yap"), role: .destructive) {
-                Task { await auth.logout() }
-            }
-            Button(L("Vazgeç"), role: .cancel) {}
+        .boxConfirm(
+            L("Çıkış yapılsın mı?"),
+            isPresented: $showLogoutConfirm,
+            icon: "rectangle.portrait.and.arrow.right",
+            message: L("Listelerin ve beğenilerin hesabına kayıtlı; tekrar girince geri gelir."),
+            confirmTitle: L("Çıkış yap")
+        ) {
+            Task { await auth.logout() }
         }
-        .alert(L("Apple bağlantısı kaldırılsın mı?"), isPresented: $showUnlink) {
-            Button(L("Kaldır"), role: .destructive) {
-                Task {
-                    do { try await auth.unlinkApple() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
-                }
+        .boxConfirm(
+            L("Apple bağlantısı kaldırılsın mı?"),
+            isPresented: $showUnlink,
+            icon: "apple.logo",
+            message: L("Sonra yalnızca e-posta ve şifrenle giriş yaparsın."),
+            confirmTitle: L("Kaldır")
+        ) {
+            Task {
+                do { try await auth.unlinkApple() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
             }
-            Button(L("Vazgeç"), role: .cancel) {}
-        } message: {
-            Text(L("Sonra yalnızca e-posta ve şifrenle giriş yaparsın."))
         }
         .alert(L("Hesabı sil"), isPresented: $showDelete) {
             if user.hasPassword != false {

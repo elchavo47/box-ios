@@ -268,14 +268,13 @@ struct StorageView: View {
         .navigationTitle(L("Depolama"))
         .navigationBarTitleDisplayMode(.inline)
         .task { cacheSize = stream.totalSize }
-        .alert(
+        .boxConfirm(
             deleteTarget.map { L("\"{0}\" silinsin mi?", $0.title) } ?? "",
-            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+            icon: "trash",
+            confirmTitle: L("Sil")
         ) {
-            Button(L("Sil"), role: .destructive) {
-                if let track = deleteTarget { delete(track) }
-            }
-            Button(L("Vazgeç"), role: .cancel) {}
+            if let track = deleteTarget { delete(track) }
         }
     }
 

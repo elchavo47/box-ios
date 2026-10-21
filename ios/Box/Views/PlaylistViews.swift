@@ -159,19 +159,17 @@ struct PlaylistDetailView: View {
             default: ListExportView(preselected: [.favorites])
             }
         }
-        .alert(
+        .boxConfirm(
             L("Bugünlük indirme hakkın yetmiyor"),
-            isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } })
+            isPresented: Binding(get: { quotaPrompt != nil }, set: { if !$0 { quotaPrompt = nil } }),
+            icon: "arrow.down.circle",
+            message: L("{0} şarkı indirilecek ama bugün {1} hakkın kaldı. Kalanlar internetten çalmaya devam eder; yarın indirebilirsin.", quotaPrompt?.count ?? 0, auth.quota?.downloadsLeft ?? 0),
+            confirmTitle: (auth.quota?.downloadsLeft ?? 0) > 0 ? L("İlk {0} şarkıyı indir", auth.quota?.downloadsLeft ?? 0) : nil,
+            destructive: false
         ) {
             if let list = quotaPrompt, let left = auth.quota?.downloadsLeft, left > 0 {
-                Button(L("İlk {0} şarkıyı indir", left)) {
-                    downloads.download(all: Array(list.prefix(left)))
-                    quotaPrompt = nil
-                }
+                downloads.download(all: Array(list.prefix(left)))
             }
-            Button(L("Vazgeç"), role: .cancel) { quotaPrompt = nil }
-        } message: {
-            Text(L("{0} şarkı indirilecek ama bugün {1} hakkın kaldı. Kalanlar internetten çalmaya devam eder; yarın indirebilirsin.", quotaPrompt?.count ?? 0, auth.quota?.downloadsLeft ?? 0))
         }
         .alert(L("Liste yenilenemedi"), isPresented: Binding(get: { refreshError != nil }, set: { if !$0 { refreshError = nil } })) {
             Button(L("Tamam"), role: .cancel) {}
@@ -276,14 +274,17 @@ struct PlaylistDetailView: View {
             }
             Button(L("Vazgeç"), role: .cancel) {}
         }
-        .alert(L("Bu liste silinsin mi? Şarkılar silinmez."), isPresented: $showDeleteConfirm) {
-            Button(L("Listeyi sil"), role: .destructive) {
-                if case .playlist(let id) = source {
-                    library.deletePlaylist(id)
-                    dismiss()
-                }
+        .boxConfirm(
+            L("Liste silinsin mi?"),
+            isPresented: $showDeleteConfirm,
+            icon: "trash",
+            message: L("Şarkılar silinmez."),
+            confirmTitle: L("Listeyi sil")
+        ) {
+            if case .playlist(let id) = source {
+                library.deletePlaylist(id)
+                dismiss()
             }
-            Button(L("Vazgeç"), role: .cancel) {}
         }
     }
 
