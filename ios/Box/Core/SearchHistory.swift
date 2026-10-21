@@ -56,6 +56,11 @@ final class ServerState: ObservableObject {
     @Published private(set) var updateRequired = false
     @Published var announcement: RemoteConfig.Announcement?
     @Published private(set) var registrationOpen = true
+    /// Panelden eklenen tarayıcı kısayolları; çevrimdışı da görünsün diye saklanır.
+    @Published private(set) var browserShortcuts: [BrowserShortcut] = {
+        guard let data = UserDefaults.standard.data(forKey: "box.browserShortcuts") else { return [] }
+        return (try? JSONDecoder().decode([BrowserShortcut].self, from: data)) ?? []
+    }()
 
     private let seenKey = "box.announcement.seen"
     private var observer: NSObjectProtocol?
@@ -74,6 +79,10 @@ final class ServerState: ObservableObject {
         guard let config: RemoteConfig = try? await APIClient.shared.send("config") else { return }
         maintenanceMessage = config.maintenance.on ? config.maintenance.message : nil
         registrationOpen = config.registrationOpen
+        if let shortcuts = config.browserShortcuts {
+            browserShortcuts = shortcuts
+            if let data = try? JSONEncoder().encode(shortcuts) { UserDefaults.standard.set(data, forKey: "box.browserShortcuts") }
+        }
         let required = Self.isVersion(AppConfig.shortVersion, lowerThan: config.minAppVersion)
         if updateRequired != required {
             withAnimation(.easeOut(duration: 0.3)) { updateRequired = required }

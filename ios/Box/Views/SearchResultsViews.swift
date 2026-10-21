@@ -102,6 +102,7 @@ struct MusicResultRow: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var auth: AuthStore
 
     private var track: Track? {
         guard let result = item.result else { return nil }
@@ -137,7 +138,7 @@ struct MusicResultRow: View {
             }
             .buttonStyle(PressableStyle(scale: 0.98))
 
-            if let result = item.result {
+            if let result = item.result, auth.has(.download) || library.localTrack(for: result) != nil {
                 let downloaded = library.localTrack(for: result) != nil
                 Button {
                     if !downloaded {

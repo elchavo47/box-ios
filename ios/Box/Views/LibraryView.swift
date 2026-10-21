@@ -104,7 +104,7 @@ struct LibraryView: View {
                     if section == .playlists {
                         Menu {
                             Button { showNewPlaylist = true } label: { Label(L("Yeni çalma listesi"), systemImage: "plus") }
-                            if auth.isPremium {
+                            if auth.has(.playlist) {
                                 Button { showImport = true } label: { Label(L("YouTube listesini içe aktar"), systemImage: "square.and.arrow.down.on.square") }
                             }
                             Button { showListFile = true } label: { Label(L("Liste dosyası aç (.boxlist)"), systemImage: "doc.badge.plus") }
@@ -288,7 +288,7 @@ struct LibraryView: View {
 
     private func playlistSubtitle(_ playlist: Playlist, count: Int) -> String {
         if playlist.sourceID != nil {
-            if count == 0 && !auth.isPremium { return L("YouTube listesi • Premium ile dinlenir") }
+            if count == 0 && !auth.has(.stream) { return L("YouTube listesi • Premium ile dinlenir") }
             return L("YouTube listesi • {0} şarkı", count)
         }
         return L("{0} şarkı", count)

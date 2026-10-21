@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BoxTab: Hashable {
-    case home, search, library, files
+    case home, browser, search, library, files
 }
 
 struct RootView: View {
@@ -33,6 +33,7 @@ struct RootView: View {
             // Sekmeler bir kez açıldıktan sonra canlı tutulur; gezinme durumu kaybolmaz.
             ZStack {
                 tabPage(.home) { HomeView() }
+                tabPage(.browser) { BrowserView() }
                 tabPage(.search) { SearchView() }
                 tabPage(.library) { LibraryView() }
                 tabPage(.files) { FilesView() }
@@ -43,6 +44,9 @@ struct RootView: View {
             }
             .onAppear { visited.insert(router.tab) }
             .onChange(of: router.tab) { tab in visited.insert(tab) }
+            .onChange(of: settings.hideBrowser) { _ in
+                if router.tab == .browser && !BoxDeck.showsBrowser(premium: auth.isPremium, hidden: settings.hideBrowser) { router.tab = .home }
+            }
             .sheet(isPresented: $player.showFullPlayer) {
                 FullPlayerView()
                     .presentationDragIndicator(.hidden)
@@ -148,6 +152,8 @@ enum DeckMetrics {
 /// Seçili sekmenin üstündeki yeşil çizgi logodaki küpün üst yüzünden geliyor ve sekmeler arasında kayar.
 struct BoxDeck: View {
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var server: ServerState
     @EnvironmentObject private var downloads: DownloadManager
@@ -162,8 +168,16 @@ struct BoxDeck: View {
         var id: BoxTab { tab }
     }
 
-    private let items: [Item] = [
+    /// Tarayıcı herkeste görünür; yalnızca premium kullanıcılar Ayarlar'dan gizleyebilir.
+    static func showsBrowser(premium: Bool, hidden: Bool) -> Bool { !(premium && hidden) }
+
+    private var items: [Item] {
+        allItems.filter { $0.tab != .browser || Self.showsBrowser(premium: auth.isPremium, hidden: settings.hideBrowser) }
+    }
+
+    private let allItems: [Item] = [
         Item(tab: .home, title: L("Ana Sayfa"), icon: "house", selectedIcon: "house.fill"),
+        Item(tab: .browser, title: L("Tarayıcı"), icon: "globe", selectedIcon: "globe"),
         Item(tab: .search, title: L("Ara"), icon: "magnifyingglass", selectedIcon: "magnifyingglass"),
         Item(tab: .library, title: L("Kitaplık"), icon: "square.stack", selectedIcon: "square.stack.fill"),
         Item(tab: .files, title: L("Dosyalar"), icon: "folder", selectedIcon: "folder.fill"),

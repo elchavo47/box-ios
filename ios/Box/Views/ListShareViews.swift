@@ -279,7 +279,7 @@ struct ListImportView: View {
 
                 if missingTotal > 0 {
                     Section {
-                        if auth.isPremium {
+                        if auth.has(.match) {
                             Toggle(isOn: $searchMissing) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(L("Bulunamayanları YouTube Music'te ara"))
@@ -357,7 +357,7 @@ struct ListImportView: View {
         var found: [Int: [SearchResult]] = [:]
         var notFound = 0
 
-        if auth.isPremium, searchMissing, let token = auth.token {
+        if auth.has(.match), searchMissing, let token = auth.token {
             let jobs = indices.flatMap { index in s[index].missing.map { (index, $0) } }
             var done = 0
             for chunk in stride(from: 0, to: jobs.count, by: 25).map({ Array(jobs[$0..<min($0 + 25, jobs.count)]) }) {

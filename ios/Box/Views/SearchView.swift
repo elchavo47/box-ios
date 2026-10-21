@@ -30,7 +30,7 @@ struct SearchView: View {
     @State private var suggestions: [String] = []
     @State private var importLink = ""
 
-    private var activeFilter: SearchFilter { auth.isPremium ? filter : .library }
+    private var activeFilter: SearchFilter { auth.has(.search) ? filter : .library }
 
     private var localResults: [Track] {
         let text = (submitted.isEmpty ? query : submitted).trimmingCharacters(in: .whitespaces)
@@ -55,7 +55,7 @@ struct SearchView: View {
                         if submitted.isEmpty && !(activeFilter == .library && !query.isEmpty) {
                             idleContent
                         } else {
-                            if auth.isPremium {
+                            if auth.has(.search) {
                                 ChipBar(items: SearchFilter.allCases, selection: $filter) { $0.title }
                                     .padding(.bottom, 12)
                             }
@@ -75,7 +75,7 @@ struct SearchView: View {
             .toolbar(.hidden, for: .navigationBar)
             .task(id: query) {
                 let text = query.trimmingCharacters(in: .whitespaces)
-                guard auth.isPremium, settings.searchSuggestions, submitted.isEmpty, text.count >= 2, network.isOnline else {
+                guard auth.has(.search), settings.searchSuggestions, submitted.isEmpty, text.count >= 2, network.isOnline else {
                     suggestions = []
                     return
                 }
@@ -117,7 +117,7 @@ struct SearchView: View {
                         .foregroundColor(.boxSecondaryText)
                 }
 
-                TextField(auth.isPremium ? L("Şarkı, sanatçı ara") : L("Kitaplığında ara"), text: $query)
+                TextField(auth.has(.search) ? L("Şarkı, sanatçı ara") : L("Kitaplığında ara"), text: $query)
                     .focused($focused)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -188,7 +188,7 @@ struct SearchView: View {
             Divider().background(Color.boxStroke).padding(.vertical, 8)
         }
         OfflineBanner().padding(.bottom, 12)
-        if auth.isPremium && !downloads.sortedItems.isEmpty {
+        if auth.has(.download) && !downloads.sortedItems.isEmpty {
             HStack {
                 Text(L("İndirmeler"))
                     .font(.system(size: 20, weight: .bold))
@@ -225,7 +225,7 @@ struct SearchView: View {
             Spacer().frame(height: 18)
         }
 
-        if auth.isPremium && !history.results.isEmpty {
+        if auth.has(.search) && !history.results.isEmpty {
             Text(L("Son aramalar"))
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.boxSecondaryText)
@@ -312,9 +312,9 @@ struct SearchView: View {
 
         if history.queries.isEmpty && history.results.isEmpty && downloads.sortedItems.isEmpty {
             EmptyStateView(
-                icon: auth.isPremium ? "magnifyingglass" : "music.note.list",
-                title: auth.isPremium ? L("Ne dinlemek istersin?") : L("Kitaplığında ara"),
-                message: auth.isPremium
+                icon: auth.has(.search) ? "magnifyingglass" : "music.note.list",
+                title: auth.has(.search) ? L("Ne dinlemek istersin?") : L("Kitaplığında ara"),
+                message: auth.has(.search)
                     ? L("Şarkı ya da sanatçı ara; dokun ve hemen dinle, istersen indir.")
                     : L("Şarkı, sanatçı ya da albüm adı yaz.")
             )
@@ -444,7 +444,7 @@ struct SearchView: View {
     private var localList: some View {
         let tracks = localResults
         if tracks.isEmpty {
-            EmptyStateView(icon: "music.note", title: L("Kitaplığında yok"), message: auth.isPremium ? L("YouTube sekmesinde aramayı dene.") : L("Başka bir şey aramayı dene."))
+            EmptyStateView(icon: "music.note", title: L("Kitaplığında yok"), message: auth.has(.search) ? L("YouTube sekmesinde aramayı dene.") : L("Başka bir şey aramayı dene."))
         }
         ForEach(tracks) { track in
             TrackRow(track: track)
@@ -459,7 +459,7 @@ struct SearchView: View {
     private func submit(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if auth.isPremium, trimmed.contains("list="), trimmed.lowercased().contains("youtu") {
+        if auth.has(.playlist), trimmed.contains("list="), trimmed.lowercased().contains("youtu") {
             importLink = trimmed
             showImport = true
             query = ""
@@ -469,7 +469,7 @@ struct SearchView: View {
         submitted = trimmed
         focused = false
         history.add(query: trimmed)
-        guard auth.isPremium, let token = auth.token else { return }
+        guard auth.has(.search), let token = auth.token else { return }
 
         searchTask?.cancel()
         isSearching = true

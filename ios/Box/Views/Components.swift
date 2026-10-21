@@ -293,7 +293,7 @@ struct TrackMenu: View {
             Divider()
             favoriteButton
             addToPlaylistMenu
-            if auth.isPremium && library.localTrack(for: remote) == nil {
+            if auth.has(.download) && library.localTrack(for: remote) == nil {
                 Button {
                     downloads.download(remote)
                     Haptics.success()
@@ -303,8 +303,10 @@ struct TrackMenu: View {
             if let url = URL(string: "https://www.youtube.com/watch?v=\(remote.id)") {
                 ShareLink(item: url) { Label(L("Bağlantıyı paylaş"), systemImage: "square.and.arrow.up") }
             }
-            if auth.isPremium {
+            if auth.has(.radio) {
                 Button { player.startRadio(from: track) } label: { Label(L("Radyo başlat"), systemImage: "dot.radiowaves.left.and.right") }
+            }
+            if auth.has(.search) {
                 musicLinks
             }
             if let extra {
@@ -354,8 +356,10 @@ struct TrackMenu: View {
                 Label(L("Paylaş"), systemImage: "square.and.arrow.up")
             }
 
-            if auth.isPremium {
+            if auth.has(.radio) {
                 Button { player.startRadio(from: track) } label: { Label(L("Radyo başlat"), systemImage: "dot.radiowaves.left.and.right") }
+            }
+            if auth.has(.search) {
                 musicLinks
             }
             if let extra {

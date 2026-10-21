@@ -108,6 +108,8 @@ struct BoxUser: Codable, Equatable {
     var appleLinked: Bool? = nil
     /// Şifresi var mı; yalnızca Apple ile açılan hesaplarda false.
     var hasPassword: Bool? = nil
+    /// Hesapta açık premium özellikleri (eski sunucuda yok: hepsi açık sayılır).
+    var features: [String]? = nil
 
     var avatarURL: URL? { avatarUrl.flatMap(URL.init(string:)) }
 
@@ -145,6 +147,14 @@ struct RemoteConfig: Decodable {
     let registrationOpen: Bool
     let announcement: Announcement?
     let supportEmail: String?
+    /// Tarayıcı sekmesindeki ek kısayollar (panelden).
+    var browserShortcuts: [BrowserShortcut]? = nil
+}
+
+struct BrowserShortcut: Codable, Hashable, Identifiable {
+    let title: String
+    let url: String
+    var id: String { url }
 }
 
 struct EmptyResponse: Decodable {}

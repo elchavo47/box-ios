@@ -71,7 +71,12 @@ final class DownloadManager: ObservableObject {
     /// İndirme bitince çağrılır (ör. içe aktarılan listeye eklemek için).
     var onFinished: ((SearchResult, String) -> Void)?
 
+    /// İndirme bu hesapta açık mı (premium ve panelden açık olmalı); kapalıysa onBlocked çağrılır.
+    var isAllowed: () -> Bool = { true }
+    var onBlocked: (() -> Void)?
+
     func download(_ result: SearchResult) {
+        guard isAllowed() else { onBlocked?(); return }
         if let existing = items[result.id], existing.state.isActive { return }
         if library?.downloadedPath(for: result.id) != nil { return }
 
@@ -88,6 +93,7 @@ final class DownloadManager: ObservableObject {
     }
 
     func download(all results: [SearchResult]) {
+        guard isAllowed() else { onBlocked?(); return }
         for result in results { download(result) }
     }
 

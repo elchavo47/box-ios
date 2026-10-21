@@ -239,7 +239,7 @@ struct FullPlayerView: View {
             Spacer(minLength: 0)
 
             Group {
-                if player.currentVideoID != nil && auth.isPremium {
+                if player.currentVideoID != nil && auth.has(.stream) {
                     SongVideoToggle()
                 } else {
                     VStack(spacing: 1) {
@@ -319,7 +319,7 @@ struct FullPlayerView: View {
                     .frame(height: 30)
                 // Premium'da sanatçı adına basınca sanatçı sayfası açılır.
                 Button {
-                    guard auth.isPremium else { return }
+                    guard auth.has(.search) else { return }
                     router.openMusic(.artistPage(for: track), player: player)
                 } label: {
                     HStack(spacing: 4) {
@@ -327,7 +327,7 @@ struct FullPlayerView: View {
                             .font(.system(size: 17))
                             .foregroundColor(.white.opacity(0.66))
                             .lineLimit(1)
-                        if auth.isPremium {
+                        if auth.has(.search) {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(.white.opacity(0.4))
@@ -335,7 +335,7 @@ struct FullPlayerView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(!auth.isPremium)
+                .disabled(!auth.has(.search))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

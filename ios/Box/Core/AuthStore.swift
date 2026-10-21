@@ -1,6 +1,10 @@
 import Foundation
 import UIKit
 
+enum PremiumFeature: String {
+    case search, stream, download, radio, playlist, match
+}
+
 @MainActor
 final class AuthStore: ObservableObject {
     @Published private(set) var user: BoxUser?
@@ -17,6 +21,16 @@ final class AuthStore: ObservableObject {
 
     var isLoggedIn: Bool { token != nil && user != nil }
     var isPremium: Bool { user?.premium == true }
+
+    /// Premium ve açık özellikler değişince tepki vermek için tek değer.
+    var featureState: String { isPremium ? "p:" + (user?.features?.joined(separator: ",") ?? "*") : "free" }
+
+    /// Premium'un parçası bu hesapta açık mı (panelden kullanıcı bazında kapatılabilir).
+    func has(_ feature: PremiumFeature) -> Bool {
+        guard isPremium else { return false }
+        guard let list = user?.features else { return true }
+        return list.contains(feature.rawValue)
+    }
 
     init() {
         token = KeychainStore.get(tokenKey)

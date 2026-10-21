@@ -31,6 +31,18 @@ struct SettingsView: View {
             }
             .listRowBackground(Color.boxSurface2)
 
+            if auth.isPremium {
+                Section {
+                    Toggle(isOn: $settings.hideBrowser) {
+                        Label(L("Tarayıcı sekmesini gizle"), systemImage: "globe")
+                    }
+                    .tint(.accent)
+                } footer: {
+                    Text(L("Alt paneldeki Tarayıcı sekmesi kaldırılır; istediğin zaman geri açabilirsin."))
+                }
+                .listRowBackground(Color.boxSurface2)
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -63,7 +75,7 @@ struct SettingsView: View {
                 }
                 .tint(.accent)
 
-                if auth.isPremium {
+                if auth.has(.radio) {
                     Toggle(isOn: $settings.autoRadio) {
                         Label(L("Sıra bitince benzerleriyle devam et"), systemImage: "dot.radiowaves.left.and.right")
                     }
@@ -76,16 +88,20 @@ struct SettingsView: View {
             }
             .listRowBackground(Color.boxSurface2)
 
-            if auth.isPremium {
+            if auth.has(.download) || auth.has(.search) {
                 Section {
-                    Toggle(isOn: $settings.wifiOnlyDownloads) {
-                        Label(L("Sadece Wi‑Fi'da indir"), systemImage: "wifi")
+                    if auth.has(.download) {
+                        Toggle(isOn: $settings.wifiOnlyDownloads) {
+                            Label(L("Sadece Wi‑Fi'da indir"), systemImage: "wifi")
+                        }
+                        .tint(.accent)
                     }
-                    .tint(.accent)
-                    Toggle(isOn: $settings.searchSuggestions) {
-                        Label(L("Arama önerileri"), systemImage: "text.magnifyingglass")
+                    if auth.has(.search) {
+                        Toggle(isOn: $settings.searchSuggestions) {
+                            Label(L("Arama önerileri"), systemImage: "text.magnifyingglass")
+                        }
+                        .tint(.accent)
                     }
-                    .tint(.accent)
                 } header: {
                     Text(L("İndirme ve arama"))
                 } footer: {

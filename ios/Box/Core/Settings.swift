@@ -11,6 +11,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("set.crossfade") var crossfadeSeconds = 0.0 { willSet { objectWillChange.send() } }
     @AppStorage("set.eqPreset") var eqPresetRaw = EQPreset.flat.rawValue { willSet { objectWillChange.send() } }
     @AppStorage("set.autoRadio") var autoRadio = true { willSet { objectWillChange.send() } }
+    /// Yalnızca premium kullanıcılar Tarayıcı sekmesini gizleyebilir.
+    @AppStorage("set.hideBrowser") var hideBrowser = false { willSet { objectWillChange.send() } }
     @AppStorage("set.normalize") var normalizeVolume = false { willSet { objectWillChange.send() } }
     @AppStorage("set.onboarded") var onboarded = false { willSet { objectWillChange.send() } }
     @AppStorage("set.searchSuggestions") var searchSuggestions = true { willSet { objectWillChange.send() } }

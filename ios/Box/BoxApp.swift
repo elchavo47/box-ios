@@ -76,22 +76,24 @@ struct BoxApp: App {
                     player.onStreamCached = { [weak stream] result, temp in stream?.store(result, temp: temp) }
                     player.onRemoteSeen = { [weak library] result in library?.remember(result) }
                     player.radioProvider = { [weak feed, weak auth, weak library] track, exclude in
-                        guard let feed, let auth, auth.isPremium, let library else { return [] }
+                        guard let feed, let auth, auth.has(.radio), let library else { return [] }
                         let results = await feed.radio(for: track, exclude: exclude, token: auth.token)
                         return library.playable(results)
                     }
-                    player.autoRadioEnabled = { [weak auth] in AppSettings.shared.autoRadio && auth?.isPremium == true }
+                    player.autoRadioEnabled = { [weak auth] in AppSettings.shared.autoRadio && auth?.has(.radio) == true }
                     player.isPlayable = { [weak stream, weak auth] track in
                         guard let remote = track.remote else { return true }
-                        guard auth?.isPremium == true else { return false }
+                        guard auth?.has(.stream) == true else { return false }
                         return NetworkMonitor.shared.isOnline || stream?.isCached(remote.id) == true
                     }
-                    player.allowsRemote = { [weak auth] in auth?.isPremium == true }
-                    library.allowsRemote = auth.isPremium
+                    player.allowsRemote = { [weak auth] in auth?.has(.stream) == true }
+                    library.allowsRemote = auth.has(.stream)
                     player.crossfade = { AppSettings.shared.crossfadeSeconds }
                     player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
                     player.visualizer = { AppSettings.shared.visualizer }
                     downloads.network = network
+                    downloads.isAllowed = { [weak auth] in auth?.has(.download) == true }
+                    downloads.onBlocked = { [weak router] in router?.show(L("İndirme hesabında kapalı."), icon: "lock.fill") }
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     PushManager.shared.tokenProvider = { [weak auth] in auth?.token }
                     PushManager.shared.onOpen = { [weak router] target in
@@ -109,7 +111,7 @@ struct BoxApp: App {
                     library.activateAccount(auth.user?.id)
                     player.restoreIfNeeded(tracks: library.tracks)
                     // Kaldığı yerden devam eden sırada internet şarkısı varsa ve premium yoksa çıkar.
-                    if !auth.isPremium { player.dropRemoteTracks() }
+                    if !auth.has(.stream) { player.dropRemoteTracks() }
                     await server.refresh()
                     await auth.refresh()
                 }
@@ -134,16 +136,14 @@ struct BoxApp: App {
                         await library.importFiles([url], into: inbox)
                     }
                 }
-                .onChange(of: auth.isPremium) { premium in
-                    // Premium kapanınca premium'a ait hiçbir şey kalmasın: internet şarkıları,
+                .onChange(of: auth.featureState) { _ in
+                    // Premium (ya da bir parçası) kapanınca ona ait hiçbir şey kalmasın: internet şarkıları,
                     // video, radyo, bekleyen indirmeler, öneriler.
-                    library.allowsRemote = premium
-                    if !premium {
-                        player.dropRemoteTracks()
-                        downloads.cancelAll()
-                        feed.reset()
-                        history.clear()
-                    }
+                    library.allowsRemote = auth.has(.stream)
+                    if !auth.has(.stream) { player.dropRemoteTracks() }
+                    if !auth.has(.download) { downloads.cancelAll() }
+                    if !auth.has(.search) { feed.reset() }
+                    if !auth.isPremium { history.clear() }
                 }
                 .onChange(of: auth.user?.id) { id in
                     // Listeler ve beğeniler hesaba ait: çıkışta kaldırılır, girişte o hesabınki gelir.

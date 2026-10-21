@@ -69,14 +69,14 @@ struct HomeView: View {
                         .padding(.top, 4)
                         .padding(.bottom, 18)
 
-                    if library.tracks.isEmpty && !(auth.isPremium && filter == .all) {
+                    if library.tracks.isEmpty && !(auth.has(.search) && filter == .all) {
                         if library.hasScanned { emptyLibrary } else { loading }
                     } else {
                         switch filter {
                         case .all: overview
                         case .favorites: trackList(library.favoriteTracks, empty: L("Çalarken kalbe dokunduğun şarkılar burada görünür."))
                         case .recent: trackList(library.recentlyAdded, empty: "")
-                        case .downloads: trackList(library.downloadedTracks, empty: auth.isPremium ? L("Ara sekmesinden indirdiğin şarkılar burada görünür.") : L("Dosyalar sekmesinden müzik ekleyebilirsin."))
+                        case .downloads: trackList(library.downloadedTracks, empty: auth.has(.search) ? L("Ara sekmesinden indirdiğin şarkılar burada görünür.") : L("Dosyalar sekmesinden müzik ekleyebilirsin."))
                         }
                     }
                 }
@@ -86,11 +86,11 @@ struct HomeView: View {
             .boxScreenBackground()
             .refreshable {
                 await library.refresh()
-                if auth.isPremium { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
+                if auth.has(.search) { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .task(id: auth.isPremium) {
-                if auth.isPremium {
+            .task(id: auth.has(.search)) {
+                if auth.has(.search) {
                     await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library))
                     stream.warm(feed.sections.flatMap { $0.items.prefix(2) }, limit: 6)
                 }
@@ -105,7 +105,7 @@ struct HomeView: View {
         HStack(spacing: 12) {
             BoxWordmark(markSize: 26)
             Spacer()
-            if auth.isPremium {
+            if auth.has(.search) {
                 Button {
                     router.tab = .search
                 } label: {
@@ -128,7 +128,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 30) {
             if !library.tracks.isEmpty { greeting }
 
-            if auth.isPremium { forYou }
+            if auth.has(.search) { forYou }
 
             if !library.recentlyPlayed.isEmpty {
                 recentGrid
@@ -483,15 +483,15 @@ struct HomeView: View {
                 .padding(.top, 56)
             Text(L("Müziğin burada yaşayacak"))
                 .font(.system(size: 22, weight: .bold))
-            Text(auth.isPremium
+            Text(auth.has(.search)
                  ? L("Ara sekmesinden şarkı bul ve indir, ya da Dosyalar'dan kendi müziklerini ekle.")
                  : L("Dosyalar sekmesinden içe aktar, bilgisayardan Finder ile at ya da başka bir uygulamadan \"Box ile aç\" de."))
                 .font(.subheadline)
                 .foregroundColor(.boxSecondaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
-            Button(auth.isPremium ? L("Şarkı ara") : L("Dosya ekle")) {
-                router.tab = auth.isPremium ? .search : .files
+            Button(auth.has(.search) ? L("Şarkı ara") : L("Dosya ekle")) {
+                router.tab = auth.has(.search) ? .search : .files
             }
             .buttonStyle(PrimaryButtonStyle())
             .frame(width: 200)

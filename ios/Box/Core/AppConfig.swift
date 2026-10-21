@@ -9,6 +9,7 @@ enum AppConfig {
 
     /// Başka uygulamalardan "Box ile aç" denilen dosyaların klasörü.
     static let inboxFolderName = "Gelenler"
+    static let browserFolderName = "İndirilenler"
 
     static let audioExtensions: Set<String> = [
         "m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "flac", "alac", "mp4", "m4b", "opus", "ogg"
