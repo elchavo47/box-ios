@@ -9,7 +9,7 @@ import LocalAuthentication
 final class VaultStore: ObservableObject {
     static let shared = VaultStore()
     /// Kilitli klasördeki şarkıların kimlik öneki (kitaplık geçmişine ve istatistiklere girmez).
-    static let prefix = "vault:"
+    nonisolated static let prefix = "vault:"
 
     @Published private(set) var isUnlocked = false
     @Published private(set) var revision = 0

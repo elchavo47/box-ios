@@ -122,7 +122,6 @@ struct FullPlayerView: View {
     @State private var showQueue = false
     @State private var showSleep = false
     @State private var showEQ = false
-    @ObservedObject private var settings = AppSettings.shared
     @State private var showLyrics = false
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
