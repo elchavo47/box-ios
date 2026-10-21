@@ -137,6 +137,20 @@ struct MusicResultRow: View {
             }
             .buttonStyle(PressableStyle(scale: 0.98))
 
+            if let result = item.result {
+                let downloaded = library.localTrack(for: result) != nil
+                Button {
+                    if !downloaded {
+                        downloads.download(result)
+                        Haptics.tap()
+                    }
+                } label: {
+                    DownloadIndicator(state: downloads.state(for: result.id), downloaded: downloaded)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(downloaded ? L("İndirildi") : L("İndir"))
+            }
+
             if let track {
                 TrackMenu(track: track)
             } else {
