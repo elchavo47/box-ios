@@ -124,6 +124,23 @@ function boxBearer(): ?string {
 }
 
 /** Oturumu açık kullanıcı; yoksa 401 döner. */
+/** Oturum varsa kullanıcı, yoksa null (herkese açık uçlar için; hata döndürmez). */
+function boxOptionalUser(): ?array {
+    $token = boxBearer();
+    if ($token === null) return null;
+    $u = q('SELECT u.* FROM tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.expires_at>NOW() LIMIT 1', [hash('sha256', $token)])->fetch();
+    return is_array($u) && (int)$u['is_banned'] !== 1 ? $u : null;
+}
+
+/** Açılış duyurusu bu kullanıcıya gösterilsin mi: herkes / hesabı olanlar / sadece premium. */
+function boxAnnouncementVisible(?array $u): bool {
+    return match ((string)configValue('announcement_audience', 'users')) {
+        'all' => true,
+        'premium' => $u !== null && boxIsPremium($u),
+        default => $u !== null,
+    };
+}
+
 function boxApiUser(): array {
     $token = boxBearer();
     if ($token === null) jsonOut(['ok' => false, 'error' => 'Oturum açman gerekiyor.'], 401);

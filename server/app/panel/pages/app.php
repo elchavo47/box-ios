@@ -24,6 +24,12 @@ $dis = $edit ? [] : ['disabled' => true];
   echo toggle('Duyuru yayında', 'announcement_on', configBool('announcement_on'));
   field('Başlık', 'announcement_title', (string)configValue('announcement_title', ''), 'text', $dis + ['maxlength' => 80]);
   area('Metin', 'announcement_body', (string)configValue('announcement_body', ''), $dis + ['maxlength' => 600]);
+  $aud = (string)configValue('announcement_audience', 'users');
+  echo '<div class="field"><span class="field-label">Kime gösterilsin</span><div class="segmented" role="radiogroup" aria-label="Kime gösterilsin">';
+  foreach (['all' => 'Herkese', 'users' => 'Hesabı olanlara', 'premium' => 'Sadece premium'] as $k => $l) {
+      echo '<label><input type="radio" name="announcement_audience" value="' . h($k) . '"' . ($aud === $k ? ' checked' : '') . ($dis ? ' disabled' : '') . '><span>' . h($l) . '</span></label>';
+  }
+  echo '</div><span class="field-hint">"Herkese" seçilirse hesap açmamış, uygulamayı yeni yüklemiş kişiler de görür.</span></div>';
   if ($edit) echo '<div class="row-actions">' . button('Kaydet') . '</div>';
   formEnd(); cardEnd(); ?>
 

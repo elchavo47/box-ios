@@ -357,7 +357,9 @@ function panelAction(array $admin): string|array {
             $body = mb_substr(trim((string)($_POST['announcement_body'] ?? '')), 0, 600);
             $on = isset($_POST['announcement_on']);
             if ($on && ($title === '' || $body === '')) throw new RuntimeException('Duyuruyu açmak için başlık ve metin gerekli.');
-            $set('announcement_title', $title); $set('announcement_body', $body); $set('announcement_on', $on);
+            $audience = (string)($_POST['announcement_audience'] ?? 'users');
+            if (!in_array($audience, ['all', 'users', 'premium'], true)) $audience = 'users';
+            $set('announcement_title', $title); $set('announcement_body', $body); $set('announcement_on', $on); $set('announcement_audience', $audience);
         } elseif ($section === 'quota') {
             $set('premium_daily_downloads', max(0, min(10000, (int)($_POST['premium_daily_downloads'] ?? 150))));
             $set('premium_daily_searches', max(0, min(20000, (int)($_POST['premium_daily_searches'] ?? 400))));

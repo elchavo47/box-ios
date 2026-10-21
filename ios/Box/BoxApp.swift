@@ -148,6 +148,8 @@ struct BoxApp: App {
                 .onChange(of: auth.user?.id) { id in
                     // Listeler ve beğeniler hesaba ait: çıkışta kaldırılır, girişte o hesabınki gelir.
                     library.activateAccount(id)
+                    // Duyuru kime gösterileceğine göre sunucuda süzülür: giriş/çıkışta yeniden sor.
+                    Task { await server.refresh() }
                     // Başka bir hesaba geçildiyse önceki hesabın aramaları görünmesin.
                     guard let id else { return }
                     let key = "box.lastUserID"

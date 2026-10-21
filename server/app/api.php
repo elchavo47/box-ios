@@ -98,7 +98,7 @@ if ($route === 'config') {
         'maintenance' => ['on' => configBool('maintenance_mode'), 'message' => (string)configValue('maintenance_message', '')],
         'min_app_version' => (string)configValue('min_app_version', '1.0'),
         'registration_open' => configBool('registration_open', true),
-        'announcement' => configBool('announcement_on') ? ['title' => (string)configValue('announcement_title', ''), 'body' => (string)configValue('announcement_body', ''), 'id' => substr(sha1((string)configValue('announcement_title', '') . (string)configValue('announcement_body', '')), 0, 12)] : null,
+        'announcement' => configBool('announcement_on') && boxAnnouncementVisible(boxOptionalUser()) ? ['title' => (string)configValue('announcement_title', ''), 'body' => (string)configValue('announcement_body', ''), 'id' => substr(sha1((string)configValue('announcement_title', '') . (string)configValue('announcement_body', '')), 0, 12)] : null,
         'support_email' => (string)configValue('support_email', ''),
         'browser_shortcuts' => boxBrowserShortcuts(),
     ]);
