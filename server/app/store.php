@@ -133,16 +133,29 @@ function boxApplyStoreTransaction(array $tx, ?int $userId, ?string $expectToken 
     if ($expectToken !== null && !empty($tx['appAccountToken']) && strtolower((string)$tx['appAccountToken']) !== strtolower($expectToken)) {
         throw new RuntimeException('Bu satın alma başka bir Box hesabına ait.', 1);
     }
-    $existing = q('SELECT * FROM store_purchases WHERE original_tx=?', [$original])->fetch() ?: null;
-    if ($existing && $userId !== null && (int)$existing['user_id'] !== $userId) {
-        throw new RuntimeException('Bu satın alma başka bir Box hesabına ait.', 1);
-    }
-    $owner = $existing ? (int)$existing['user_id'] : $userId;
-    if ($owner === null) throw new RuntimeException('Satın almanın hesabı bulunamadı.');
-
     $env = ($tx['environment'] ?? 'Production') === 'Sandbox' ? 'sandbox' : 'production';
     $expires = $kind === 'lifetime' ? null : boxMsDate($tx['expiresDate'] ?? null);
     $revoked = boxMsDate($tx['revocationDate'] ?? null);
+
+    $existing = q('SELECT * FROM store_purchases WHERE original_tx=?', [$original])->fetch() ?: null;
+    if ($existing && $userId !== null && (int)$existing['user_id'] !== $userId) {
+        // Apple, aynı Apple kimliğinde aynı gruba yeniden abone olunca eski işlem numarasını kullanır.
+        // Eski hesaptaki abonelik bitmiş ya da iade edilmişse ve bu yeni (etkin) işlem bu hesaptan
+        // yapılmışsa (appAccountToken bu hesabın), abonelik bu hesaba geçer. Etkinken geçmez.
+        $oldActive = $existing['revoked_at'] === null && ($existing['expires_at'] === null || strtotime((string)$existing['expires_at']) > time());
+        $newActive = $revoked === null && ($expires === null || strtotime($expires) > time());
+        $ownToken = $expectToken !== null && !empty($tx['appAccountToken']) && strtolower((string)$tx['appAccountToken']) === strtolower($expectToken);
+        if ($oldActive || !$newActive || !$ownToken) {
+            throw new RuntimeException('Bu satın alma başka bir Box hesabına ait.', 1);
+        }
+        q('UPDATE store_purchases SET user_id=?, revoked_at=NULL, updated_at=NOW() WHERE id=?', [$userId, (int)$existing['id']]);
+        $existing['user_id'] = $userId;
+        $existing['revoked_at'] = null;
+        $existing['last_tx'] = '';
+        $moved = true;
+    }
+    $owner = $existing ? (int)$existing['user_id'] : $userId;
+    if ($owner === null) throw new RuntimeException('Satın almanın hesabı bulunamadı.');
     $purchased = boxMsDate($tx['originalPurchaseDate'] ?? ($tx['purchaseDate'] ?? null)) ?? date('Y-m-d H:i:s');
 
     if (!$existing) {
@@ -162,6 +175,7 @@ function boxApplyStoreTransaction(array $tx, ?int $userId, ?string $expectToken 
             $status = 'same';
         }
     }
+    if (!empty($moved) && $status !== 'revoke') $status = 'new';
     $row = q('SELECT * FROM store_purchases WHERE original_tx=?', [$original])->fetch();
     return ['user_id' => $owner, 'status' => $status, 'row' => $row];
 }
