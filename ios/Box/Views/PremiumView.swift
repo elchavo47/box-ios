@@ -8,7 +8,7 @@ struct PremiumView: View {
     @ObservedObject private var store = PremiumStore.shared
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selected = PremiumStore.yearly
+    @State private var selected: String?
     @State private var restoring = false
 
     private static let terms = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
@@ -46,7 +46,13 @@ struct PremiumView: View {
             }
             .toolbarBackground(.hidden, for: .navigationBar)
         }
-        .task { await store.loadProducts() }
+        .task {
+            await store.loadProducts()
+            if selected == nil { selected = (store.plan(.yearly) ?? store.products.first)?.id }
+        }
+        .onChange(of: store.products.map(\.id)) { _ in
+            if selected == nil { selected = (store.plan(.yearly) ?? store.products.first)?.id }
+        }
         .onChange(of: auth.user?.store) { info in
             if info != nil { Haptics.success() }
         }
@@ -170,26 +176,26 @@ struct PremiumView: View {
     }
 
     private func title(for product: Product) -> String {
-        switch product.id {
-        case PremiumStore.monthly: return L("Aylık")
-        case PremiumStore.yearly: return L("Yıllık")
+        switch PremiumStore.plan(of: product) {
+        case .monthly: return L("Aylık")
+        case .yearly: return L("Yıllık")
         default: return L("Ömür boyu")
         }
     }
 
     private func badge(for product: Product) -> String? {
-        switch product.id {
-        case PremiumStore.yearly: return L("En avantajlı")
-        case PremiumStore.lifetime: return L("Tek seferlik")
+        switch PremiumStore.plan(of: product) {
+        case .yearly: return L("En avantajlı")
+        case .lifetime: return L("Tek seferlik")
         default: return nil
         }
     }
 
     private func detail(for product: Product) -> String {
-        switch product.id {
-        case PremiumStore.monthly:
+        switch PremiumStore.plan(of: product) {
+        case .monthly:
             return L("Her ay yenilenir, istediğin zaman iptal et")
-        case PremiumStore.yearly:
+        case .yearly:
             let perMonth = (product.price / 12).formatted(product.priceFormatStyle)
             return L("Ayda yaklaşık {0} · her yıl yenilenir", perMonth)
         default:
@@ -209,7 +215,7 @@ struct PremiumView: View {
                 .buttonStyle(PrimaryButtonStyle())
             } else {
                 Button {
-                    guard let product = store.product(selected) else { return }
+                    guard let id = selected, let product = store.product(id) else { return }
                     Task {
                         if await store.purchase(product) {
                             UnlockPresenter.shared.show(features: auth.user?.features) { dismiss() }

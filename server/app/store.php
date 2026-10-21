@@ -125,7 +125,8 @@ function boxMsDate(mixed $ms): ?string {
 function boxApplyStoreTransaction(array $tx, ?int $userId, ?string $expectToken = null): array {
     if (($tx['bundleId'] ?? '') !== BOX_BUNDLE_ID) throw new RuntimeException('Bu satın alma Box\'a ait değil.');
     $product = (string)($tx['productId'] ?? '');
-    if (!isset(BOX_STORE_PRODUCTS[$product])) throw new RuntimeException('Bilinmeyen ürün.', 1);
+    $kind = boxStoreProductKind($product, (string)($tx['type'] ?? ''));
+    if ($kind === null) throw new RuntimeException('Bilinmeyen ürün.', 1);
     $original = preg_replace('/[^0-9A-Za-z]/', '', (string)($tx['originalTransactionId'] ?? ''));
     $current = preg_replace('/[^0-9A-Za-z]/', '', (string)($tx['transactionId'] ?? ''));
     if ($original === '' || $current === '') throw new RuntimeException('Satın alma bilgisi eksik.');
@@ -140,7 +141,7 @@ function boxApplyStoreTransaction(array $tx, ?int $userId, ?string $expectToken 
     if ($owner === null) throw new RuntimeException('Satın almanın hesabı bulunamadı.');
 
     $env = ($tx['environment'] ?? 'Production') === 'Sandbox' ? 'sandbox' : 'production';
-    $expires = BOX_STORE_PRODUCTS[$product][1] === 'lifetime' ? null : boxMsDate($tx['expiresDate'] ?? null);
+    $expires = $kind === 'lifetime' ? null : boxMsDate($tx['expiresDate'] ?? null);
     $revoked = boxMsDate($tx['revocationDate'] ?? null);
     $purchased = boxMsDate($tx['originalPurchaseDate'] ?? ($tx['purchaseDate'] ?? null)) ?? date('Y-m-d H:i:s');
 
@@ -186,7 +187,30 @@ function boxStorePurchases(int $userId): array {
     catch (Throwable $e) { return []; }
 }
 
-function boxStoreProductName(string $id): string { return BOX_STORE_PRODUCTS[$id][0] ?? $id; }
+/**
+ * Ürünün türü: 'subscription' ya da 'lifetime' (bilinmiyorsa null). Listede yoksa App Store Connect'teki
+ * ID'si farklı olabilir; Apple'ın imzaladığı işlem türüne bakılır (paket kimliği zaten doğrulandı).
+ */
+function boxStoreProductKind(string $id, string $type = ''): ?string {
+    if (isset(BOX_STORE_PRODUCTS[$id])) return BOX_STORE_PRODUCTS[$id][1];
+    if (!str_starts_with($id, 'com.aydworks.')) return null;
+    return match ($type) {
+        'Auto-Renewable Subscription' => 'subscription',
+        'Non-Consumable' => 'lifetime',
+        default => null,
+    };
+}
+
+function boxStoreProductName(string $id): string {
+    if (isset(BOX_STORE_PRODUCTS[$id])) return BOX_STORE_PRODUCTS[$id][0];
+    $tail = strtolower((string)substr((string)strrchr($id, '.'), 1));
+    return match (true) {
+        str_contains($tail, 'year') || str_contains($tail, 'yil') || str_contains($tail, 'annual') => 'Yıllık',
+        str_contains($tail, 'mon') || str_contains($tail, 'ay') => 'Aylık',
+        str_contains($tail, 'life') || str_contains($tail, 'omur') => 'Ömür boyu',
+        default => $id,
+    };
+}
 
 /** Telegram ve kayıt için kısa açıklama. */
 function boxStoreAlert(int $userId, string $status, array $row): void {

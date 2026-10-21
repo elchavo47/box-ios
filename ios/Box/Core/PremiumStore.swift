@@ -10,10 +10,35 @@ import StoreKit
 final class PremiumStore: ObservableObject {
     static let shared = PremiumStore()
 
-    static let monthly = "com.aydworks.box.premium.monthly"
-    static let yearly = "com.aydworks.box.premium.yearly"
-    static let lifetime = "com.aydworks.box.premium.lifetime"
-    static let productIDs = [monthly, yearly, lifetime]
+    enum Plan: Int { case monthly, yearly, lifetime }
+
+    /// App Store Connect'teki olası ürün kimlikleri. Hangileri varsa onlar gelir; türü (aylık, yıllık,
+    /// tek seferlik) kimlikten değil Apple'ın verdiği bilgiden anlaşılır.
+    static let productIDs: [String] = {
+        var ids: [String] = []
+        for base in ["com.aydworks.box.premium", "com.aydworks.premium", "com.aydworks.box"] {
+            for tail in ["monthly", "month", "aylik", "yearly", "year", "annual", "yillik", "lifetime", "omurboyu"] {
+                ids.append("\(base).\(tail)")
+            }
+        }
+        return ids
+    }()
+
+    static func plan(of product: Product) -> Plan? {
+        switch product.type {
+        case .nonConsumable:
+            return .lifetime
+        case .autoRenewable:
+            guard let period = product.subscription?.subscriptionPeriod else { return nil }
+            if period.unit == .year { return .yearly }
+            if period.unit == .month && period.value == 1 { return .monthly }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    func plan(_ plan: Plan) -> Product? { products.first { Self.plan(of: $0) == plan } }
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var isLoading = false
@@ -43,7 +68,12 @@ final class PremiumStore: ObservableObject {
         defer { isLoading = false }
         do {
             let loaded = try await Product.products(for: Self.productIDs)
-            products = Self.productIDs.compactMap { id in loaded.first { $0.id == id } }
+            // Her türden bir paket: aylık, yıllık, ömür boyu sırasıyla.
+            var byPlan: [Plan: Product] = [:]
+            for product in loaded {
+                if let plan = Self.plan(of: product), byPlan[plan] == nil { byPlan[plan] = product }
+            }
+            products = [Plan.monthly, .yearly, .lifetime].compactMap { byPlan[$0] }
             if products.isEmpty { message = L("Paketler şu an yüklenemedi. Biraz sonra tekrar dene.") }
         } catch {
             message = L("Paketler şu an yüklenemedi. Biraz sonra tekrar dene.")
@@ -109,7 +139,7 @@ final class PremiumStore: ObservableObject {
             if !silent { message = L("Satın alma doğrulanamadı.") }
             return false
         }
-        guard Self.productIDs.contains(transaction.productID) else {
+        guard transaction.productID.hasPrefix("com.aydworks.") else {
             await transaction.finish()
             return false
         }
