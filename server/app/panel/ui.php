@@ -129,6 +129,10 @@ function avatarHtml(array $u, string $size = ''): string {
     $name = (string)($u['username'] ?? $u['display_name'] ?? '?');
     // Uygulama kullanıcılarının fotoğrafı avatar_file sütununda durur.
     if (empty($u['avatar_url']) && !empty($u['avatar_file']) && function_exists('boxAvatarUrl')) $u['avatar_url'] = boxAvatarUrl($u);
+    if (!empty($u['avatar_url']) && $size === 'xl') {
+        // Profil sayfasında fotoğrafa dokununca büyür (NeonBreak'teki gibi).
+        return '<button type="button" class="avatar xl zoomable" data-zoom-src="' . h($u['avatar_url']) . '" data-zoom-name="' . h($name) . '" aria-label="Profil fotoğrafını büyüt"><img src="' . h($u['avatar_url']) . '" alt=""></button>';
+    }
     if (!empty($u['avatar_url'])) return '<span class="avatar ' . h($size) . '"><img src="' . h($u['avatar_url']) . '" alt="" loading="lazy"></span>';
     return '<span class="avatar ' . h($size) . '" data-hue="' . (crc32($name) % 6) . '">' . h(mb_strtoupper(mb_substr($name, 0, 1))) . '</span>';
 }

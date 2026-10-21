@@ -41,23 +41,24 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 <div class="cols-2">
   <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Şu an açık. Süre eklersen mevcut bitişin üstüne eklenir.' : 'Açınca arama ve indirme sekmesi uygulamada görünür.'); ?>
     <?php formStart('premium_grant', 'stack'); hidden('user_id', $uid); ?>
-    <div class="chips">
+    <div class="segmented" role="radiogroup" aria-label="Süre">
       <?php foreach ([7 => '1 hafta', 30 => '1 ay', 90 => '3 ay', 365 => '1 yıl', 0 => 'Süresiz'] as $d => $l): ?>
-      <label class="chip"><input type="radio" name="days" value="<?=$d?>"<?=$d === 30 ? ' checked' : ''?>><span><?=h($l)?></span></label>
+      <label><input type="radio" name="days" value="<?=$d?>"<?=$d === 30 ? ' checked' : ''?>><span><?=h($l)?></span></label>
       <?php endforeach ?>
     </div>
-    <div class="row-actions"><?=button($isPrem ? 'Süre ekle' : 'Premium aç', 'primary', ['icon' => 'bolt'])?></div>
+    <div class="btn-row"><?=button($isPrem ? 'Süre ekle' : 'Premium aç', 'primary', ['icon' => 'bolt'])?></div>
     <?php formEnd(); ?>
     <?php if ($isPrem): formStart('premium_revoke'); hidden('user_id', $uid); echo button('Premiumu kapat', 'danger ghost', ['confirm' => 'Premium hemen kapanacak. Emin misin?']); formEnd(); endif ?>
-    <?php $off = boxFeaturesOff($u); formStart('user_features', 'stack'); hidden('user_id', $uid); ?>
-    <p class="fine">Premium özellikleri: işaretli olanlar bu kullanıcıda açık.</p>
-    <div class="chips">
+    <?php $off = boxFeaturesOff($u);
+    $hints = ['search' => 'Arama sekmesi, ana sayfa önerileri, sanatçı ve albüm sayfaları', 'stream' => 'İndirmeden internetten çalma ve video', 'download' => 'Şarkıları kitaplığa indirme', 'radio' => 'Radyo ve sıra bitince benzerleriyle devam', 'playlist' => 'YouTube listesi bağlantısıyla içe aktarma', 'match' => '.boxlist içe aktarırken bulunamayanları arama'];
+    ?>
+    <p class="ios-section-title">Premium özellikleri</p>
+    <?php formStart('user_features', 'ios-list', ['autosave' => true]); hidden('user_id', $uid); ?>
       <?php foreach (BOX_PREMIUM_FEATURES as $k => $l): ?>
-      <label class="chip"><input type="checkbox" name="features[]" value="<?=h($k)?>"<?=in_array($k, $off, true) ? '' : ' checked'?>><span><?=h($l)?></span></label>
+      <label class="switch ios-row"><span class="switch-text"><b><?=h($l)?></b><small><?=h($hints[$k] ?? '')?></small></span><input type="checkbox" role="switch" name="features[]" value="<?=h($k)?>"<?=in_array($k, $off, true) ? '' : ' checked'?>><span class="switch-track" aria-hidden="true"></span></label>
       <?php endforeach ?>
-    </div>
-    <div class="row-actions"><?=button('Özellikleri kaydet', 'ghost')?></div>
     <?php formEnd(); ?>
+    <p class="ios-footnote">Değişiklik anında kaydedilir; uygulama bir sonraki açılışta ya da yenilemede uygular.</p>
   <?php cardEnd(); endif ?>
 
   <?php card('Hesap'); ?>

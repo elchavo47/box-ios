@@ -269,7 +269,7 @@ function panelAction(array $admin): string|array {
                 $off = array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), $on));
                 q('UPDATE users SET premium_off=? WHERE id=?', [$off ? implode(',', $off) : null, $uid]);
                 logAdmin((int)$admin['id'], 'user_features', ['user_id' => $uid, 'off' => $off]);
-                return $off ? 'Premium özellikleri güncellendi. Kapalı: ' . implode(', ', array_map(fn($k) => BOX_PREMIUM_FEATURES[$k], $off)) . '.' : 'Bütün premium özellikleri açık.';
+                return $off ? 'Kaydedildi. Kapalı: ' . implode(', ', array_map(fn($k) => BOX_PREMIUM_FEATURES[$k], $off)) . '.' : 'Kaydedildi. Bütün özellikler açık.';
             case 'premium_revoke':
                 if (!boxIsPremium($u) && (int)$u['is_premium'] === 0) throw new RuntimeException('Bu kullanıcının premiumu zaten yok.');
                 boxRevokePremium($uid, (int)$admin['id']);
@@ -367,14 +367,28 @@ function panelAction(array $admin): string|array {
             $set('support_email', $mail);
         } elseif ($section === 'browser') {
             $list = [];
+            $seen = [];
             foreach (preg_split('/\R/', (string)($_POST['browser_shortcuts'] ?? '')) as $n => $line) {
                 $line = trim($line);
                 if ($line === '') continue;
-                $parts = array_map('trim', explode('|', $line, 2));
-                if (count($parts) !== 2 || $parts[0] === '' || !filter_var($parts[1], FILTER_VALIDATE_URL) || !preg_match('~^https://~i', $parts[1])) {
-                    throw new RuntimeException('Satır ' . ($n + 1) . ' hatalı. Biçim: Ad | https://adres');
+                // Kabul edilen biçimler: "Ad | adres", "Ad adres" ya da yalnızca "adres" (ad alan adından gelir).
+                if (!preg_match('~^(.*?)[\s|\-–—:]*((?:https?://)?[a-z0-9.-]+\.[a-z]{2,}(?:[/?#]\S*)?)$~iu', $line, $m)) {
+                    throw new RuntimeException('Satır ' . ($n + 1) . ' anlaşılmadı: "' . mb_substr($line, 0, 60) . '". Örnek: Google | https://google.com');
                 }
-                $list[] = ['title' => mb_substr($parts[0], 0, 30), 'url' => mb_substr($parts[1], 0, 300)];
+                $url = $m[2];
+                if (!preg_match('~^https?://~i', $url)) $url = 'https://' . $url;
+                if (preg_match('~^http://~i', $url)) $url = 'https://' . substr($url, 7);
+                if (!filter_var($url, FILTER_VALIDATE_URL)) throw new RuntimeException('Satır ' . ($n + 1) . ': adres geçerli değil.');
+                $title = trim($m[1], " \t|-–—:");
+                if ($title === '') {
+                    $host = preg_replace('~^(www\.|m\.)~i', '', (string)parse_url($url, PHP_URL_HOST));
+                    $known = ['music.youtube.com' => 'YouTube Music', 'youtube.com' => 'YouTube', 'google.com' => 'Google', 'google.com.tr' => 'Google'];
+                    $title = $known[strtolower($host)] ?? mb_convert_case(explode('.', $host)[0], MB_CASE_TITLE, 'UTF-8');
+                }
+                $key = strtolower(rtrim($url, '/'));
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $list[] = ['title' => mb_substr($title, 0, 30), 'url' => mb_substr($url, 0, 300)];
             }
             if (count($list) > 12) throw new RuntimeException('En fazla 12 kısayol eklenebilir.');
             $set('browser_shortcuts', $list);
