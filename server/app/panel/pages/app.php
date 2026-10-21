@@ -51,4 +51,15 @@ $dis = $edit ? [] : ['disabled' => true];
   area('Kısayollar', 'browser_shortcuts', $lines, $dis + ['placeholder' => "Örnek | https://example.com\nexample.org", 'hint' => 'Her satıra bir kısayol. "Ad | adres" yazabilir ya da yalnızca adresi yapıştırabilirsin; ad kendiliğinden konur. En fazla 12.']);
   if ($edit) echo '<div class="row-actions">' . button('Kaydet') . '</div>';
   formEnd(); cardEnd(); ?>
+
+  <?php card('App Store satın alımı', 'Uygulama içinden Box Plus (aylık, yıllık, ömür boyu) alan kullanıcılara neyin açılacağı.');
+  formStart('app_save', 'stack'); hidden('section', 'store');
+  $unlock = boxStoreUnlocks();
+  echo '<div class="field"><span class="field-label">Satın alma açsın</span><div class="segmented" role="radiogroup" aria-label="Satın alma açsın">';
+  foreach (BOX_STORE_UNLOCKS as $k => $l) {
+      echo '<label><input type="radio" name="store_unlocks" value="' . h($k) . '"' . ($unlock === $k ? ' checked' : '') . ($dis ? ' disabled' : '') . '><span>' . h($l) . '</span></label>';
+  }
+  echo '</div><span class="field-hint">"Yalnızca tarayıcıdan indirme" seçiliyken YouTube özellikleri (arama, dinleme, indirme, radyo…) satın alanlara gelmez; istersen kullanıcı sayfasından tek tek açarsın. Değişiklik mevcut satın alanlar dahil herkese hemen uygulanır; kullanıcı bazında kapattığın özellikler kapalı kalır.</span></div>';
+  if ($edit) echo '<div class="row-actions">' . button('Kaydet') . '</div>';
+  formEnd(); cardEnd(); ?>
 </div>

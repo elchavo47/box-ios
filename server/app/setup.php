@@ -67,6 +67,7 @@ function boxConfigDefaults(): array {
         'premium_daily_searches' => 400,
         'new_user_premium_days' => 0,
         'support_email' => '',
+        'store_unlocks' => 'browser',
     ];
 }
 

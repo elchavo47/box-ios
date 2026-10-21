@@ -216,7 +216,7 @@ switch ($route) {
             $u = boxFindUser((int)$u['id']);
         }
         $out = ['ok' => true, 'user' => boxUserPublic($u)];
-        if (boxIsPremium($u)) $out['quota'] = boxQuota($u);
+        if (boxIsPremium($u) || array_intersect(['search', 'download'], boxFeatures($u))) $out['quota'] = boxQuota($u);
         jsonOut($out);
 
     case 'me/avatar':

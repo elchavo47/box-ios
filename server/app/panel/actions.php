@@ -371,6 +371,10 @@ function panelAction(array $admin): string|array {
             $mail = trim((string)($_POST['support_email'] ?? ''));
             if ($mail !== '' && !filter_var($mail, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Destek e-postası geçerli değil.');
             $set('support_email', $mail);
+        } elseif ($section === 'store') {
+            $mode = (string)($_POST['store_unlocks'] ?? '');
+            if (!isset(BOX_STORE_UNLOCKS[$mode])) throw new RuntimeException('Geçerli bir seçenek seç.');
+            $set('store_unlocks', $mode);
         } elseif ($section === 'browser') {
             $list = [];
             $seen = [];
@@ -400,6 +404,7 @@ function panelAction(array $admin): string|array {
             $set('browser_shortcuts', $list);
         } else throw new RuntimeException('Bilinmeyen bölüm.');
         logAdmin((int)$admin['id'], 'app_save', ['section' => $section, 'changed' => $changed]);
+        if ($section === 'store' && $changed) staffAlert('store', '🛒 Satın alma ayarı değişti: ' . BOX_STORE_UNLOCKS[boxStoreUnlocks()] . "\nYapan: {$admin['username']}");
         if ($section === 'maintenance' && in_array('maintenance_mode', $changed, true)) securityAlert((configBool('maintenance_mode') ? '🛠️ Bakım modu AÇILDI' : '✅ Bakım modu kapatıldı') . "\nYapan: {$admin['username']}");
         return $changed ? 'Kaydedildi. Uygulama bir sonraki istekte yeni ayarları kullanır.' : 'Değişiklik yok.';
     }

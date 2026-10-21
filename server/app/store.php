@@ -4,9 +4,11 @@ declare(strict_types=1);
 /*
  * Uygulama içi satın alma (App Store, StoreKit 2).
  *
- * Satın alma Premium'u açar ama YALNIZCA BOX_STORE_FEATURES içindeki özellikleri verir
- * (tarayıcıdan indirme, ekolayzer, kilitli klasör ve sonradan eklenecek yeni özellikler). YouTube özellikleri satın almayla
- * otomatik gelmez; panelden kullanıcı bazında elle açılır (users.premium_on).
+ * Satın almanın neyi açacağı panelden seçilir (Uygulama > "App Store satın alımı", app_config.store_unlocks):
+ *   'browser' → yalnızca BOX_STORE_FEATURES (tarayıcıdan indirme). YouTube özellikleri panelden
+ *               kullanıcı bazında elle açılır (users.premium_on). Varsayılan budur.
+ *   'all'     → bütün premium özellikleri (panelden verilen premium gibi).
+ * Her iki durumda da kullanıcı bazında kapatılan özellikler (users.premium_off) kapalı kalır.
  *
  * Doğrulama: Apple'ın imzaladığı JWS. x5c zincirinin her halkası bir sonrakince imzalanmış,
  * tarihleri geçerli ve kök sertifika Apple Root CA - G3 olmalı; imza zincirin ilk sertifikasıyla
@@ -22,6 +24,22 @@ const BOX_STORE_PRODUCTS = [
 ];
 /** Satın almayla gelen özellikler (YouTube özellikleri burada yok). */
 const BOX_STORE_FEATURES = ['browser', 'eq', 'vault'];
+/** Panelde seçilebilen satın alma kapsamları. */
+const BOX_STORE_UNLOCKS = [
+    'browser' => 'Yalnızca tarayıcıdan indirme',
+    'all' => 'Bütün premium özellikleri',
+];
+
+/** Paneldeki ayar: satın alma neyi açıyor ('browser' ya da 'all'). */
+function boxStoreUnlocks(): string {
+    $mode = (string)configValue('store_unlocks', 'browser');
+    return isset(BOX_STORE_UNLOCKS[$mode]) ? $mode : 'browser';
+}
+
+/** Satın alan kullanıcıya gelen özellikler (ayara göre). */
+function boxStoreFeatures(): array {
+    return boxStoreUnlocks() === 'all' ? array_keys(BOX_PREMIUM_FEATURES) : BOX_STORE_FEATURES;
+}
 
 function boxB64Url(string $value): string|false {
     $value = strtr($value, '-_', '+/');

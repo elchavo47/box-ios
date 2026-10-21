@@ -41,7 +41,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 </section>
 
 <div class="cols-2">
-  <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Panelden açık. Süre eklersen mevcut bitişin üstüne eklenir.' : ($store ? 'App Store\'dan satın aldı: tarayıcıdan indirme, ekolayzer ve kilitli klasör açık. YouTube özelliklerini aşağıdan istersen aç.' : 'Panelden açınca bütün özellikler açık gelir; aşağıdan tek tek kapatabilirsin.')); ?>
+  <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Panelden açık. Süre eklersen mevcut bitişin üstüne eklenir.' : ($store ? (boxStoreUnlocks() === 'all' ? 'App Store\'dan satın aldı: ayara göre bütün özellikler açık. Aşağıdan tek tek kapatabilirsin.' : 'App Store\'dan satın aldı: tarayıcıdan indirme, ekolayzer ve kilitli klasör açık. YouTube özelliklerini aşağıdan istersen aç.') : 'Panelden açınca bütün özellikler açık gelir; aşağıdan tek tek kapatabilirsin.')); ?>
     <?php formStart('premium_grant', 'stack'); hidden('user_id', $uid); ?>
     <div class="segmented" role="radiogroup" aria-label="Süre">
       <?php foreach ([7 => '1 hafta', 30 => '1 ay', 90 => '3 ay', 365 => '1 yıl', 0 => 'Süresiz'] as $d => $l): ?>
@@ -52,7 +52,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <?php formEnd(); ?>
     <?php if ($isPrem): formStart('premium_revoke'); hidden('user_id', $uid); echo button('Premiumu kapat', 'danger ghost', ['confirm' => 'Premium hemen kapanacak. Emin misin?']); formEnd(); endif ?>
     <?php $effective = boxHasPremium($u) ? boxFeatures($u) : array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), boxFeaturesOff($u)));
-    $hints = ['search' => 'Arama sekmesi, ana sayfa önerileri, sanatçı ve albüm sayfaları', 'stream' => 'İndirmeden internetten çalma ve video', 'download' => 'Şarkıları kitaplığa indirme', 'radio' => 'Radyo ve sıra bitince benzerleriyle devam', 'playlist' => 'YouTube listesi bağlantısıyla içe aktarma', 'match' => '.boxlist içe aktarırken bulunamayanları arama', 'browser' => 'Tarayıcı sekmesinden dosya indirip kitaplığa ekleme (satın almayla gelir)', 'eq' => '10 bantlı ekolayzer ve ses yükseltme (satın almayla gelir)', 'vault' => 'Face ID ile açılan kilitli klasör (satın almayla gelir)'];
+    $hints = ['search' => 'Arama sekmesi, ana sayfa önerileri, sanatçı ve albüm sayfaları', 'stream' => 'İndirmeden internetten çalma ve video', 'download' => 'Şarkıları kitaplığa indirme', 'radio' => 'Radyo ve sıra bitince benzerleriyle devam', 'playlist' => 'YouTube listesi bağlantısıyla içe aktarma', 'match' => '.boxlist içe aktarırken bulunamayanları arama', 'browser' => 'Tarayıcı sekmesinden dosya indirip kitaplığa ekleme' . (boxStoreUnlocks() === 'all' ? '' : ' (satın almayla gelir)'), 'eq' => '10 bantlı ekolayzer ve ses yükseltme (satın almayla gelir)', 'vault' => 'Face ID ile açılan kilitli klasör (satın almayla gelir)'];
     ?>
     <p class="ios-section-title">Premium özellikleri</p>
     <?php formStart('user_features', 'ios-list', ['autosave' => true]); hidden('user_id', $uid); ?>

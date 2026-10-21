@@ -63,9 +63,9 @@ function boxFeaturesOn(array $u): array { return boxFeatureList($u, 'premium_on'
 /** Premium var mı: panelden verilen ya da App Store'dan satın alınan. */
 function boxHasPremium(array $u): bool { return boxIsPremium($u) || boxStoreActive($u); }
 
-/** Premium'un temel özellikleri: panelden verilende hepsi, satın alınanda yalnızca mağaza özellikleri. */
+/** Premium'un temel özellikleri: panelden verilende hepsi, satın alınanda paneldeki "App Store satın alımı" ayarına göre. */
 function boxFeatureBase(array $u): array {
-    return boxIsPremium($u) ? array_keys(BOX_PREMIUM_FEATURES) : BOX_STORE_FEATURES;
+    return boxIsPremium($u) ? array_keys(BOX_PREMIUM_FEATURES) : boxStoreFeatures();
 }
 
 function boxFeatures(array $u): array {
