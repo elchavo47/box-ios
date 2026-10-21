@@ -577,16 +577,28 @@ private struct HomeGlow: View {
     }
 
     private func layer(_ colors: (Color, Color)) -> some View {
-        ZStack(alignment: .top) {
-            LinearGradient(
-                stops: [
-                    .init(color: colors.0.opacity(0.62), location: 0),
-                    .init(color: colors.1.opacity(0.42), location: 0.42),
-                    .init(color: colors.1.opacity(0), location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .top) {
+                // Yumuşak, bulanık renk lekeleri (mesh gradient hissi); altta siyaha erir.
+                Ellipse().fill(colors.0.opacity(0.75))
+                    .frame(width: w * 0.95, height: 300)
+                    .offset(x: -w * 0.28, y: -70)
+                Ellipse().fill(colors.1.opacity(0.85))
+                    .frame(width: w * 0.85, height: 280)
+                    .offset(x: w * 0.32, y: 10)
+                Circle().fill(colors.0.opacity(0.45))
+                    .frame(width: w * 0.6)
+                    .offset(x: w * 0.1, y: 150)
+            }
+            .frame(width: w, height: geo.size.height, alignment: .top)
+            .blur(radius: 70)
+            .drawingGroup()
+            .mask(
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black.opacity(0.75), location: 0.45), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
             )
-            RadialGradient(colors: [colors.0.opacity(0.4), .clear], center: .topLeading, startRadius: 0, endRadius: 380)
+            .opacity(0.9)
         }
     }
 }

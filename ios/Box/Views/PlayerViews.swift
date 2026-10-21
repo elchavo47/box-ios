@@ -122,6 +122,8 @@ struct FullPlayerView: View {
     @State private var showQueue = false
     @State private var showSleep = false
     @State private var showLyrics = false
+    @State private var showNewPlaylist = false
+    @State private var newPlaylistName = ""
     @State private var heartPop = 0
     @EnvironmentObject private var settings: AppSettings
     @State private var swipeX: CGFloat = 0
@@ -165,7 +167,10 @@ struct FullPlayerView: View {
                         Spacer(minLength: 8)
 
                         VStack(spacing: 18) {
-                            titleRow(track)
+                            VStack(alignment: .leading, spacing: 14) {
+                                titleRow(track)
+                                actionRow(track)
+                            }
                             Scrubber(clock: player.clock) { player.seek(to: $0) }
                             controls
                             bottomBar
@@ -338,12 +343,45 @@ struct FullPlayerView: View {
                 .disabled(!auth.has(.search))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            HeartButton(liked: library.isFavorite(track)) {
-                library.toggleFavorite(track)
-            }
         }
         .foregroundColor(.white)
+    }
+
+    /// YouTube Music'teki gibi başlığın altında: beğen, şarkı sözleri, listeye kaydet.
+    private func actionRow(_ track: Track) -> some View {
+        HStack(spacing: 10) {
+            LikePill(liked: library.isFavorite(track)) { library.toggleFavorite(track) }
+            PlayerPill(icon: "quote.bubble", title: L("Şarkı sözleri")) { showLyrics = true }
+            Menu {
+                Button { newPlaylistName = ""; showNewPlaylist = true } label: {
+                    Label(L("Yeni liste…"), systemImage: "plus")
+                }
+                if !library.playlists.isEmpty { Divider() }
+                ForEach(library.playlists) { playlist in
+                    Button(playlist.name) {
+                        library.add([track], to: playlist.id)
+                        Haptics.success()
+                        router.show(L("{0} listesine eklendi", playlist.name), icon: "text.badge.plus", track: track)
+                    }
+                }
+            } label: {
+                PlayerPillLabel(icon: "plus", title: L("Kaydet"))
+            }
+            .buttonStyle(PressableStyle(scale: 0.94))
+            Spacer(minLength: 0)
+        }
+        .alert(L("Yeni çalma listesi"), isPresented: $showNewPlaylist) {
+            TextField(L("Liste adı"), text: $newPlaylistName)
+            Button(L("Oluştur")) {
+                let name = newPlaylistName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                let playlist = library.createPlaylist(name: name)
+                library.add([track], to: playlist.id)
+                Haptics.success()
+                router.show(L("{0} listesine eklendi", playlist.name), icon: "text.badge.plus", track: track)
+            }
+            Button(L("Vazgeç"), role: .cancel) {}
+        }
     }
 
     private var controls: some View {
@@ -427,18 +465,6 @@ struct FullPlayerView: View {
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel(L("Çalma hızı"))
-
-            Spacer(minLength: 0)
-
-            Button {
-                showLyrics = true
-            } label: {
-                Image(systemName: "quote.bubble")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel(L("Şarkı sözleri"))
 
             Spacer(minLength: 0)
 
@@ -850,5 +876,92 @@ struct VideoSurface: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: LayerView, coordinator: ()) {
         uiView.playerLayer.player = nil
+    }
+}
+
+
+// MARK: - Oynatıcı hap butonları
+
+private struct PlayerPillLabel: View {
+    let icon: String
+    let title: String
+    var tint: Color = .white
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundColor(tint)
+            Text(title).font(.system(size: 15, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+        }
+        .padding(.horizontal, 15)
+        .frame(height: 38)
+        .background(Capsule().fill(Color.white.opacity(0.12)))
+        .contentShape(Capsule())
+    }
+}
+
+private struct PlayerPill: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button { action(); Haptics.tap() } label: { PlayerPillLabel(icon: icon, title: title) }
+            .buttonStyle(PressableStyle(scale: 0.94))
+    }
+}
+
+/// Kırmızı, animasyonlu beğen butonu (kalp zıplar, etrafına parçacık saçılır).
+private struct LikePill: View {
+    let liked: Bool
+    let action: () -> Void
+
+    @State private var burst = false
+    @State private var bounce = false
+    private static let red = Color(red: 1, green: 0.23, blue: 0.33)
+
+    var body: some View {
+        Button {
+            let willLike = !liked
+            action()
+            if willLike {
+                Haptics.success()
+                burst = false
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.45)) { bounce = true }
+                withAnimation(.easeOut(duration: 0.55)) { burst = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { bounce = false }
+                }
+            } else {
+                Haptics.tap()
+            }
+        } label: {
+            HStack(spacing: 7) {
+                ZStack {
+                    ForEach(0..<8, id: \.self) { index in
+                        let angle = Double(index) / 8 * 2 * .pi
+                        Circle()
+                            .fill(index.isMultiple(of: 2) ? Self.red : Color.white)
+                            .frame(width: 4, height: 4)
+                            .offset(x: burst ? cos(angle) * 18 : 0, y: burst ? sin(angle) * 18 : 0)
+                            .opacity(burst ? 0 : (bounce ? 1 : 0))
+                    }
+                    Image(systemName: liked ? "heart.fill" : "heart")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(liked ? Self.red : .white)
+                        .scaleEffect(bounce ? 1.35 : 1)
+                }
+                Text(liked ? L("Beğenildi") : L("Beğen"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 15)
+            .frame(height: 38)
+            .background(Capsule().fill(liked ? Self.red.opacity(0.22) : Color.white.opacity(0.12)))
+            .animation(.easeOut(duration: 0.2), value: liked)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle(scale: 0.94))
+        .accessibilityLabel(liked ? L("Beğenilerden çıkar") : L("Beğen"))
     }
 }

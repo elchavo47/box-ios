@@ -160,20 +160,7 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var playlists: some View {
-        // 1) Her zaman üstte: son çalınanlar ve beğenilenler.
-        if !library.recentlyPlayed.isEmpty {
-            playlistRow(title: L("Son çalınanlar"), subtitle: L("{0} şarkı", library.recentlyPlayed.count), route: .recent) {
-                PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
-            }
-        }
-        playlistRow(title: L("Beğenilenler"), subtitle: L("{0} şarkı", library.favoriteTracks.count), route: .favorites) {
-            ZStack {
-                LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "heart.fill").foregroundColor(.white)
-            }
-        }
-
-        // 2) Kendi listelerin: basılı tutup sürükleyerek sıralanır.
+        // 1) En üstte kendi listelerin: basılı tutup sürükleyerek sıralanır.
         HStack {
             Text(L("Listelerim"))
                 .font(.system(size: 20, weight: .bold))
@@ -188,7 +175,7 @@ struct LibraryView: View {
                 .buttonStyle(.borderless)
             }
         }
-        .padding(.top, 14)
+        .padding(.top, 2)
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .moveDisabled(true)
@@ -244,6 +231,26 @@ struct LibraryView: View {
                 .foregroundColor(.boxTertiaryText)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+        }
+
+        // 2) Son çalınanlar ve beğenilenler.
+        Text(L("Hızlı erişim"))
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.top, 14)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .moveDisabled(true)
+        if !library.recentlyPlayed.isEmpty {
+            playlistRow(title: L("Son çalınanlar"), subtitle: L("{0} şarkı", library.recentlyPlayed.count), route: .recent) {
+                PlaylistCover(tracks: library.recentlyPlayed, icon: "clock", size: 56, cornerRadius: 0)
+            }
+        }
+        playlistRow(title: L("Beğenilenler"), subtitle: L("{0} şarkı", library.favoriteTracks.count), route: .favorites) {
+            ZStack {
+                LinearGradient(colors: [Color.accentMid, Color.accentDeep.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "heart.fill").foregroundColor(.white)
+            }
         }
 
         // 3) Otomatik listeler: yer kaplamasın diye tek satırda, yana kaydırılır.
