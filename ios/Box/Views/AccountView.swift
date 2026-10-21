@@ -227,6 +227,7 @@ private struct ProfileView: View {
     @State private var cropping: CropItem?
     @State private var appleRequest = AppleSignInRequest()
     @State private var showUnlink = false
+    @State private var showPremium = false
     @ObservedObject private var push = PushManager.shared
 
     private struct CropItem: Identifiable {
@@ -381,6 +382,33 @@ private struct ProfileView: View {
             }
             .listRowBackground(Color.boxSurface2)
 
+            Section {
+                Button { showPremium = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+                            .frame(width: 30, height: 30)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accent))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Box Premium").foregroundColor(.white)
+                            Text(premiumRowSubtitle).font(.caption).foregroundColor(.boxSecondaryText)
+                        }
+                        Spacer()
+                        if !user.premium {
+                            Text(L("Premium'a geç"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Capsule().fill(Color.accent))
+                        } else {
+                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(.boxTertiaryText)
+                        }
+                    }
+                }
+            }
+            .listRowBackground(Color.boxSurface2)
+
             if user.premium, let quota = auth.quota {
                 Section(L("Bugünkü kullanım")) {
                     stat(L("İndirme"), quota.downloadsLimit > 0 ? "\(quota.downloadsUsed) / \(quota.downloadsLimit)" : "\(quota.downloadsUsed)", icon: "arrow.down.circle")
@@ -510,6 +538,9 @@ private struct ProfileView: View {
         }
         .refreshable { await auth.refresh() }
         .task { cacheSize = stream.totalSize }
+        .sheet(isPresented: $showPremium) {
+            PremiumView().presentationDragIndicator(.visible)
+        }
         .alert(L("İsmini değiştir"), isPresented: $showRename) {
             TextField(L("İsim"), text: $newName)
             Button(L("Kaydet")) {
@@ -592,8 +623,18 @@ private struct ProfileView: View {
         }
     }
 
+    private var premiumRowSubtitle: String {
+        if let info = user.store {
+            if info.lifetime { return L("App Store · ömür boyu") }
+            if let date = info.expiresDate { return L("App Store · yenilenme {0}", date.formatted(date: .abbreviated, time: .omitted)) }
+            return L("App Store")
+        }
+        if user.premium { return L("Hesabında açık") }
+        return L("Tarayıcıdan dosya indirme ve yeni özellikler")
+    }
+
     private var premiumText: String {
-        guard let until = user.premiumUntilDate else { return L("PREMIUM") }
+        guard let until = user.premiumUntilDate ?? (user.store?.lifetime == true ? nil : user.store?.expiresDate) else { return L("PREMIUM") }
         let formatter = DateFormatter()
         formatter.locale = Lang.shared.locale
         formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")

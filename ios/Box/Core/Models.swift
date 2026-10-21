@@ -110,6 +110,21 @@ struct BoxUser: Codable, Equatable {
     var hasPassword: Bool? = nil
     /// Hesapta açık premium özellikleri (eski sunucuda yok: hepsi açık sayılır).
     var features: [String]? = nil
+    /// Premium nereden: "admin" (panelden verildi) ya da "store" (App Store'dan satın alındı).
+    var premiumSource: String? = nil
+    /// App Store satın alımı (varsa).
+    var store: StoreInfo? = nil
+    /// Satın almanın bu hesaba bağlanması için StoreKit'e verilen kimlik (appAccountToken).
+    var storeToken: String? = nil
+
+    struct StoreInfo: Codable, Equatable {
+        let product: String
+        let expiresAt: String?
+        let lifetime: Bool
+        let sandbox: Bool?
+
+        var expiresDate: Date? { expiresAt.flatMap { ISO8601DateFormatter().date(from: $0) } }
+    }
 
     var avatarURL: URL? { avatarUrl.flatMap(URL.init(string:)) }
 

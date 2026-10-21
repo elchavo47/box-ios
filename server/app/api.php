@@ -104,6 +104,21 @@ if ($route === 'config') {
     ]);
 }
 
+/* App Store Server Notifications V2: abonelik yenilendi, bitti, iade edildi. Bakımda da işlenir. */
+if ($route === 'appstore/notify' && $method === 'POST') {
+    $body = json_decode((string)file_get_contents('php://input', false, null, 0, 200000), true);
+    $signed = is_array($body) ? (string)($body['signedPayload'] ?? '') : '';
+    try {
+        $result = boxHandleStoreNotification($signed);
+        error_log('[Box] App Store bildirimi: ' . json_encode($result, JSON_UNESCAPED_UNICODE));
+        jsonOut(['ok' => true]);
+    } catch (Throwable $e) {
+        error_log('[Box] App Store bildirimi reddedildi: ' . $e->getMessage());
+        // Apple doğrulanamayan bildirimi tekrar denemesin diye 200; içerik işlenmedi.
+        jsonOut(['ok' => false]);
+    }
+}
+
 /* Bakım modu ve zorunlu güncelleme (config dışındaki bütün istekler) */
 if (configBool('maintenance_mode')) {
     jsonOut(['ok' => false, 'maintenance' => true, 'error' => (string)configValue('maintenance_message', 'Bakım yapılıyor, birazdan tekrar dene.')], 503);
@@ -253,6 +268,29 @@ switch ($route) {
         $ver = mb_substr(preg_replace('/[^0-9A-Za-z.() -]/', '', (string)($_SERVER['HTTP_X_BOX_VERSION'] ?? '')), 0, 20);
         q('INSERT INTO push_devices(user_id,token,environment,app_version,device_id,last_seen_at) VALUES(?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), environment=VALUES(environment), app_version=VALUES(app_version), device_id=COALESCE(VALUES(device_id),device_id), last_seen_at=NOW()', [$u['id'], $token, $env, $ver, boxClientDevice()['device_id']]);
         jsonOut(['ok' => true]);
+
+    case 'me/purchase':
+        $u = boxApiUser();
+        if ($method !== 'POST') jsonOut(['ok' => false, 'error' => 'Geçersiz işlem.'], 405);
+        throttle('purchase:' . $u['id'], 30, 3600);
+        $data = body(64 * 1024);
+        $items = is_array($data['transactions'] ?? null) ? $data['transactions'] : [(string)($data['jws'] ?? '')];
+        $applied = 0; $errors = [];
+        foreach (array_slice($items, 0, 20) as $jws) {
+            try {
+                $tx = boxVerifyAppleJws((string)$jws);
+                $result = boxApplyStoreTransaction($tx, (int)$u['id'], boxStoreToken($u));
+                if ($result['status'] !== 'same') boxStoreAlert((int)$u['id'], $result['status'], $result['row']);
+                $applied++;
+            } catch (RuntimeException $e) {
+                // Kullanıcıya yalnızca anlamlı hatalar; imza/sertifika ayrıntısı sistem günlüğüne.
+                if ($e->getCode() !== 1) error_log('[Box] Satın alma doğrulanamadı: ' . $e->getMessage());
+                $errors[] = $e->getCode() === 1 ? $e->getMessage() : 'Satın alma doğrulanamadı.';
+            }
+        }
+        if ($applied === 0) jsonOut(['ok' => false, 'error' => $errors[0] ?? 'Satın alma doğrulanamadı.'], 422);
+        $u = boxFindUser((int)$u['id']);
+        jsonOut(['ok' => true, 'user' => boxUserPublic($u)]);
 
     case 'me/devices':
         // Oturum açık cihazlar; POST {id} o cihazdan, {others:true} bu cihaz dışındakilerden çıkış.

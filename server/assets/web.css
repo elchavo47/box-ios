@@ -49,3 +49,4 @@ main{max-width:1120px;margin:0 auto;padding:0 16px}
 .err h1{font-size:clamp(26px,5vw,36px);font-weight:700;margin-top:6px}.err p{color:var(--muted);max-width:30em;margin:4px 0 22px}.err small{color:#5d636c;margin-top:22px;font-size:12px}
 @media (max-width:860px){.hero{grid-template-columns:1fr;padding:44px 0 64px;gap:40px}.grid,.steps ol{grid-template-columns:1fr}.nav nav a:not(.pill){display:none}}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+.legal{max-width:760px;margin:0 auto;padding:40px 16px 60px}.legal h1{font:800 clamp(30px,6vw,42px)/1.1 Bricolage,sans-serif;margin:0 0 6px}.legal h2{font-size:18px;margin:28px 0 6px}.legal p{color:var(--muted);line-height:1.6;margin:0}.legal .fine{font-size:13px;margin-bottom:8px}.legal hr{border:0;border-top:1px solid rgba(255,255,255,.08);margin:48px 0 32px}

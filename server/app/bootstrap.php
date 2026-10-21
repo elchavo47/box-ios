@@ -271,6 +271,7 @@ require_once ROOT . '/app/box.php';
 require_once ROOT . '/app/apple.php';
 require_once ROOT . '/app/library.php';
 require_once ROOT . '/app/devices.php';
+require_once ROOT . '/app/store.php';
 require_once ROOT . '/app/i18n.php';
 
 if (PHP_SAPI !== 'cli') {

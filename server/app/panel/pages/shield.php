@@ -26,6 +26,7 @@ $tg = telegramConfigured(); $hasBackupPass = decryptSecret(site('backup_password
   <?php card('Anlık uyarılar', 'Telegram botuna anında mesaj. Aynı türden dakikada en fazla 6 mesaj gider.'); formStart('tg_alerts_save', 'stack', ['autosave' => true]);
   echo toggle('Servis kesintisi', 'tg_alert_services', site('tg_alert_services', '1') === '1', 'VDS indirme servisi düşünce ve geri gelince.');
   echo toggle('Uzun premium verildi', 'tg_alert_premium', site('tg_alert_premium', '1') === '1', '1 yıl ya da süresiz premium açıldığında.');
+  echo toggle('Uygulama içi satın alma', 'tg_alert_store', site('tg_alert_store', '1') === '1', 'Yeni satın alma, abonelik yenilenmesi, bitişi ve iade.');
   echo toggle('Yeni hata türü', 'tg_alert_errors', site('tg_alert_errors', '1') === '1', 'Sunucuda ilk kez görülen ya da yeniden başlayan hata.');
   if (!$tg) echo '<p class="notice warn">' . icon('alert') . '<span>Önce yukarıdan Telegram botunu bağla.</span></p>';
   formEnd(); cardEnd(); ?>

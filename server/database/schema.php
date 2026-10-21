@@ -28,6 +28,8 @@ CREATE TABLE users (
   expiry_notified_for DATETIME NULL DEFAULT NULL,
   library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
   premium_off VARCHAR(255) NULL,
+  premium_on VARCHAR(255) NULL,
+  store_token CHAR(36) NULL,
   lang VARCHAR(8) NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME NULL DEFAULT NULL,
@@ -135,6 +137,23 @@ CREATE TABLE user_favorites (
   PRIMARY KEY (user_id, key_hash),
   KEY idx_ufav_user (user_id, liked, updated_at),
   CONSTRAINT fk_ufav_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE store_purchases (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NOT NULL,
+  original_tx VARCHAR(64) NOT NULL,
+  last_tx VARCHAR(64) NOT NULL,
+  product_id VARCHAR(100) NOT NULL,
+  environment VARCHAR(12) NOT NULL DEFAULT 'production',
+  purchased_at DATETIME NOT NULL,
+  expires_at DATETIME NULL DEFAULT NULL,
+  revoked_at DATETIME NULL DEFAULT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_store_original (original_tx),
+  KEY idx_store_user (user_id, revoked_at, expires_at),
+  CONSTRAINT fk_store_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE push_log (

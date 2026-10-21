@@ -95,6 +95,7 @@ struct BoxApp: App {
                     downloads.isAllowed = { [weak auth] in auth?.has(.download) == true }
                     downloads.onBlocked = { [weak router] in router?.show(L("İndirme hesabında kapalı."), icon: "lock.fill") }
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
+                    PremiumStore.shared.start(auth: auth)
                     PushManager.shared.tokenProvider = { [weak auth] in auth?.token }
                     PushManager.shared.onOpen = { [weak router] target in
                         switch target {
@@ -150,6 +151,8 @@ struct BoxApp: App {
                     library.activateAccount(id)
                     // Duyuru kime gösterileceğine göre sunucuda süzülür: giriş/çıkışta yeniden sor.
                     Task { await server.refresh() }
+                    // Cihazda satın alma var ama bu hesapta görünmüyorsa (ör. yeniden giriş) sunucuya bildir.
+                    if id != nil { Task { await PremiumStore.shared.syncIfNeeded() } }
                     // Başka bir hesaba geçildiyse önceki hesabın aramaları görünmesin.
                     guard let id else { return }
                     let key = "box.lastUserID"
@@ -231,6 +234,8 @@ final class AppRouter: ObservableObject {
     /// Sanatçı / albüm sayfası (her yerden açılır, kendi gezinme yığınıyla).
     @Published var musicPage: MusicPage?
     @Published var showInbox = false
+    /// Box Premium satın alma ekranı.
+    @Published var showPremium = false
     /// Açılan .boxlist dosyası (içe aktarma ekranı).
     @Published var importRequest: ImportRequest?
     /// İçe aktarılan listeyi Kitaplık'ta aç.

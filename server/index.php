@@ -22,6 +22,7 @@ if ($path === '/robots.txt') {
 }
 if ($path === '/approve') { require ROOT . '/app/panel/approve.php'; exit; }
 if ($path === '/' || $path === '/index.php') webLanding();
+if (in_array($path, ['/gizlilik', '/privacy'], true)) webPrivacy();
 if ($path === '/admin' || str_starts_with($path, '/admin/')) { require ROOT . '/app/admin.php'; exit; }
 if (str_starts_with($path, '/api/') || str_starts_with($path, '/box-api') || in_array($path, ['/health', '/cron'], true)) { require ROOT . '/app/api.php'; exit; }
 

@@ -45,25 +45,37 @@ const BOX_PREMIUM_FEATURES = [
     'radio' => 'Radyo',
     'playlist' => 'YouTube listesi içe aktarma',
     'match' => 'YouTube Music eşleştirme',
+    'browser' => 'Tarayıcıdan indirme',
 ];
 
-/** Kapatılmış premium özellikleri (users.premium_off, virgüllü). Boş = hepsi açık. */
-function boxFeaturesOff(array $u): array {
-    $off = array_filter(array_map('trim', explode(',', (string)($u['premium_off'] ?? ''))));
-    return array_values(array_intersect($off, array_keys(BOX_PREMIUM_FEATURES)));
+function boxFeatureList(array $u, string $column): array {
+    $list = array_filter(array_map('trim', explode(',', (string)($u[$column] ?? ''))));
+    return array_values(array_intersect($list, array_keys(BOX_PREMIUM_FEATURES)));
 }
 
-function boxHasFeature(array $u, string $feature): bool {
-    return boxIsPremium($u) && !in_array($feature, boxFeaturesOff($u), true);
+/** Kapatılmış özellikler (users.premium_off). */
+function boxFeaturesOff(array $u): array { return boxFeatureList($u, 'premium_off'); }
+/** Satın alan kullanıcıya panelden ayrıca açılan özellikler (users.premium_on). */
+function boxFeaturesOn(array $u): array { return boxFeatureList($u, 'premium_on'); }
+
+/** Premium var mı: panelden verilen ya da App Store'dan satın alınan. */
+function boxHasPremium(array $u): bool { return boxIsPremium($u) || boxStoreActive($u); }
+
+/** Premium'un temel özellikleri: panelden verilende hepsi, satın alınanda yalnızca mağaza özellikleri. */
+function boxFeatureBase(array $u): array {
+    return boxIsPremium($u) ? array_keys(BOX_PREMIUM_FEATURES) : BOX_STORE_FEATURES;
 }
 
 function boxFeatures(array $u): array {
-    if (!boxIsPremium($u)) return [];
-    return array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), boxFeaturesOff($u)));
+    if (!boxHasPremium($u)) return [];
+    $set = array_unique(array_merge(boxFeatureBase($u), boxFeaturesOn($u)));
+    return array_values(array_diff(array_intersect(array_keys(BOX_PREMIUM_FEATURES), $set), boxFeaturesOff($u)));
 }
 
+function boxHasFeature(array $u, string $feature): bool { return in_array($feature, boxFeatures($u), true); }
+
 function boxRequireFeature(array $u, string $feature): void {
-    if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+    if (!boxHasPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
     if (!boxHasFeature($u, $feature)) jsonOut(['ok' => false, 'error' => 'Bu özellik hesabında kapalı.', 'feature' => $feature], 403);
 }
 
@@ -73,8 +85,11 @@ function boxUserPublic(array $u): array {
         'id' => (int)$u['id'],
         'email' => (string)$u['email'],
         'name' => (string)$u['display_name'],
-        'premium' => boxIsPremium($u),
+        'premium' => boxHasPremium($u),
+        'premium_source' => boxIsPremium($u) ? 'admin' : (boxStoreActive($u) ? 'store' : null),
         'features' => boxFeatures($u),
+        'store' => ($e = boxStoreEntitlement($u)) ? ['product' => (string)$e['product_id'], 'expires_at' => $e['expires_at'] ? date(DATE_ATOM, (int)strtotime((string)$e['expires_at'])) : null, 'lifetime' => $e['expires_at'] === null, 'sandbox' => $e['environment'] === 'sandbox'] : null,
+        'store_token' => boxStoreToken($u),
         'premium_until' => !empty($u['premium_until']) ? date(DATE_ATOM, (int)strtotime((string)$u['premium_until'])) : null,
         'created_at' => date(DATE_ATOM, (int)strtotime((string)$u['created_at'])),
         'avatar_url' => boxAvatarUrl($u),
@@ -136,7 +151,7 @@ function boxOptionalUser(): ?array {
 function boxAnnouncementVisible(?array $u): bool {
     return match ((string)configValue('announcement_audience', 'users')) {
         'all' => true,
-        'premium' => $u !== null && boxIsPremium($u),
+        'premium' => $u !== null && boxHasPremium($u),
         default => $u !== null,
     };
 }
@@ -921,7 +936,7 @@ function boxInboxAdd(?int $userId, string $target, string $title, string $body, 
 }
 
 function boxInbox(array $u, int $limit = 50): array {
-    $prem = boxIsPremium($u) ? 'premium' : 'free';
+    $prem = boxHasPremium($u) ? 'premium' : 'free';
     $rows = q("SELECT id,title,body,title_en,body_en,open_to,created_at FROM notifications WHERE (user_id=? OR (user_id IS NULL AND target IN ('all', ?))) AND created_at>=? ORDER BY id DESC LIMIT " . max(1, min(100, $limit)), [$u['id'], $prem, $u['created_at']])->fetchAll();
     // Türkçe dışındaki dillerde, panelden İngilizcesi yazıldıysa o gösterilir.
     $en = boxLang() !== 'tr';

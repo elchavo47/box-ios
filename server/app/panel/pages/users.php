@@ -38,7 +38,9 @@ card(nbNum($total) . ' kullanıcı', $search !== '' ? '"' . $search . '" aramas�
 tableView(['Kullanıcı', 'Üyelik', ['İndirme', 'num'], 'Sürüm', 'Son görülme', ''], $rows, function ($u) {
     $p = boxIsPremium($u);
     echo '<td>' . userCell($u, (int)$u['id'], $u['email'] . ' · #' . $u['id']) . '</td>';
-    echo '<td>' . ((int)$u['is_banned'] ? pill('Askıda', 'bad') : statusPill($p ? 'premium' : 'free')) . ($p ? '<small class="muted block">' . ($u['premium_until'] ? nbDate($u['premium_until'], 'd.m.Y') . ' tarihine kadar' : 'Süresiz') . '</small>' : '') . '</td>';
+    $st = !$p ? boxStoreEntitlement($u) : null;
+    $sub = $p ? ($u['premium_until'] ? nbDate($u['premium_until'], 'd.m.Y') . ' tarihine kadar' : 'Süresiz') : ($st ? 'App Store · ' . ($st['expires_at'] ? nbDate($st['expires_at'], 'd.m.Y') . ' tarihine kadar' : 'ömür boyu') : '');
+    echo '<td>' . ((int)$u['is_banned'] ? pill('Askıda', 'bad') : statusPill($p || $st ? 'premium' : 'free')) . ($sub !== '' ? '<small class="muted block">' . h($sub) . '</small>' : '') . '</td>';
     echo '<td class="num">' . nbNum($u['dl']) . '</td><td>' . h($u['app_version'] ?: '—') . '</td><td class="nowrap">' . h(nbAgo($u['last_seen_at'])) . '</td>';
     echo '<td class="end"><a class="btn small ghost" href="/admin?p=player&amp;id=' . (int)$u['id'] . '">Aç</a></td>';
 }, $search !== '' ? 'Bu aramayla eşleşen kullanıcı yok.' : 'Henüz kullanıcı yok. Uygulamadan ilk hesap açıldığında burada görünür.');

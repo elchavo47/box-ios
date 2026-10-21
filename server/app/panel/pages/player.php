@@ -4,6 +4,8 @@ $uid = (int)($_GET['id'] ?? 0);
 $u = boxFindUser($uid);
 if (!$u) { card(); echo emptyState('Kullanıcı bulunamadı', 'Numara yanlış olabilir ya da hesap silinmiş.') . '<p><a class="btn ghost" href="/admin?p=users">Kullanıcılara dön</a></p>'; cardEnd(); return; }
 $isPrem = boxIsPremium($u);
+$store = boxStoreEntitlement($u);
+$purchases = boxStorePurchases($uid);
 $u['avatar_url'] = boxAvatarUrl($u);
 $q = boxQuota($u);
 $devices = boxUserDevices($uid);
@@ -16,7 +18,7 @@ $dls = q('SELECT * FROM downloads WHERE user_id=? ORDER BY id DESC LIMIT 50', [$
 $lib = boxLibSummary($uid);
 $plog = q('SELECT p.*,a.username admin_name FROM premium_log p LEFT JOIN admins a ON a.id=p.admin_id WHERE p.user_id=? ORDER BY p.id DESC LIMIT 20', [$uid])->fetchAll();
 $facts = [
-    ['Üyelik', $isPrem ? 'Premium' : 'Ücretsiz'], ['Premium bitişi', $isPrem ? ($u['premium_until'] ? nbDate($u['premium_until']) : 'Süresiz') : '—'],
+    ['Üyelik', $isPrem ? 'Premium' : ($store ? 'Premium (App Store)' : 'Ücretsiz')], ['Premium bitişi', $isPrem ? ($u['premium_until'] ? nbDate($u['premium_until']) : 'Süresiz') : ($store ? ($store['expires_at'] ? nbDate($store['expires_at']) : 'Ömür boyu') : '—')],
     ['Toplam indirme', nbNum((int)q('SELECT COUNT(*) FROM downloads WHERE user_id=?', [$uid])->fetchColumn())], ['Bugün', $q['downloads_used'] . ' indirme · ' . $q['searches_used'] . ' arama'],
     ['Giriş yöntemi', !empty($u['apple_sub']) ? ((int)($u['has_password'] ?? 1) === 1 ? 'E-posta + Apple' : 'Apple') : 'E-posta'],
     ['Bildirim', ($pushN = (int)q('SELECT COUNT(*) FROM push_devices WHERE user_id=?', [$uid])->fetchColumn()) ? $pushN . ' cihaz' : 'Kapalı'],
@@ -30,7 +32,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <?=avatarHtml($u, 'xl')?>
     <div>
       <h2><?=h($u['display_name'])?> <span class="muted">#<?=$uid?></span></h2>
-      <p class="pills"><?=statusPill($isPrem ? 'premium' : 'free')?><?=pill($u['email'], 'neutral')?><?php if ((int)$u['is_banned']): ?><?=pill('Askıda', 'bad')?><?php endif ?></p>
+      <p class="pills"><?=statusPill($isPrem || $store ? 'premium' : 'free')?><?=pill($u['email'], 'neutral')?><?php if ((int)$u['is_banned']): ?><?=pill('Askıda', 'bad')?><?php endif ?></p>
       <?php if ($pushN && canSee($GLOBALS['NB_ADMIN'], 'notify')): ?><p><a class="btn small ghost" href="/admin?p=notify&amp;user=<?=$uid?>"><?=icon('bell')?><span>Bildirim gönder</span></a></p><?php endif ?>
       <?php if ($u['ban_reason']): ?><p class="muted">Gerekçe: <?=h($u['ban_reason'])?></p><?php endif ?>
     </div>
@@ -39,7 +41,7 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
 </section>
 
 <div class="cols-2">
-  <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Şu an açık. Süre eklersen mevcut bitişin üstüne eklenir.' : 'Açınca arama ve indirme sekmesi uygulamada görünür.'); ?>
+  <?php if (can('premium_grant')): card('Premium', $isPrem ? 'Panelden açık. Süre eklersen mevcut bitişin üstüne eklenir.' : ($store ? 'App Store\'dan satın aldı: yalnızca tarayıcıdan indirme açık. YouTube özelliklerini aşağıdan istersen aç.' : 'Panelden açınca bütün özellikler açık gelir; aşağıdan tek tek kapatabilirsin.')); ?>
     <?php formStart('premium_grant', 'stack'); hidden('user_id', $uid); ?>
     <div class="segmented" role="radiogroup" aria-label="Süre">
       <?php foreach ([7 => '1 hafta', 30 => '1 ay', 90 => '3 ay', 365 => '1 yıl', 0 => 'Süresiz'] as $d => $l): ?>
@@ -49,13 +51,13 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <div class="btn-row"><?=button($isPrem ? 'Süre ekle' : 'Premium aç', 'primary', ['icon' => 'bolt'])?></div>
     <?php formEnd(); ?>
     <?php if ($isPrem): formStart('premium_revoke'); hidden('user_id', $uid); echo button('Premiumu kapat', 'danger ghost', ['confirm' => 'Premium hemen kapanacak. Emin misin?']); formEnd(); endif ?>
-    <?php $off = boxFeaturesOff($u);
-    $hints = ['search' => 'Arama sekmesi, ana sayfa önerileri, sanatçı ve albüm sayfaları', 'stream' => 'İndirmeden internetten çalma ve video', 'download' => 'Şarkıları kitaplığa indirme', 'radio' => 'Radyo ve sıra bitince benzerleriyle devam', 'playlist' => 'YouTube listesi bağlantısıyla içe aktarma', 'match' => '.boxlist içe aktarırken bulunamayanları arama'];
+    <?php $effective = boxHasPremium($u) ? boxFeatures($u) : array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), boxFeaturesOff($u)));
+    $hints = ['search' => 'Arama sekmesi, ana sayfa önerileri, sanatçı ve albüm sayfaları', 'stream' => 'İndirmeden internetten çalma ve video', 'download' => 'Şarkıları kitaplığa indirme', 'radio' => 'Radyo ve sıra bitince benzerleriyle devam', 'playlist' => 'YouTube listesi bağlantısıyla içe aktarma', 'match' => '.boxlist içe aktarırken bulunamayanları arama', 'browser' => 'Tarayıcı sekmesinden dosya indirip kitaplığa ekleme (satın almayla gelir)'];
     ?>
     <p class="ios-section-title">Premium özellikleri</p>
     <?php formStart('user_features', 'ios-list', ['autosave' => true]); hidden('user_id', $uid); ?>
       <?php foreach (BOX_PREMIUM_FEATURES as $k => $l): ?>
-      <label class="switch ios-row"><span class="switch-text"><b><?=h($l)?></b><small><?=h($hints[$k] ?? '')?></small></span><input type="checkbox" role="switch" name="features[]" value="<?=h($k)?>"<?=in_array($k, $off, true) ? '' : ' checked'?>><span class="switch-track" aria-hidden="true"></span></label>
+      <label class="switch ios-row"><span class="switch-text"><b><?=h($l)?></b><small><?=h($hints[$k] ?? '')?></small></span><input type="checkbox" role="switch" name="features[]" value="<?=h($k)?>"<?=in_array($k, $effective, true) ? ' checked' : ''?>><span class="switch-track" aria-hidden="true"></span></label>
       <?php endforeach ?>
     <?php formEnd(); ?>
     <p class="ios-footnote">Değişiklik anında kaydedilir; uygulama bir sonraki açılışta ya da yenilemede uygular.</p>
@@ -67,6 +69,19 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <?php if (can('user_note')): formStart('user_note', 'stack'); hidden('user_id', $uid); area('Ekip notu', 'note', (string)$u['note'], ['hint' => 'Yalnızca panelde görünür.']); echo '<div class="row-actions">' . button('Notu kaydet', 'ghost') . '</div>'; formEnd(); endif ?>
   <?php cardEnd(); ?>
 </div>
+
+<?php if ($purchases): ?>
+<?php card('App Store satın alımları', 'Uygulama içinden yapılan satın almalar. Yenileme, bitiş ve iadeler Apple\'dan otomatik gelir.'); ?>
+<?php tableView(['Paket', 'Durum', 'Başlangıç', 'Bitiş', 'Ortam'], $purchases, function ($p) {
+    $active = $p['revoked_at'] === null && ($p['expires_at'] === null || strtotime((string)$p['expires_at']) > time());
+    $state = $p['revoked_at'] !== null ? pill('İade edildi', 'bad') : ($active ? pill('Aktif', 'good') : pill('Bitti', 'neutral'));
+    echo '<td><b>' . h(boxStoreProductName((string)$p['product_id'])) . '</b><small class="muted block mono">' . h((string)$p['original_tx']) . '</small></td>';
+    echo '<td>' . $state . '</td><td class="nowrap">' . h(nbDate((string)$p['purchased_at'], 'd.m.Y H:i')) . '</td>';
+    echo '<td class="nowrap">' . h($p['expires_at'] ? nbDate((string)$p['expires_at'], 'd.m.Y H:i') : 'Ömür boyu') . '</td>';
+    echo '<td>' . ($p['environment'] === 'sandbox' ? pill('Test', 'info') : pill('Gerçek', 'accent')) . '</td>';
+}, ''); ?>
+<?php cardEnd(); ?>
+<?php endif ?>
 
 <div class="cols-2 wide-left">
   <div class="stack">

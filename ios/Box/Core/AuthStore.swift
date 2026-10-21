@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 enum PremiumFeature: String {
-    case search, stream, download, radio, playlist, match
+    case search, stream, download, radio, playlist, match, browser
 }
 
 @MainActor
@@ -105,6 +105,12 @@ final class AuthStore: ObservableObject {
         } catch {
             // Ağ hatası: önbellekteki kullanıcıyla devam et.
         }
+    }
+
+    /// Sunucudan gelen güncel kullanıcıyı uygula (ör. satın almadan sonra).
+    func apply(_ user: BoxUser) {
+        guard let token else { return }
+        store(token: token, user: user)
     }
 
     func updateName(_ name: String) async throws {

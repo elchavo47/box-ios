@@ -58,6 +58,10 @@ struct RootView: View {
             .sheet(item: $router.musicPage) { page in
                 MusicBrowser(root: page)
             }
+            .sheet(isPresented: $router.showPremium) {
+                PremiumView()
+                    .presentationDragIndicator(.visible)
+            }
             .sheet(isPresented: $router.showInbox) {
                 InboxView()
             }

@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 16;
+const BOX_SCHEMA_VERSION = 17;
 
 function boxVersion(): string {
     static $version = null;
@@ -115,6 +115,10 @@ function ensureSchema(bool $force = false): void {
         }
         $add('users', 'library_order_at', 'library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER expiry_notified_for');
         $add('users', 'premium_off', 'premium_off VARCHAR(255) NULL AFTER library_order_at');
+        // 3.2: uygulama içi satın alma
+        $add('users', 'premium_on', 'premium_on VARCHAR(255) NULL AFTER premium_off');
+        $add('users', 'store_token', 'store_token CHAR(36) NULL DEFAULT NULL AFTER premium_on');
+        if ($tableExists('users') && !$hasIndex('users', 'idx_users_store_token')) { q('ALTER TABLE users ADD INDEX idx_users_store_token(store_token)'); $note('Dizin eklendi', 'users.idx_users_store_token'); }
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');
         // 3.0: cihaz bilgisi
         $add('tokens', 'device_id', 'device_id VARCHAR(64) NULL DEFAULT NULL AFTER device');

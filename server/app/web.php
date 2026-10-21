@@ -94,10 +94,47 @@ function webLanding(): never {
 </main>
 <footer class="foot">
   <span class="brand small"><?=webMark()?><span>Box</span></span>
-  <span>© <?=date('Y')?> AYD Works · <a href="https://aydworks.com.tr">aydworks.com.tr</a></span>
+  <span><a href="/gizlilik">Gizlilik</a> · © <?=date('Y')?> AYD Works · <a href="https://aydworks.com.tr">aydworks.com.tr</a></span>
 </footer>
 <?php
     echo webLayout('Box · Müziğin, tek bir kutuda', (string)ob_get_clean(), 'landing', 'Box: iPhone için reklamsız müzik oynatıcı ve dosya yöneticisi. Uyku zamanlayıcısı, sıra, AirPlay ve premium ile arama.');
+    exit;
+}
+
+/** Gizlilik politikası (uygulamadaki Premium ekranından bağlanır). */
+function webPrivacy(): never {
+    webHeaders(200);
+    header('Cache-Control: public, max-age=3600');
+    $tr = [
+        ['Kısaca', 'Box reklam göstermez, seni takip etmez ve verilerini kimseye satmaz. Müzik dosyaların telefonunda kalır; sunucumuza yüklenmez.'],
+        ['Hesap bilgileri', 'Hesap açarsan adını, e-posta adresini, şifrenin geri çevrilemez özetini ve istersen profil fotoğrafını saklarız. Bunlar yalnızca giriş yapman ve hesabının çalışması için kullanılır.'],
+        ['Kullanım ve güvenlik kayıtları', 'Hizmeti çalıştırmak ve kötüye kullanımı önlemek için giriş denemeleri, IP adresi, cihaz modeli, uygulama sürümü ve hesabınla yapılan arama ve indirme istekleri sınırlı süre kayıt altında tutulur.'],
+        ['Satın almalar', 'Box Premium satın alımları Apple üzerinden yapılır. Kart ya da ödeme bilgilerini hiçbir zaman görmeyiz. Apple\'ın imzaladığı işlem kimliğini, ürünü, satın alma ve bitiş tarihlerini, satın almayı hesabına bağlamak ve yenileme ya da iadeleri izlemek için saklarız.'],
+        ['Bildirimler', 'Bildirimlere izin verirsen Apple\'ın verdiği bildirim anahtarı hesabınla eşleştirilir. İzni istediğin zaman iOS Ayarlar\'dan kapatabilirsin.'],
+        ['Paylaşım', 'Verilerin yalnızca hizmeti sağlamak için gereken yerlerde işlenir: Apple (ödeme ve bildirim) ve sunucularımızın barındırıldığı altyapı sağlayıcıları. Yasal bir zorunluluk olmadıkça başka kimseyle paylaşılmaz.'],
+        ['Silme', 'Uygulamada Hesap › Hesabı sil ile hesabını ve ona bağlı verileri kalıcı olarak silebilirsin. Aboneliği iptal etmek için iOS Ayarlar › Apple Kimliği › Abonelikler bölümünü kullan; hesabı silmek aboneliği kendiliğinden iptal etmez.'],
+        ['İletişim', 'Sorun ya da talebin için aydworks.com.tr üzerinden AYD Works ile iletişime geçebilirsin.'],
+    ];
+    $en = [
+        ['In short', 'Box shows no ads, does not track you and never sells your data. Your music files stay on your phone and are not uploaded to our servers.'],
+        ['Account', 'If you create an account we store your name, email, a one-way hash of your password and, optionally, a profile photo, used only to sign you in and run your account.'],
+        ['Usage and security logs', 'To run the service and prevent abuse, sign-in attempts, IP address, device model, app version and the search and download requests made with your account are kept for a limited time.'],
+        ['Purchases', 'Box Premium is sold through Apple. We never see your card or payment details. We store the Apple-signed transaction ID, product and purchase/expiry dates to link the purchase to your account and track renewals and refunds.'],
+        ['Notifications', 'If you allow notifications, the push token issued by Apple is linked to your account. You can turn this off anytime in iOS Settings.'],
+        ['Sharing', 'Data is processed only where needed to provide the service: Apple (payments and notifications) and the hosting providers of our servers. It is not shared with anyone else unless required by law.'],
+        ['Deletion', 'Delete your account and its data permanently in the app under Account › Delete account. To cancel a subscription use iOS Settings › Apple ID › Subscriptions; deleting the account does not cancel it.'],
+        ['Contact', 'Reach AYD Works via aydworks.com.tr.'],
+    ];
+    $sec = function (array $rows): string {
+        $o = '';
+        foreach ($rows as [$h, $t]) $o .= '<h2>' . webH($h) . '</h2><p>' . webH($t) . '</p>';
+        return $o;
+    };
+    $body = '<header class="nav"><a class="brand" href="/">' . webMark() . '<span>Box</span></a><nav><a href="#en">English</a></nav></header>'
+        . '<main class="legal"><h1>Gizlilik politikası</h1><p class="fine">Son güncelleme: 21 Ekim 2026</p>' . $sec($tr)
+        . '<hr id="en"><h1>Privacy policy</h1><p class="fine">Last updated: October 21, 2026</p>' . $sec($en) . '</main>'
+        . '<footer class="foot"><span class="brand small">' . webMark() . '<span>Box</span></span><span>© ' . date('Y') . ' AYD Works</span></footer>';
+    echo webLayout('Gizlilik · Box', $body, 'landing', 'Box gizlilik politikası');
     exit;
 }
 

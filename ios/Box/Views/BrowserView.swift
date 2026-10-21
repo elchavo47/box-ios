@@ -28,6 +28,9 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     /// İndirme bitince (geçici dosya). Dosyayı Box'a taşıma işi görünümde.
     var onFinished: ((URL, String) async -> Void)?
     var onFailed: ((String) -> Void)?
+    /// Dosya indirme Premium'a özel: izin yoksa indirme başlamaz, onBlocked çağrılır.
+    var canDownload: () -> Bool = { false }
+    var onBlocked: (() -> Void)?
 
     private var observers: [NSKeyValueObservation] = []
     private var progressObservers: [ObjectIdentifier: NSKeyValueObservation] = [:]
@@ -103,7 +106,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if navigationAction.shouldPerformDownload {
-            decisionHandler(.download)
+            if canDownload() { decisionHandler(.download) } else { decisionHandler(.cancel); onBlocked?() }
             return
         }
         // App Store, telefon gibi bağlantılar sistemde açılsın.
@@ -126,7 +129,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         let isFile = mime.hasPrefix("audio/") || mime == "application/octet-stream" || mime == "application/zip"
         if navigationResponse.isForMainFrame && (attachment || isFile || !navigationResponse.canShowMIMEType) {
-            decisionHandler(.download)
+            if canDownload() { decisionHandler(.download) } else { decisionHandler(.cancel); onBlocked?() }
         } else {
             decisionHandler(.allow)
         }
@@ -206,6 +209,7 @@ struct BrowserView: View {
     @EnvironmentObject private var server: ServerState
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = BrowserModel()
     @FocusState private var editing: Bool
 
@@ -242,6 +246,14 @@ struct BrowserView: View {
         .onAppear {
             model.onFinished = { url, name in await save(url, name: name) }
             model.onFailed = { name in router.show(L("İndirilemedi: {0}", name), icon: "exclamationmark.triangle.fill") }
+            model.canDownload = { [weak auth] in auth?.has(.browser) == true }
+            model.onBlocked = { [weak auth, weak router] in
+                if auth?.isPremium == true {
+                    router?.show(L("Tarayıcıdan indirme hesabında kapalı."), icon: "lock.fill")
+                } else {
+                    router?.showPremium = true
+                }
+            }
         }
     }
 
@@ -324,6 +336,32 @@ struct BrowserView: View {
                         Button { model.open(item.url) } label: { ShortcutTile(item: item) }
                             .buttonStyle(PressableStyle())
                     }
+                }
+                if !auth.has(.browser) {
+                    Button { router.showPremium = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.black)
+                                .frame(width: 34, height: 34)
+                                .background(Circle().fill(Color.accent))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(L("Dosya indirme Premium'a özel"))
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                Text(L("Gezinmek serbest; indirdiklerini Box'a eklemek için Premium'a geç."))
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.boxSecondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundColor(.boxTertiaryText)
+                        }
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.accent.opacity(0.1)))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.accent.opacity(0.35), lineWidth: 1))
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.98))
                 }
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "arrow.down.circle.fill")

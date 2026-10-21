@@ -178,7 +178,7 @@ function panelAction(array $admin): string|array {
         return $id ? 'Olay incelendi olarak işaretlendi.' : 'Bütün olaylar incelendi olarak işaretlendi.';
     }
     if ($action === 'tg_alerts_save') {
-        foreach (['services', 'errors', 'premium'] as $kind) saveSite('tg_alert_' . $kind, isset($_POST['tg_alert_' . $kind]) ? '1' : '0');
+        foreach (['services', 'errors', 'premium', 'store'] as $kind) saveSite('tg_alert_' . $kind, isset($_POST['tg_alert_' . $kind]) ? '1' : '0');
         logAdmin((int)$admin['id'], 'tg_alerts_save');
         return 'Anlık uyarı ayarları kaydedildi.';
     }
@@ -265,11 +265,15 @@ function panelAction(array $admin): string|array {
                 if ($days >= 365 || $days === 0) staffAlert('premium', "⚡ Premium verildi: {$who}\nSüre: " . ($days ? "$days gün" : 'süresiz') . "\nYapan: {$admin['username']}");
                 return $days ? "Premium " . (boxIsPremium($u) ? 'uzatıldı' : 'açıldı') . ': ' . nbDate($until, 'd.m.Y H:i') . ' tarihine kadar.' : 'Süresiz premium açıldı.';
             case 'user_features':
-                $on = array_map('strval', (array)($_POST['features'] ?? []));
-                $off = array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), $on));
-                q('UPDATE users SET premium_off=? WHERE id=?', [$off ? implode(',', $off) : null, $uid]);
-                logAdmin((int)$admin['id'], 'user_features', ['user_id' => $uid, 'off' => $off]);
-                return $off ? 'Kaydedildi. Kapalı: ' . implode(', ', array_map(fn($k) => BOX_PREMIUM_FEATURES[$k], $off)) . '.' : 'Kaydedildi. Bütün özellikler açık.';
+                // Temel: panelden verilen premiumda hepsi, yalnızca satın alanda mağaza özellikleri.
+                $checked = array_values(array_intersect(array_keys(BOX_PREMIUM_FEATURES), array_map('strval', (array)($_POST['features'] ?? []))));
+                $base = boxHasPremium($u) ? boxFeatureBase($u) : array_keys(BOX_PREMIUM_FEATURES);
+                $off = array_values(array_diff($base, $checked));
+                $on = array_values(array_diff($checked, $base));
+                q('UPDATE users SET premium_off=?, premium_on=? WHERE id=?', [$off ? implode(',', $off) : null, $on ? implode(',', $on) : null, $uid]);
+                logAdmin((int)$admin['id'], 'user_features', ['user_id' => $uid, 'off' => $off, 'on' => $on]);
+                $closed = array_diff(array_keys(BOX_PREMIUM_FEATURES), $checked);
+                return $closed ? 'Kaydedildi. Kapalı: ' . implode(', ', array_map(fn($k) => BOX_PREMIUM_FEATURES[$k], $closed)) . '.' : 'Kaydedildi. Bütün özellikler açık.';
             case 'premium_revoke':
                 if (!boxIsPremium($u) && (int)$u['is_premium'] === 0) throw new RuntimeException('Bu kullanıcının premiumu zaten yok.');
                 boxRevokePremium($uid, (int)$admin['id']);
