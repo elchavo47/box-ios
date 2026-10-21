@@ -531,7 +531,7 @@ struct PremiumHeaderButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "bolt.fill").font(.system(size: 12, weight: .black))
-                Text("Premium").font(.system(size: 14, weight: .bold))
+                Text(L("Premium al")).font(.system(size: 14, weight: .bold)).lineLimit(1)
             }
             .foregroundColor(.black)
             .padding(.horizontal, 12)
@@ -544,7 +544,7 @@ struct PremiumHeaderButton: View {
                 Capsule()
                     .fill(LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing))
                     .frame(width: 34)
-                    .offset(x: shine ? 70 : -70)
+                    .offset(x: shine ? 90 : -90)
                     .mask(Capsule())
             )
             .clipShape(Capsule())
