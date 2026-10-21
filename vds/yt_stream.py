@@ -186,8 +186,23 @@ LAST_ERROR: dict = {}
 
 def note_error(where: str, error: BaseException, query: str = "") -> None:
     """Son YouTube Music hatası (panelde görünür)."""
+    frame = ""
+    tb = traceback.extract_tb(error.__traceback__) if error.__traceback__ else []
+    if tb:
+        last = tb[-1]
+        frame = f" @ {os.path.basename(last.filename)}:{last.lineno} {last.name}"
     LAST_ERROR.clear()
-    LAST_ERROR.update({"at": int(time.time()), "where": where, "type": type(error).__name__, "detail": str(error)[:160], "query": query[:80]})
+    LAST_ERROR.update({"at": int(time.time()), "where": where, "type": type(error).__name__, "detail": (str(error)[:120] + frame)[:220], "query": query[:80]})
+
+
+def safe_parse(fn, item):
+    """Tek bir sonucun ayrıştırılması patlarsa yalnızca o sonucu atla."""
+    try:
+        return fn(item)
+    except Exception as e:
+        note_error("parse/" + fn.__name__, e)
+        log.warning("music parse %s failed\n%s", fn.__name__, traceback.format_exc(limit=3))
+        return None
 
 
 def ytm_call(method: str, *args, languages=("en", "tr"), **kwargs):
@@ -363,7 +378,7 @@ async def music_search(q: str = "", limit: int = 20, filter: str = "songs", exp:
     def run():
         out, seen = [], set()
         for item in safe_search(q, kind, limit):
-            t = track(item) if kind in ("songs", "videos") else search_item(item)
+            t = safe_parse(track, item) if kind in ("songs", "videos") else safe_parse(search_item, item)
             if t and t["id"] not in seen:
                 seen.add(t["id"])
                 out.append(t)
@@ -388,14 +403,18 @@ async def music_search_all(q: str = "", exp: str = "", sig: str = ""):
             log.warning("music searchall failed for %r\n%s", q, traceback.format_exc(limit=4))
             try:
                 items = ytm("tr").search(q, limit=20)
-            except Exception:
+            except Exception as e:
+                # Karışık arama ayrıştırılamıyor (YouTube yapıyı değiştirdi): türlere göre ayrı ayrı topla.
+                note_error("searchall", e, q)
                 log.warning("music searchall (tr) failed for %r\n%s", q, traceback.format_exc(limit=4))
-                raise
+                items = []
+                for kind in ("artists", "songs", "videos", "albums", "playlists"):
+                    items += part("searchall/" + kind, lambda kind=kind: safe_search(q, kind, 6 if kind != "songs" else 15))
         top, out, seen = None, [], set()
         in_card = False
         for item in items:
             category = item.get("category")
-            parsed = search_item(item)
+            parsed = safe_parse(search_item, item)
             if not parsed:
                 continue
             key = parsed["type"] + ":" + parsed["id"]
@@ -415,8 +434,8 @@ async def music_search_all(q: str = "", exp: str = "", sig: str = ""):
             out.append(parsed)
         # Sonuçta şarkı yoksa (nadir) şarkı filtresiyle tamamla.
         if not any(i["type"] == "song" for i in out):
-            for item in safe_search(q, "songs", 10):
-                t = track(item)
+            for item in part("searchall/songs", lambda: safe_search(q, "songs", 10)):
+                t = safe_parse(track, item)
                 if t and "song:" + t["id"] not in seen:
                     t["type"] = "song"
                     seen.add("song:" + t["id"])
@@ -599,7 +618,7 @@ async def music_artist(id: str = "", q: str = "", exp: str = "", sig: str = ""):
             return None
         data = ytm_call("get_artist", bid)
         name = data.get("name") or q
-        songs = part("artist.songs", lambda: [t for t in (track(i) for i in ((data.get("songs") or {}).get("results") or [])) if t])
+        songs = part("artist.songs", lambda: [t for t in (safe_parse(track, i) for i in ((data.get("songs") or {}).get("results") or [])) if t])
         # Popüler şarkılar listesinin tamamı (5'ten fazlası) ayrı bir listede.
         songs_list = (data.get("songs") or {}).get("browseId")
         if songs_list and songs_list.startswith("VL"):
@@ -687,7 +706,7 @@ async def music_playlist(id: str = "", limit: int = 60, exp: str = "", sig: str 
     def run():
         data = ytm_call("get_playlist", id, limit=limit)
         return {"title": data.get("title") or "", "thumbnail": square(data.get("thumbnails")),
-                "tracks": [t for t in (track(i) for i in (data.get("tracks") or [])) if t]}
+                "tracks": [t for t in (safe_parse(track, i) for i in (data.get("tracks") or [])) if t]}
 
     return {"ok": True, **await cached(f"pl:{id}:{limit}", 6 * 3600, run)}
 
@@ -705,7 +724,7 @@ async def music_charts(country: str = "TR", exp: str = "", sig: str = ""):
         if lists and lists[0].get("playlistId"):
             title = lists[0].get("title") or ""
             pl = ytm_call("get_playlist", lists[0]["playlistId"], limit=50)
-            tracks = [t for t in (track(i) for i in (pl.get("tracks") or [])) if t]
+            tracks = [t for t in (safe_parse(track, i) for i in (pl.get("tracks") or [])) if t]
         artists = [c for c in ({"id": i.get("browseId"), "name": i.get("title") or "", "thumbnail": square(i.get("thumbnails"))} for i in (data.get("artists") or [])) if c["id"]][:20]
         return {"title": title, "tracks": tracks, "artists": artists}
 
