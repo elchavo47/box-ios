@@ -57,14 +57,6 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
 
-                Picker(selection: $settings.eqPresetRaw) {
-                    ForEach(EQPreset.allCases) { preset in
-                        Text(preset.title).tag(preset.rawValue)
-                    }
-                } label: {
-                    Label(L("Ekolayzer"), systemImage: "slider.vertical.3")
-                }
-
                 Toggle(isOn: $settings.normalizeVolume) {
                     Label(L("Ses seviyesini eşitle"), systemImage: "speaker.wave.2")
                 }
@@ -84,7 +76,7 @@ struct SettingsView: View {
             } header: {
                 Text(L("Oynatma"))
             } footer: {
-                Text(L("Ekolayzer ve ses eşitleme bir sonraki şarkıdan itibaren uygulanır."))
+                Text(L("Ekolayzer, çalan şarkı ekranındaki ekolayzer düğmesinde."))
             }
             .listRowBackground(Color.boxSurface2)
 

@@ -121,6 +121,8 @@ struct FullPlayerView: View {
 
     @State private var showQueue = false
     @State private var showSleep = false
+    @State private var showEQ = false
+    @ObservedObject private var settings = AppSettings.shared
     @State private var showLyrics = false
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
@@ -194,6 +196,11 @@ struct FullPlayerView: View {
         }
         .sheet(isPresented: $showLyrics) {
             LyricsSheet()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showEQ) {
+            EqualizerView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -469,6 +476,29 @@ struct FullPlayerView: View {
             Spacer(minLength: 0)
 
             Button {
+                showEQ = true
+                Haptics.tap()
+            } label: {
+                Image(systemName: "slider.vertical.3")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(eqActive ? .accent : .white.opacity(0.85))
+                    .frame(width: 44, height: 44)
+                    .overlay(alignment: .topTrailing) {
+                        if !auth.has(.eq) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.black)
+                                .padding(3)
+                                .background(Circle().fill(Color.accent))
+                                .offset(x: -4, y: 6)
+                        }
+                    }
+            }
+            .accessibilityLabel(L("Ekolayzer"))
+
+            Spacer(minLength: 0)
+
+            Button {
                 showQueue = true
             } label: {
                 Image(systemName: "list.bullet")
@@ -479,6 +509,8 @@ struct FullPlayerView: View {
             .accessibilityLabel(L("Sıra"))
         }
     }
+
+    private var eqActive: Bool { auth.has(.eq) && !settings.eq.isNeutral }
 
     private func rateLabel(_ rate: Float) -> String {
         rate == Float(Int(rate)) ? "\(Int(rate))x" : String(format: "%gx", rate)

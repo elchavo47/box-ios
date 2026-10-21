@@ -89,13 +89,17 @@ struct BoxApp: App {
                     player.allowsRemote = { [weak auth] in auth?.has(.stream) == true }
                     library.allowsRemote = auth.has(.stream)
                     player.crossfade = { AppSettings.shared.crossfadeSeconds }
-                    player.effects = { (AppSettings.shared.eqPreset, AppSettings.shared.normalizeVolume) }
+                    player.effects = { [weak auth] in
+                        let eq = AppSettings.shared.eq
+                        return (auth?.has(.eq) == true && eq.enabled ? eq : nil, AppSettings.shared.normalizeVolume)
+                    }
                     player.visualizer = { AppSettings.shared.visualizer }
                     downloads.network = network
                     downloads.isAllowed = { [weak auth] in auth?.has(.download) == true }
                     downloads.onBlocked = { [weak router] in router?.show(L("İndirme hesabında kapalı."), icon: "lock.fill") }
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     PremiumStore.shared.start(auth: auth)
+                    VaultStore.shared.onLock = { [weak player] in player?.dropVaultTracks() }
                     PushManager.shared.tokenProvider = { [weak auth] in auth?.token }
                     PushManager.shared.onOpen = { [weak router] target in
                         switch target {
@@ -145,7 +149,11 @@ struct BoxApp: App {
                     if !auth.has(.download) { downloads.cancelAll() }
                     if !auth.has(.search) { feed.reset() }
                     if !auth.isPremium { history.clear() }
+                    if !auth.has(.vault) { VaultStore.shared.lock(stopPlayback: true) }
+                    player.effectsChanged()
                 }
+                .onChange(of: settings.eq) { _ in player.effectsChanged() }
+                .onChange(of: settings.normalizeVolume) { _ in player.effectsChanged() }
                 .onChange(of: auth.user?.id) { id in
                     // Listeler ve beğeniler hesaba ait: çıkışta kaldırılır, girişte o hesabınki gelir.
                     library.activateAccount(id)
@@ -212,7 +220,10 @@ struct BoxApp: App {
                     }
                 }
                 .onChange(of: scenePhase) { phase in
-                    if phase == .background { library.flushStats() }
+                    if phase == .background {
+                        library.flushStats()
+                        VaultStore.shared.lock()
+                    }
                 }
                 .onChange(of: lang.code) { _ in
                     // Ana sayfa bölümleri ve bildirimler sunucudan yeni dille gelsin.

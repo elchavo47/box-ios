@@ -71,7 +71,7 @@ struct PremiumView: View {
             Text("Box Premium")
                 .font(.system(size: 32, weight: .heavy))
                 .foregroundColor(.white)
-            Text(L("Tarayıcıdan indirdiğin dosyalar doğrudan Box'a."))
+            Text(L("Ekolayzer, kilitli klasör ve tarayıcıdan indirme. Hepsi bir arada."))
                 .font(.system(size: 16))
                 .foregroundColor(.boxSecondaryText)
                 .multilineTextAlignment(.center)
@@ -80,9 +80,10 @@ struct PremiumView: View {
 
     private var benefits: some View {
         VStack(alignment: .leading, spacing: 16) {
+            benefit("slider.vertical.3", L("10 bantlı ekolayzer"), L("Bas, vokal, rock ve daha fazla hazır ayar, kendi eğrin ve ses yükseltme. Çalan şarkıya anında uygulanır."))
+            benefit("lock.shield.fill", L("Kilitli klasör"), L("Özel şarkılarını {0} ile açılan, Dosyalar uygulamasında ve kitaplıkta görünmeyen bir klasörde sakla.", VaultStore.shared.biometryName))
             benefit("arrow.down.circle.fill", L("Tarayıcıdan dosya indir"), L("Tarayıcı sekmesinden indirdiğin ses dosyaları Dosyalar'a ve kitaplığına kendiliğinden eklenir."))
             benefit("sparkles", L("Yeni Premium özellikleri"), L("Box'a eklenen yeni Premium özelliklerini ilk sen kullanırsın."))
-            benefit("heart.fill", L("Box'u destekle"), L("Bağımsız geliştirilen bir uygulamanın büyümesine katkı verirsin."))
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.boxSurface))
@@ -211,7 +212,7 @@ struct PremiumView: View {
                     guard let product = store.product(selected) else { return }
                     Task {
                         if await store.purchase(product) {
-                            router.show(L("Premium açıldı"), icon: "bolt.fill")
+                            UnlockPresenter.shared.show(features: auth.user?.features) { dismiss() }
                         }
                     }
                 } label: {
@@ -223,6 +224,7 @@ struct PremiumView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.products.isEmpty || store.purchasingID != nil)
+                .opacity(store.products.isEmpty ? 0.35 : 1)
             }
             if let message = store.message, !store.products.isEmpty {
                 Text(message)

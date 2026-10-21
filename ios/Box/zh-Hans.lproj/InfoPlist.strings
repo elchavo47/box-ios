@@ -5,3 +5,4 @@
 "Box yedeği" = "Box backup";
 "Box çalma listesi" = "Box playlist";
 "Box kitaplık yedeği" = "Box library backup";
+"NSFaceIDUsageDescription" = "用于通过面容 ID 打开加锁文件夹。";

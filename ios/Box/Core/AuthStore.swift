@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 enum PremiumFeature: String {
-    case search, stream, download, radio, playlist, match, browser
+    case search, stream, download, radio, playlist, match, browser, eq, vault
 }
 
 @MainActor

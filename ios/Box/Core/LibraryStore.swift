@@ -373,6 +373,7 @@ final class LibraryStore: ObservableObject {
     // MARK: - Dinleme istatistikleri
 
     func addListen(_ track: Track, seconds: Double) {
+        guard !track.isVaulted else { return }
         let day = Self.dayKey(Date())
         stats.byDay[day, default: 0] += seconds
         stats.byArtist[track.displayArtist, default: 0] += seconds
@@ -655,6 +656,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func recordPlay(_ track: Track) {
+        guard !track.isVaulted else { return }
         if let remote = track.remote { remember(remote) }
         let path = track.relativePath
         recentPaths.removeAll { $0 == path }

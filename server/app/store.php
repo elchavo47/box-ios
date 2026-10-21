@@ -5,7 +5,7 @@ declare(strict_types=1);
  * Uygulama içi satın alma (App Store, StoreKit 2).
  *
  * Satın alma Premium'u açar ama YALNIZCA BOX_STORE_FEATURES içindeki özellikleri verir
- * (tarayıcıdan indirme ve sonradan eklenecek yeni özellikler). YouTube özellikleri satın almayla
+ * (tarayıcıdan indirme, ekolayzer, kilitli klasör ve sonradan eklenecek yeni özellikler). YouTube özellikleri satın almayla
  * otomatik gelmez; panelden kullanıcı bazında elle açılır (users.premium_on).
  *
  * Doğrulama: Apple'ın imzaladığı JWS. x5c zincirinin her halkası bir sonrakince imzalanmış,
@@ -21,7 +21,7 @@ const BOX_STORE_PRODUCTS = [
     'com.aydworks.box.premium.lifetime' => ['Ömür boyu', 'lifetime'],
 ];
 /** Satın almayla gelen özellikler (YouTube özellikleri burada yok). */
-const BOX_STORE_FEATURES = ['browser'];
+const BOX_STORE_FEATURES = ['browser', 'eq', 'vault'];
 
 function boxB64Url(string $value): string|false {
     $value = strtr($value, '-_', '+/');

@@ -20,7 +20,9 @@ struct FolderView: View {
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var auth: AuthStore
 
+    @State private var showPremium = false
     @State private var items: [FileItem] = []
     @State private var showImporter = false
     @State private var showNewFolder = false
@@ -36,6 +38,15 @@ struct FolderView: View {
 
     var body: some View {
         List {
+            if isRoot {
+                NavigationLink {
+                    VaultView()
+                } label: {
+                    VaultEntryRow()
+                }
+                .listRowBackground(Color.clear)
+            }
+
             if items.isEmpty {
                 EmptyStateView(
                     icon: "folder",
@@ -110,6 +121,7 @@ struct FolderView: View {
                 }
             }
         }
+        .sheet(isPresented: $showPremium) { PremiumView() }
         .fileImporter(
             isPresented: $showImporter,
             allowedContentTypes: [.audio, .mpeg4Audio, .mp3, .folder],
@@ -271,11 +283,39 @@ struct FolderView: View {
             }
         }
 
+        Button {
+            moveToVault(item)
+        } label: {
+            Label(L("Kilitli klasöre taşı"), systemImage: "lock.fill")
+        }
+
         Button(role: .destructive) {
             deleteTarget = item
         } label: {
             Label(L("Sil"), systemImage: "trash")
         }
+    }
+
+    /// Dosyayı / klasörü kilitli klasöre taşır: kitaplıktan, listelerden ve Dosyalar uygulamasından kalkar.
+    private func moveToVault(_ item: FileItem) {
+        guard auth.has(.vault) else {
+            if auth.isPremium {
+                showToast(L("Kilitli klasör hesabında kapalı."))
+            } else {
+                showPremium = true
+            }
+            return
+        }
+        perform {
+            if let current = player.current?.url.standardizedFileURL.path {
+                let path = item.url.standardizedFileURL.path
+                if current == path || (item.isDirectory && current.hasPrefix(path + "/")) { player.stop() }
+            }
+            library.pathDeleted(item.url)
+            try VaultStore.shared.moveIn(item.url)
+            await ArtworkCache.shared.invalidate(item.url)
+        }
+        showToast(L("Kilitli klasöre taşındı"))
     }
 
     // MARK: - İşlemler

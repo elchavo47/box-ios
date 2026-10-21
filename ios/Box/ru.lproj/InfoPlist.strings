@@ -5,3 +5,4 @@
 "Box yedeği" = "Резервная копия Box";
 "Box çalma listesi" = "Плейлист Box";
 "Box kitaplık yedeği" = "Резервная копия медиатеки Box";
+"NSFaceIDUsageDescription" = "Используется, чтобы открывать закрытую папку с помощью Face ID.";

@@ -5,3 +5,4 @@
 "Box yedeği" = "Box backup";
 "Box çalma listesi" = "Box playlist";
 "Box kitaplık yedeği" = "Box library backup";
+"NSFaceIDUsageDescription" = "Face ID로 잠긴 폴더를 열기 위해 사용됩니다.";

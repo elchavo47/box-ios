@@ -85,10 +85,13 @@ final class PlayerManager: ObservableObject {
     var isPlayable: ((Track) -> Bool)?
     /// Şarkılar arası yumuşak geçiş (saniye) ve ses efektleri.
     var crossfade: () -> Double = { 0 }
-    var effects: () -> (EQPreset, Bool) = { (.flat, false) }
+    /// Ekolayzer (nil: kapalı ya da Premium hakkı yok) ve ses eşitleme.
+    var effects: () -> (EQSettings?, Bool) = { (nil, false) }
     var visualizer: () -> Bool = { false }
     /// Görselleştirici seviyeleri (bant başına 0...1).
     private(set) var meter: TapContext?
+    /// Çalan şarkının ses efektleri (ekolayzer değişince hemen uygulanır).
+    private var effectContext: TapContext?
     private var fadeInStarted: Date?
     @Published private(set) var radioLoading = false
 
@@ -442,6 +445,20 @@ final class PlayerManager: ObservableObject {
         if currentIndex == nil { stop() } else { saveState(force: true) }
     }
 
+    /// Kilitli klasör kilitlenince: oradaki şarkıları sıradan çıkar; çalan oradaysa dur.
+    func dropVaultTracks() {
+        guard queue.contains(where: \.isVaulted) else { return }
+        if current?.isVaulted == true {
+            stop()
+            return
+        }
+        let currentPath = current?.relativePath
+        queue.removeAll { $0.isVaulted }
+        originalQueue.removeAll { $0.isVaulted }
+        currentIndex = currentPath.flatMap { path in queue.firstIndex { $0.relativePath == path } }
+        if currentIndex == nil { stop() } else { saveState(force: true) }
+    }
+
     // MARK: - Kitaplık değişikliği
 
     /// Dosya silindiğinde ya da taşındığında kuyruğu temizler.
@@ -449,13 +466,13 @@ final class PlayerManager: ObservableObject {
         guard !queue.isEmpty else { return }
         let currentPath = current?.relativePath
 
-        if let currentPath, current?.isRemote != true, !validPaths.contains(currentPath) {
+        if let currentPath, current?.isRemote != true, current?.isVaulted != true, !validPaths.contains(currentPath) {
             stop()
             return
         }
 
-        queue.removeAll { !$0.isRemote && !validPaths.contains($0.relativePath) }
-        originalQueue.removeAll { !$0.isRemote && !validPaths.contains($0.relativePath) }
+        queue.removeAll { !$0.isRemote && !$0.isVaulted && !validPaths.contains($0.relativePath) }
+        originalQueue.removeAll { !$0.isRemote && !$0.isVaulted && !validPaths.contains($0.relativePath) }
         if let currentPath {
             currentIndex = queue.firstIndex { $0.relativePath == currentPath }
         }
@@ -498,6 +515,8 @@ final class PlayerManager: ObservableObject {
     private func saveState(force: Bool = false) {
         guard restored || force else { return }
         guard let currentIndex, !queue.isEmpty else { return }
+        // Kilitli klasör çalarken sıra kaydedilmez (dosya adları dışarı sızmasın).
+        guard !queue.contains(where: \.isVaulted) else { return }
         if !force, Date().timeIntervalSince(lastStateSave) < 5 { return }
         lastStateSave = Date()
         let state = SavedState(
@@ -737,6 +756,32 @@ final class PlayerManager: ObservableObject {
     }
 
     /// Akış başarısız olursa şarkıyı tam indirip çalar.
+    /// Gerekirse çalan öğeye ses efektlerini (ekolayzer, eşitleme, görselleştirici) kurar.
+    private func installEffects(on item: AVPlayerItem) {
+        let (eq, normalize) = effects()
+        let wantsMeter = visualizer()
+        let needsEQ = eq.map { !$0.isNeutral } ?? false
+        guard needsEQ || normalize || wantsMeter else { return }
+        Task { @MainActor in
+            guard let (mix, context) = await AudioEffects.audioMix(for: item, eq: eq, normalize: normalize, meter: wantsMeter) else { return }
+            if self.player.currentItem === item, self.effectContext == nil {
+                item.audioMix = mix
+                self.effectContext = context
+                self.meter = wantsMeter ? context : nil
+            }
+        }
+    }
+
+    /// Ekolayzer ya da eşitleme ayarı değişti: çalan şarkıya hemen uygula.
+    func effectsChanged() {
+        if let effectContext {
+            let (eq, normalize) = effects()
+            effectContext.update(eq: eq, normalize: normalize)
+        } else if let item = player.currentItem {
+            installEffects(on: item)
+        }
+    }
+
     private func fallbackToFile(track: Track, remote: SearchResult, token: Int, startAt: Double, record: Bool) async {
         guard let resolve = resolveRemote else { return }
         isBuffering = true
@@ -762,18 +807,9 @@ final class PlayerManager: ObservableObject {
         item.preferredForwardBufferDuration = streaming ? 4 : 0
         player.replaceCurrentItem(with: item)
         isBuffering = streaming
-        let (preset, normalize) = effects()
-        let wantsMeter = visualizer()
         meter = nil
-        if preset != .flat || normalize || wantsMeter {
-            Task { @MainActor in
-                guard let (mix, context) = await AudioEffects.audioMix(for: item, preset: preset, normalize: normalize, meter: wantsMeter) else { return }
-                if self.player.currentItem === item {
-                    item.audioMix = mix
-                    self.meter = wantsMeter ? context : nil
-                }
-            }
-        }
+        effectContext = nil
+        installEffects(on: item)
         fadeInStarted = crossfade() > 0 && record ? Date() : nil
         if streaming, let remote = track.remote {
             // 8 saniyede çalmaya başlayamazsa dosyayı indirip çal.

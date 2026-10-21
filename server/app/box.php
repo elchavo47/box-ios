@@ -46,6 +46,8 @@ const BOX_PREMIUM_FEATURES = [
     'playlist' => 'YouTube listesi içe aktarma',
     'match' => 'YouTube Music eşleştirme',
     'browser' => 'Tarayıcıdan indirme',
+    'eq' => 'Ekolayzer',
+    'vault' => 'Kilitli klasör',
 ];
 
 function boxFeatureList(array $u, string $column): array {

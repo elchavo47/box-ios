@@ -6,11 +6,12 @@ import QuartzCore
 /// Ekolayzer ve ses seviyesi eşitleme. AVPlayer'ın ses akışına bir "tap" ile girer.
 enum AudioEffects {
     /// Ses akışına girer: ekolayzer, ses eşitleme ve görselleştirici için seviye ölçümü.
-    static func audioMix(for item: AVPlayerItem, preset: EQPreset, normalize: Bool, meter: Bool) async -> (AVAudioMix, TapContext)? {
-        guard preset != .flat || normalize || meter else { return nil }
+    /// `eq` nil ise ekolayzer kapalıdır (ya da kullanıcının hakkı yoktur). Ayarlar sonradan
+    /// `TapContext.update` ile şarkı çalarken değiştirilebilir.
+    static func audioMix(for item: AVPlayerItem, eq: EQSettings?, normalize: Bool, meter: Bool) async -> (AVAudioMix, TapContext)? {
         guard let track = try? await item.asset.loadTracks(withMediaType: .audio).first else { return nil }
 
-        let context = TapContext(gains: preset.gains, normalize: normalize, meter: meter)
+        let context = TapContext(eq: eq, normalize: normalize, meter: meter)
         var callbacks = MTAudioProcessingTapCallbacks(
             version: kMTAudioProcessingTapCallbacksVersion_0,
             clientInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(context).toOpaque()),
@@ -35,11 +36,17 @@ enum AudioEffects {
     }
 }
 
-/// Tap içinde çalışan durum: kanal başına 5 bantlı biquad filtre ve otomatik kazanç.
+/// Tap içinde çalışan durum: kanal başına 10 bantlı biquad filtre, ses yükseltme, yumuşak
+/// sınırlayıcı ve otomatik kazanç. Ayarlar ana iş parçacığından `update` ile değişir; ses iş
+/// parçacığı bir sonraki parçada yeni filtreleri kurar.
 final class TapContext {
-    let gains: [Float]
-    let normalize: Bool
+    private(set) var gains: [Float]
+    private(set) var boost: Float
+    private(set) var normalize: Bool
     let meter: Bool
+    private var pending: (gains: [Float], boost: Float, normalize: Bool)?
+    private let settingsLock = NSLock()
+    private var channels = 1
     var setup: vDSP_biquad_Setup?
 
     // Görselleştirici: 1024 örneklik FFT, 9 bant (log aralıklı), %50 örtüşmeli (512 örnekte bir).
@@ -96,8 +103,9 @@ final class TapContext {
     var usable = false
     var agcGain: Float = 1
 
-    init(gains: [Float], normalize: Bool, meter: Bool) {
-        self.gains = gains
+    init(eq: EQSettings?, normalize: Bool, meter: Bool) {
+        self.gains = Self.effectiveGains(eq)
+        self.boost = Self.effectiveBoost(eq)
         self.normalize = normalize
         self.meter = meter
         if meter {
@@ -197,19 +205,67 @@ final class TapContext {
         return next
     }
 
+    static func effectiveGains(_ eq: EQSettings?) -> [Float] {
+        guard let eq, eq.enabled, eq.gains.count == EQSettings.bandCount else { return [Float](repeating: 0, count: EQSettings.bandCount) }
+        return eq.gains.map { min(max($0, EQSettings.range.lowerBound), EQSettings.range.upperBound) }
+    }
+
+    static func effectiveBoost(_ eq: EQSettings?) -> Float {
+        guard let eq, eq.enabled else { return 0 }
+        return min(max(eq.boost, EQSettings.boostRange.lowerBound), EQSettings.boostRange.upperBound)
+    }
+
+    /// Ana iş parçacığından: yeni ekolayzer / eşitleme ayarı. Çalan şarkıya hemen uygulanır.
+    func update(eq: EQSettings?, normalize: Bool) {
+        settingsLock.lock()
+        pending = (Self.effectiveGains(eq), Self.effectiveBoost(eq), normalize)
+        settingsLock.unlock()
+    }
+
     func prepare(sampleRate: Double, channels: Int, isFloat: Bool, nonInterleaved: Bool) {
         usable = isFloat && nonInterleaved && sampleRate > 0
         bandBins = []
         guard usable else { return }
         self.sampleRate = sampleRate
+        self.channels = max(channels, 1)
+        rebuildFilters()
+    }
+
+    private func rebuildFilters() {
         var coefficients: [Double] = []
-        for (index, frequency) in EQPreset.frequencies.enumerated() {
+        let count = EQSettings.frequencies.count
+        for (index, frequency) in EQSettings.frequencies.enumerated() {
             let f = min(Double(frequency), sampleRate * 0.45)
-            coefficients += Self.peaking(frequency: f, gainDB: Double(gains[index]), q: index == 0 || index == 4 ? 0.7 : 1.0, sampleRate: sampleRate)
+            // Oktav aralıklı bantlar: Q ≈ 1.4; uçlar biraz daha geniş.
+            let q = index == 0 || index == count - 1 ? 0.9 : 1.4
+            coefficients += Self.peaking(frequency: f, gainDB: Double(gains[index]), q: q, sampleRate: sampleRate)
         }
         if let setup { vDSP_biquad_DestroySetup(setup) }
-        setup = vDSP_biquad_CreateSetup(coefficients, vDSP_Length(EQPreset.frequencies.count))
-        delays = Array(repeating: [Float](repeating: 0, count: 2 * EQPreset.frequencies.count + 2), count: max(channels, 1))
+        setup = vDSP_biquad_CreateSetup(coefficients, vDSP_Length(count))
+        if delays.count != channels || delays.first?.count != 2 * count + 2 {
+            delays = Array(repeating: [Float](repeating: 0, count: 2 * count + 2), count: channels)
+        }
+    }
+
+    /// Yükseltilen bantlarda taşmayı azaltan ön kısma ile ses yükseltmenin toplam kazancı.
+    private var outputScale: Float {
+        let peak = gains.max() ?? 0
+        let headroom = max(peak, 0) * 0.6
+        return pow(10, (boost - headroom) / 20)
+    }
+
+    /// Yumuşak sınırlayıcı: 0.8'e kadar dokunmaz, üstünü tanh ile ±1'e yaklaştırır (sert kırpma yok).
+    private static func softLimit(_ data: UnsafeMutablePointer<Float>, frames: Int) {
+        let knee: Float = 0.8
+        let room: Float = 1 - knee
+        for i in 0..<frames {
+            let x = data[i]
+            let a = abs(x)
+            if a > knee {
+                let y = knee + room * tanh((a - knee) / room)
+                data[i] = x < 0 ? -y : y
+            }
+        }
     }
 
     /// RBJ "peaking EQ" katsayıları: b0, b1, b2, a1, a2 (a0'a bölünmüş).
@@ -224,6 +280,17 @@ final class TapContext {
 
     func process(_ buffers: UnsafeMutableAudioBufferListPointer, frames: Int) {
         guard usable, frames > 0 else { return }
+        settingsLock.lock()
+        let next = pending
+        pending = nil
+        settingsLock.unlock()
+        if let next {
+            let changed = next.gains != gains
+            gains = next.gains
+            boost = next.boost
+            normalize = next.normalize
+            if changed { rebuildFilters() }
+        }
         let flat = gains.allSatisfy { $0 == 0 }
 
         // Ses eşitleme: kısa süreli RMS'e göre kazancı yavaşça hedefe (-16 dBFS) çek.
@@ -250,9 +317,10 @@ final class TapContext {
                     vDSP_biquad(setup, delay.baseAddress!, data, 1, data, 1, vDSP_Length(frames))
                 }
             }
-            // EQ yükseltmesinde taşmayı önlemek için hafif ön kısma + eşitleme kazancı.
-            var scale: Float = (flat ? 1 : 0.8) * (normalize ? agcGain : 1)
+            // Ön kısma / ses yükseltme + eşitleme kazancı, ardından yumuşak sınırlayıcı.
+            var scale: Float = ((flat && boost == 0) ? 1 : outputScale) * (normalize ? agcGain : 1)
             if scale != 1 { vDSP_vsmul(data, 1, &scale, data, 1, vDSP_Length(frames)) }
+            if !flat || boost > 0 || normalize { Self.softLimit(data, frames: frames) }
             var low: Float = -1, high: Float = 1
             vDSP_vclip(data, 1, &low, &high, data, 1, vDSP_Length(frames))
             if meter && channel == 0 { analyze(data, frames: frames) }

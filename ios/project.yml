@@ -49,6 +49,7 @@ targets:
         UIBackgroundModes: [audio]
         CADisableMinimumFrameDurationOnPhone: true
         UIFileSharingEnabled: true
+        NSFaceIDUsageDescription: Kilitli klasörü Face ID ile açmak için kullanılır.
         LSSupportsOpeningDocumentsInPlace: true
         UIUserInterfaceStyle: Dark
         UIStatusBarStyle: UIStatusBarStyleLightContent
