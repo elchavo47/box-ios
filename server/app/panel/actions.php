@@ -368,7 +368,7 @@ function panelAction(array $admin): string|array {
         } elseif ($section === 'browser') {
             $list = [];
             $seen = [];
-            foreach (preg_split('/\R/', (string)($_POST['browser_shortcuts'] ?? '')) as $n => $line) {
+            foreach (preg_split('/\R/u', (string)($_POST['browser_shortcuts'] ?? '')) as $n => $line) {
                 $line = trim($line);
                 if ($line === '') continue;
                 // Kabul edilen biçimler: "Ad | adres", "Ad adres" ya da yalnızca "adres" (ad alan adından gelir).

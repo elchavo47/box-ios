@@ -64,7 +64,10 @@ $hourLabel = fn($p) => substr((string)$p['at'], 11, 2);
   <?php if ($va): ?>
   <p class="muted"><?=h(['logs' => 'Loglar', 'selftest' => 'Arama testi', 'update' => 'Güncelleme', 'restart' => 'Yeniden başlatma'][$va['op']] ?? $va['op'])?> · <?=h(nbAgo((string)$va['at']))?><?= $va['by'] !== '' ? ' · ' . h($va['by']) : '' ?> · <?=$va['ok'] ? pill('Başarılı', 'good') : pill('Hata', 'bad')?></p>
   <p><?=h($va['summary'])?></p>
-  <?php if ($va['output'] !== ''): ?><pre class="log-box"><?=h($va['output'])?></pre><?php endif ?>
+  <?php if ($va['output'] !== ''): ?>
+  <div class="log-head"><span class="muted"><?=nbNum(count(preg_split('/\R/u', rtrim($va['output']))))?> satır</span><button type="button" class="btn ghost small" data-copy-target="vds-log"><?=icon('copy')?><span>Kopyala</span></button></div>
+  <ul class="log-box" id="vds-log"><?php foreach (preg_split('/\R/u', rtrim($va['output'])) as $line): ?><li><?=h($line)?></li><?php endforeach ?></ul>
+  <?php endif ?>
   <?php endif ?>
 </section>
 <?php endif ?>

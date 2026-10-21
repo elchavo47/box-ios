@@ -811,7 +811,7 @@ function boxVdsDiagnoseAlert(string $headline): void {
     try {
         $r = boxVdsAdmin('logs', 'GET', ['lines' => 300], 25);
         $log = (string)($r['output'] ?? '');
-        $errors = array_values(array_filter(preg_split('/\R/', $log), fn($l) => preg_match('/Error|Exception|Traceback|failed/i', $l)));
+        $errors = array_values(array_filter(preg_split('/\R/u', $log), fn($l) => preg_match('/Error|Exception|Traceback|failed/i', $l)));
         if ($errors) $text .= "\n\nSon hata satırları:\n" . implode("\n", array_slice($errors, -8));
     } catch (Throwable $e) { $text .= "\n\nLoglar alınamadı: " . $e->getMessage(); }
     $text .= "\n\nÇözüm: Panel › Servisler › VDS bakımı › \"ytmusicapi'yi güncelle\"";
