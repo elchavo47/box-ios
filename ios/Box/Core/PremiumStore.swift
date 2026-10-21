@@ -12,17 +12,11 @@ final class PremiumStore: ObservableObject {
 
     enum Plan: Int { case monthly, yearly, lifetime }
 
-    /// App Store Connect'teki olası ürün kimlikleri. Hangileri varsa onlar gelir; türü (aylık, yıllık,
-    /// tek seferlik) kimlikten değil Apple'ın verdiği bilgiden anlaşılır.
-    static let productIDs: [String] = {
-        var ids: [String] = []
-        for base in ["com.aydworks.box.premium", "com.aydworks.premium", "com.aydworks.box"] {
-            for tail in ["monthly", "month", "aylik", "yearly", "year", "annual", "yillik", "lifetime", "omurboyu"] {
-                ids.append("\(base).\(tail)")
-            }
-        }
-        return ids
-    }()
+    /// App Store Connect'teki ürün kimlikleri.
+    static let monthly = "com.aydworks.premium.monthly"
+    static let yearly = "com.aydworks.premium.yearly"
+    static let lifetime = "com.aydworks.premium.lifetime"
+    static let productIDs = [monthly, yearly, lifetime]
 
     static func plan(of product: Product) -> Plan? {
         switch product.type {
@@ -139,7 +133,7 @@ final class PremiumStore: ObservableObject {
             if !silent { message = L("Satın alma doğrulanamadı.") }
             return false
         }
-        guard transaction.productID.hasPrefix("com.aydworks.") else {
+        guard Self.productIDs.contains(transaction.productID) else {
             await transaction.finish()
             return false
         }
