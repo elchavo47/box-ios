@@ -120,9 +120,13 @@ struct ArtistView: View {
         return VStack(alignment: .leading, spacing: 26) {
             // Kapak: sanatçı fotoğrafı, altta isim.
             ZStack(alignment: .bottomLeading) {
-                CachedRemoteImage(url: page.artist.thumbnailURL, maxSide: 1000) { ArtistPlaceholder() }
+                // Fotoğraf yerleşimi etkilemesin: yatay (geniş) fotoğraflar sayfayı ekrandan taşırıyordu.
+                Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: 340)
+                    .overlay {
+                        CachedRemoteImage(url: page.artist.thumbnailURL, maxSide: 1000) { ArtistPlaceholder() }
+                    }
                     .clipped()
                 LinearGradient(colors: [.clear, .black.opacity(0.35), Color.boxBackground], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 4) {
