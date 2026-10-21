@@ -250,7 +250,7 @@ function panelAction(array $admin): string|array {
 
     /* ================= Box: kullanıcılar ve premium ================= */
 
-    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_logout_device', 'user_delete', 'user_quota'], true)) {
+    if (in_array($action, ['premium_grant', 'premium_revoke', 'user_ban', 'user_unban', 'user_note', 'user_rename', 'user_logout_all', 'user_logout_device', 'user_delete', 'user_quota', 'user_features'], true)) {
         $uid = (int)($_POST['user_id'] ?? 0);
         $u = boxFindUser($uid);
         if (!$u) throw new RuntimeException('Kullanıcı bulunamadı.');
@@ -264,6 +264,12 @@ function panelAction(array $admin): string|array {
                 if (site('push_auto_premium', '1') === '1') boxNotifyUser($uid, boxIsPremium($u) ? 'Premium\'un uzatıldı' : 'Premium\'un açıldı', $days ? 'Premium üyeliğin {0} tarihine kadar açık. İyi dinlemeler!' : 'Süresiz premium üyeliğin açıldı. İyi dinlemeler!', ['box' => ['open' => 'search']], [], $days ? [boxLocalDate((string)$until, boxUserLang($uid))] : []);
                 if ($days >= 365 || $days === 0) staffAlert('premium', "⚡ Premium verildi: {$who}\nSüre: " . ($days ? "$days gün" : 'süresiz') . "\nYapan: {$admin['username']}");
                 return $days ? "Premium " . (boxIsPremium($u) ? 'uzatıldı' : 'açıldı') . ': ' . nbDate($until, 'd.m.Y H:i') . ' tarihine kadar.' : 'Süresiz premium açıldı.';
+            case 'user_features':
+                $on = array_map('strval', (array)($_POST['features'] ?? []));
+                $off = array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), $on));
+                q('UPDATE users SET premium_off=? WHERE id=?', [$off ? implode(',', $off) : null, $uid]);
+                logAdmin((int)$admin['id'], 'user_features', ['user_id' => $uid, 'off' => $off]);
+                return $off ? 'Premium özellikleri güncellendi. Kapalı: ' . implode(', ', array_map(fn($k) => BOX_PREMIUM_FEATURES[$k], $off)) . '.' : 'Bütün premium özellikleri açık.';
             case 'premium_revoke':
                 if (!boxIsPremium($u) && (int)$u['is_premium'] === 0) throw new RuntimeException('Bu kullanıcının premiumu zaten yok.');
                 boxRevokePremium($uid, (int)$admin['id']);
@@ -359,6 +365,19 @@ function panelAction(array $admin): string|array {
             $mail = trim((string)($_POST['support_email'] ?? ''));
             if ($mail !== '' && !filter_var($mail, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Destek e-postası geçerli değil.');
             $set('support_email', $mail);
+        } elseif ($section === 'browser') {
+            $list = [];
+            foreach (preg_split('/\R/', (string)($_POST['browser_shortcuts'] ?? '')) as $n => $line) {
+                $line = trim($line);
+                if ($line === '') continue;
+                $parts = array_map('trim', explode('|', $line, 2));
+                if (count($parts) !== 2 || $parts[0] === '' || !filter_var($parts[1], FILTER_VALIDATE_URL) || !preg_match('~^https://~i', $parts[1])) {
+                    throw new RuntimeException('Satır ' . ($n + 1) . ' hatalı. Biçim: Ad | https://adres');
+                }
+                $list[] = ['title' => mb_substr($parts[0], 0, 30), 'url' => mb_substr($parts[1], 0, 300)];
+            }
+            if (count($list) > 12) throw new RuntimeException('En fazla 12 kısayol eklenebilir.');
+            $set('browser_shortcuts', $list);
         } else throw new RuntimeException('Bilinmeyen bölüm.');
         logAdmin((int)$admin['id'], 'app_save', ['section' => $section, 'changed' => $changed]);
         if ($section === 'maintenance' && in_array('maintenance_mode', $changed, true)) securityAlert((configBool('maintenance_mode') ? '🛠️ Bakım modu AÇILDI' : '✅ Bakım modu kapatıldı') . "\nYapan: {$admin['username']}");
@@ -460,6 +479,15 @@ function panelAction(array $admin): string|array {
         logAdmin((int)$admin['id'], 'services_check', ['ok' => $h['ok'], 'ms' => $h['ms']]);
         if (!$h['ok']) throw new RuntimeException('VDS\'ye ulaşılamadı: ' . $h['error']);
         return 'VDS çalışıyor (' . $h['ms'] . ' ms).';
+    }
+    if ($action === 'vds_admin') {
+        $op = (string)($_POST['op'] ?? '');
+        if (!in_array($op, ['logs', 'selftest', 'update', 'restart'], true)) throw new RuntimeException('Bilinmeyen işlem.');
+        [$summary, , $ok] = boxVdsMaintenance($op, (string)$admin['username']);
+        logAdmin((int)$admin['id'], 'vds_admin', ['op' => $op, 'ok' => $ok]);
+        if (in_array($op, ['update', 'restart'], true) || !$ok) staffAlert('services', '🛠️ ' . $summary . "\nYapan: {$admin['username']}");
+        if (!$ok) throw new RuntimeException($summary);
+        return $summary;
     }
     if ($action === 'services_test_search') {
         try { $r = boxSearch('test'); } catch (RuntimeException $e) { throw new RuntimeException('Arama denemesi başarısız: ' . $e->getMessage()); }

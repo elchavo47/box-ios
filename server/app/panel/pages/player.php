@@ -49,6 +49,15 @@ $labels = ['grant' => 'Premium açıldı', 'extend' => 'Premium uzatıldı', 're
     <div class="row-actions"><?=button($isPrem ? 'Süre ekle' : 'Premium aç', 'primary', ['icon' => 'bolt'])?></div>
     <?php formEnd(); ?>
     <?php if ($isPrem): formStart('premium_revoke'); hidden('user_id', $uid); echo button('Premiumu kapat', 'danger ghost', ['confirm' => 'Premium hemen kapanacak. Emin misin?']); formEnd(); endif ?>
+    <?php $off = boxFeaturesOff($u); formStart('user_features', 'stack'); hidden('user_id', $uid); ?>
+    <p class="fine">Premium özellikleri: işaretli olanlar bu kullanıcıda açık.</p>
+    <div class="chips">
+      <?php foreach (BOX_PREMIUM_FEATURES as $k => $l): ?>
+      <label class="chip"><input type="checkbox" name="features[]" value="<?=h($k)?>"<?=in_array($k, $off, true) ? '' : ' checked'?>><span><?=h($l)?></span></label>
+      <?php endforeach ?>
+    </div>
+    <div class="row-actions"><?=button('Özellikleri kaydet', 'ghost')?></div>
+    <?php formEnd(); ?>
   <?php cardEnd(); endif ?>
 
   <?php card('Hesap'); ?>

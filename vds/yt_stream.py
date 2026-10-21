@@ -456,7 +456,7 @@ async def music_radio(v: str = "", limit: int = 30, exp: str = "", sig: str = ""
         data = ytm_call("get_watch_playlist", videoId=v, limit=limit, radio=True)
         out = []
         for item in data.get("tracks") or []:
-            t = track(item)
+            t = safe_parse(track, item)
             if t and t["id"] != v:
                 out.append(t)
         return out
@@ -541,7 +541,7 @@ def search_item(item: dict) -> dict | None:
     """Karışık arama sonucu (şarkı, video, albüm, sanatçı, liste) tek biçimde."""
     kind = item.get("resultType")
     if kind in ("song", "video"):
-        t = track(item)
+        t = safe_parse(track, item)
         if not t:
             return None
         t["type"] = kind
@@ -626,7 +626,7 @@ async def music_artist(id: str = "", q: str = "", exp: str = "", sig: str = ""):
                 more = ytm_call("get_playlist", songs_list[2:], limit=40).get("tracks") or []
                 seen = {t["id"] for t in songs}
                 for i in more:
-                    t = track(i)
+                    t = safe_parse(track, i)
                     if t and t["id"] not in seen:
                         seen.add(t["id"])
                         songs.append(t)
@@ -677,7 +677,7 @@ async def music_album(id: str = "", q: str = "", exp: str = "", sig: str = ""):
         for i in data.get("tracks") or []:
             if i.get("isAvailable") is False:
                 continue
-            t = track(i)
+            t = safe_parse(track, i)
             if t:
                 t["thumbnail"] = t["thumbnail"] or cover
                 t["album"] = data.get("title")
@@ -773,7 +773,7 @@ async def music_mood(params: str = "", exp: str = "", sig: str = ""):
             except Exception:
                 continue
             for i in items:
-                t = track(i)
+                t = safe_parse(track, i)
                 if t and t["id"] not in seen:
                     seen.add(t["id"])
                     tracks.append(t)
@@ -792,3 +792,114 @@ async def stats(exp: str = "", sig: str = ""):
     return {"ok": True, "uptime": int(time.time() - STARTED), "music": YTMusic is not None,
             "ytmusicapi": YTMUSIC_VERSION or None, "last_error": LAST_ERROR or None,
             "cache": {"links": len(_cache), "music": len(_music_cache)}, "stats": out}
+
+
+# ---------------- Bakım uçları (panel ve Telegram) ----------------
+# Serbest komut YOK: yalnızca aşağıdaki sabit işlemler. İstek imzası: HMAC(KEY, "admin:<işlem>:<exp>:<nonce>"),
+# en fazla 2 dakika geçerli ve her nonce bir kez kullanılır.
+
+SERVICE = os.environ.get("YT_SERVICE_NAME", "yt-stream")
+_admin_nonces: dict[str, float] = {}
+
+
+def check_admin_signature(action: str, exp: str, nonce: str, sig: str) -> None:
+    if not KEY:
+        raise HTTPException(500, "Sunucu anahtarı ayarlı değil.")
+    try:
+        expires = int(exp)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Geçersiz istek.")
+    now = time.time()
+    if expires < now or expires > now + 120 or not re.fullmatch(r"[a-f0-9]{16,64}", nonce or ""):
+        raise HTTPException(403, "İsteğin süresi doldu.")
+    good = hmac.new(KEY, f"admin:{action}:{expires}:{nonce}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(good, sig or ""):
+        raise HTTPException(403, "Geçersiz imza.")
+    for n, until in list(_admin_nonces.items()):
+        if until < now:
+            _admin_nonces.pop(n, None)
+    if nonce in _admin_nonces:
+        raise HTTPException(403, "Bu istek zaten kullanıldı.")
+    _admin_nonces[nonce] = expires
+
+
+def _run(cmd: list[str], timeout: int = 60) -> dict:
+    import subprocess
+    started = time.time()
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
+        return {"code": p.returncode, "output": out[-12000:], "ms": int((time.time() - started) * 1000)}
+    except FileNotFoundError:
+        return {"code": 127, "output": f"{cmd[0]} bulunamadı.", "ms": 0}
+    except subprocess.TimeoutExpired:
+        return {"code": 124, "output": f"{timeout} saniyede bitmedi.", "ms": timeout * 1000}
+
+
+def _schedule_restart() -> str:
+    """Servis kendini yeniden başlatır; yanıt gittikten sonra çalışsın diye 2 sn gecikmeli."""
+    import subprocess
+    if shutil.which("systemd-run"):
+        r = _run(["systemd-run", "--on-active=2", f"--unit=yt-restart-{int(time.time())}", "systemctl", "restart", SERVICE], 15)
+        if r["code"] == 0:
+            return "2 saniye içinde yeniden başlatılacak."
+    subprocess.Popen(["sh", "-c", f"sleep 2; systemctl restart {SERVICE}"], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return "2 saniye içinde yeniden başlatılacak."
+
+
+def _installed_ytmusicapi() -> str:
+    r = _run([sys.executable, "-c", "import importlib.metadata as m; print(m.version('ytmusicapi'))"], 20)
+    return r["output"].strip().splitlines()[-1] if r["code"] == 0 and r["output"].strip() else ""
+
+
+@app.get("/stream/admin/logs")
+async def admin_logs(lines: int = 200, exp: str = "", nonce: str = "", sig: str = ""):
+    check_admin_signature("logs", exp, nonce, sig)
+    lines = max(20, min(1000, lines))
+    r = await asyncio.to_thread(_run, ["journalctl", "-u", SERVICE, "-n", str(lines), "--no-pager", "-o", "short-iso"], 20)
+    return {"ok": r["code"] == 0, "service": SERVICE, "output": r["output"], "last_error": LAST_ERROR or None,
+            "ytmusicapi": YTMUSIC_VERSION or None, "uptime": int(time.time() - STARTED)}
+
+
+@app.post("/stream/admin/update")
+async def admin_update(exp: str = "", nonce: str = "", sig: str = ""):
+    """ytmusicapi'yi günceller ve servisi yeniden başlatır."""
+    check_admin_signature("update", exp, nonce, sig)
+    before = YTMUSIC_VERSION or ""
+    r = await asyncio.to_thread(_run, [sys.executable, "-m", "pip", "install", "-U", "--disable-pip-version-check", "ytmusicapi"], 240)
+    after = await asyncio.to_thread(_installed_ytmusicapi)
+    restart = _schedule_restart() if r["code"] == 0 else "Kurulum başarısız olduğu için yeniden başlatılmadı."
+    return {"ok": r["code"] == 0, "before": before or None, "after": after or None,
+            "changed": bool(after and after != before), "output": r["output"][-4000:], "restart": restart}
+
+
+@app.post("/stream/admin/restart")
+async def admin_restart(exp: str = "", nonce: str = "", sig: str = ""):
+    check_admin_signature("restart", exp, nonce, sig)
+    return {"ok": True, "restart": _schedule_restart()}
+
+
+@app.get("/stream/admin/selftest")
+async def admin_selftest(q: str = "tarkan", exp: str = "", nonce: str = "", sig: str = ""):
+    """Önbelleği atlayarak gerçek bir YouTube Music araması yapar."""
+    check_admin_signature("selftest", exp, nonce, sig)
+    q = (q or "tarkan").strip()[:60]
+    out = {"ok": True, "query": q, "ytmusicapi": YTMUSIC_VERSION or None, "checks": []}
+    if YTMusic is None:
+        return {**out, "ok": False, "error": "ytmusicapi kurulu değil."}
+
+    def check(name, fn):
+        started = time.time()
+        try:
+            n = len(fn() or [])
+            out["checks"].append({"name": name, "ok": n > 0, "count": n, "ms": int((time.time() - started) * 1000)})
+        except Exception as e:
+            out["checks"].append({"name": name, "ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}", "ms": int((time.time() - started) * 1000)})
+
+    await asyncio.to_thread(check, "Karışık arama (en)", lambda: ytm("en").search(q, limit=10))
+    await asyncio.to_thread(check, "Karışık arama (tr)", lambda: ytm("tr").search(q, limit=10))
+    await asyncio.to_thread(check, "Şarkı araması", lambda: ytm("en").search(q, filter="songs", limit=10))
+    await asyncio.to_thread(check, "Sanatçı araması", lambda: ytm("en").search(q, filter="artists", limit=5))
+    out["ok"] = all(c["ok"] for c in out["checks"])
+    return out

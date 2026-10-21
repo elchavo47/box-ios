@@ -52,6 +52,23 @@ $hourLabel = fn($p) => substr((string)$p['at'], 11, 2);
 <p class="muted">Sorun olunca Telegram'a haber gelir: VDS'ye iki ölçüm üst üste ulaşılamazsa, YouTube Music isteklerinin %30'undan fazlası hata verirse ve kütüphane eksikse.</p>
 <?php cardEnd(); ?>
 
+<?php if (can('vds_admin')): $va = json_decode(site('vds_admin_last'), true) ?: null; ?>
+<section class="card" data-inline>
+  <header class="card-head"><div><h2>VDS bakımı</h2><p>Sunucuya bağlanmadan sabit işlemler. Güncelleme ve yeniden başlatma sonucu Telegram'a da gider.</p></div></header>
+  <div class="row-actions">
+    <?php formStart('vds_admin'); hidden('op', 'logs'); echo button('Logları getir', 'ghost', ['icon' => 'list']); formEnd(); ?>
+    <?php formStart('vds_admin'); hidden('op', 'selftest'); echo button('Arama testi', 'ghost', ['icon' => 'search']); formEnd(); ?>
+    <?php formStart('vds_admin'); hidden('op', 'update'); echo button('ytmusicapi\'yi güncelle', 'primary', ['icon' => 'bolt', 'confirm' => 'ytmusicapi güncellenip servis yeniden başlatılacak; birkaç saniye arama yedekten yapılır.']); formEnd(); ?>
+    <?php formStart('vds_admin'); hidden('op', 'restart'); echo button('Yeniden başlat', 'danger ghost', ['icon' => 'server', 'confirm' => 'VDS servisi yeniden başlatılacak.']); formEnd(); ?>
+  </div>
+  <?php if ($va): ?>
+  <p class="muted"><?=h(['logs' => 'Loglar', 'selftest' => 'Arama testi', 'update' => 'Güncelleme', 'restart' => 'Yeniden başlatma'][$va['op']] ?? $va['op'])?> · <?=h(nbAgo((string)$va['at']))?><?= $va['by'] !== '' ? ' · ' . h($va['by']) : '' ?> · <?=$va['ok'] ? pill('Başarılı', 'good') : pill('Hata', 'bad')?></p>
+  <p><?=h($va['summary'])?></p>
+  <?php if ($va['output'] !== ''): ?><pre class="log-box"><?=h($va['output'])?></pre><?php endif ?>
+  <?php endif ?>
+</section>
+<?php endif ?>
+
 <div class="cols-2">
   <?php card('Bağlantı ayarları', 'Anahtarlar şifreli saklanır ve bir daha gösterilmez. Boş bırakılan alan değişmez.');
   formStart('services_save', 'stack');

@@ -100,6 +100,7 @@ if ($route === 'config') {
         'registration_open' => configBool('registration_open', true),
         'announcement' => configBool('announcement_on') ? ['title' => (string)configValue('announcement_title', ''), 'body' => (string)configValue('announcement_body', ''), 'id' => substr(sha1((string)configValue('announcement_title', '') . (string)configValue('announcement_body', '')), 0, 12)] : null,
         'support_email' => (string)configValue('support_email', ''),
+        'browser_shortcuts' => boxBrowserShortcuts(),
     ]);
 }
 
@@ -320,7 +321,7 @@ switch ($route) {
 
     case 'search':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'search');
         throttle('search:' . $u['id'], 30, 60);
         $q = isset($_GET['q']) && is_string($_GET['q']) ? trim($_GET['q']) : '';
         if ($q === '' || mb_strlen($q) > 200) jsonOut(['ok' => false, 'error' => 'Arama metni gerekli.'], 400);
@@ -353,7 +354,7 @@ switch ($route) {
         // Paylaşılan listedeki (bu cihazda olmayan) şarkıları YouTube Music'te bul. Arama hakkından düşmez.
         $need('POST');
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'match');
         throttle('match:' . $u['id'], 20, 600);
         $items = is_array(body()['items'] ?? null) ? array_slice(body()['items'], 0, 25) : [];
         $out = [];
@@ -377,7 +378,7 @@ switch ($route) {
     case 'artist':
         // Sanatçı sayfası (YouTube Music): ?id=… ya da ?name=…
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'search');
         throttle('browse:' . $u['id'], 40, 60);
         $id = (string)($_GET['id'] ?? ''); $name = trim(mb_substr((string)($_GET['name'] ?? ''), 0, 120));
         if (($id === '' || !boxMusicId($id)) && $name === '') jsonOut(['ok' => false, 'error' => 'Sanatçı gerekli.'], 400);
@@ -390,7 +391,7 @@ switch ($route) {
     case 'album':
         // Albüm sayfası (YouTube Music): ?id=… ya da ?name=…&artist=…
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'search');
         throttle('browse:' . $u['id'], 40, 60);
         $id = (string)($_GET['id'] ?? '');
         $query = trim(mb_substr((string)($_GET['name'] ?? '') . ' ' . (string)($_GET['artist'] ?? ''), 0, 160));
@@ -407,7 +408,7 @@ switch ($route) {
 
     case 'feed':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'search');
         throttle('feed:' . $u['id'], 20, 60);
         $artists = array_filter(array_map('trim', explode('|', mb_substr((string)($_GET['artists'] ?? ''), 0, 300))));
         try { $sections = boxFeed(array_values($artists)); }
@@ -422,7 +423,7 @@ switch ($route) {
 
     case 'feed/genre':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'search');
         throttle('feed:' . $u['id'], 20, 60);
         $key = (string)($_GET['key'] ?? '');
         $genre = boxGenres()[$key] ?? null;
@@ -443,7 +444,7 @@ switch ($route) {
 
     case 'radio':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'radio');
         throttle('radio:' . $u['id'], 20, 60);
         $exclude = array_values(array_filter(explode(',', mb_substr((string)($_GET['exclude'] ?? ''), 0, 1200)), fn($id) => preg_match(BOX_VIDEO_ID, $id)));
         try { $items = boxRadio((string)($_GET['artist'] ?? ''), (string)($_GET['title'] ?? ''), $exclude); }
@@ -457,7 +458,7 @@ switch ($route) {
 
     case 'playlist':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'playlist');
         throttle('playlist:' . $u['id'], 10, 60);
         $listId = boxPlaylistId((string)($_GET['url'] ?? ''));
         if (!$listId) jsonOut(['ok' => false, 'error' => 'Geçerli bir YouTube çalma listesi bağlantısı yapıştır (içinde "list=" olmalı).'], 400);
@@ -468,7 +469,7 @@ switch ($route) {
     case 'stream':
         // İndirmeden dinleme: imzalı bağlantı verir, indirme kotasından düşmez.
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'stream');
         throttle('stream:' . $u['id'], 30, 60);
         throttle('stream-day:' . $u['id'], 800, 86400);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
@@ -482,7 +483,7 @@ switch ($route) {
 
     case 'download':
         $u = boxApiUser();
-        if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+        boxRequireFeature($u, 'download');
         throttle('download:' . $u['id'], 90, 60);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);

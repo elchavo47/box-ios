@@ -38,3 +38,11 @@ $dis = $edit ? [] : ['disabled' => true];
   if ($edit) echo '<div class="row-actions">' . button('Kaydet') . '</div>';
   formEnd(); cardEnd(); ?>
 </div>
+<div class="cols-2">
+  <?php card('Tarayıcı kısayolları', 'Uygulamadaki Tarayıcı sekmesinde YouTube ve YouTube Music\'in yanında görünür. Her satıra bir tane: Ad | https://adres');
+  formStart('app_save', 'stack'); hidden('section', 'browser');
+  $lines = implode("\n", array_map(fn($i) => $i['title'] . ' | ' . $i['url'], boxBrowserShortcuts()));
+  area('Kısayollar', 'browser_shortcuts', $lines, $dis + ['placeholder' => "Örnek | https://example.com", 'hint' => 'En fazla 12. Yalnızca https adresleri.']);
+  if ($edit) echo '<div class="row-actions">' . button('Kaydet') . '</div>';
+  formEnd(); cardEnd(); ?>
+</div>

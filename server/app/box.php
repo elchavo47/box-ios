@@ -26,6 +26,47 @@ function boxIsPremium(array $u): bool {
     return strtotime((string)$u['premium_until']) > time();
 }
 
+/** Tarayıcı sekmesindeki ek kısayollar (paneldeki "Tarayıcı kısayolları"). */
+function boxBrowserShortcuts(): array {
+    $list = configValue('browser_shortcuts', []);
+    $out = [];
+    foreach (is_array($list) ? $list : [] as $item) {
+        $title = (string)($item['title'] ?? ''); $url = (string)($item['url'] ?? '');
+        if ($title !== '' && preg_match('~^https://~i', $url)) $out[] = ['title' => $title, 'url' => $url];
+    }
+    return $out;
+}
+
+/** Premium'un kullanıcı bazında açılıp kapatılabilen parçaları. */
+const BOX_PREMIUM_FEATURES = [
+    'search' => 'Arama ve keşfet',
+    'stream' => 'İnternetten dinleme',
+    'download' => 'İndirme',
+    'radio' => 'Radyo',
+    'playlist' => 'YouTube listesi içe aktarma',
+    'match' => 'YouTube Music eşleştirme',
+];
+
+/** Kapatılmış premium özellikleri (users.premium_off, virgüllü). Boş = hepsi açık. */
+function boxFeaturesOff(array $u): array {
+    $off = array_filter(array_map('trim', explode(',', (string)($u['premium_off'] ?? ''))));
+    return array_values(array_intersect($off, array_keys(BOX_PREMIUM_FEATURES)));
+}
+
+function boxHasFeature(array $u, string $feature): bool {
+    return boxIsPremium($u) && !in_array($feature, boxFeaturesOff($u), true);
+}
+
+function boxFeatures(array $u): array {
+    if (!boxIsPremium($u)) return [];
+    return array_values(array_diff(array_keys(BOX_PREMIUM_FEATURES), boxFeaturesOff($u)));
+}
+
+function boxRequireFeature(array $u, string $feature): void {
+    if (!boxIsPremium($u)) jsonOut(['ok' => false, 'error' => 'Bu özellik premium üyelere açık.'], 403);
+    if (!boxHasFeature($u, $feature)) jsonOut(['ok' => false, 'error' => 'Bu özellik hesabında kapalı.', 'feature' => $feature], 403);
+}
+
 /** Uygulamaya giden kullanıcı nesnesi (sürüm 1 uygulamasıyla uyumlu alan adları). */
 function boxUserPublic(array $u): array {
     return [
@@ -33,6 +74,7 @@ function boxUserPublic(array $u): array {
         'email' => (string)$u['email'],
         'name' => (string)$u['display_name'],
         'premium' => boxIsPremium($u),
+        'features' => boxFeatures($u),
         'premium_until' => !empty($u['premium_until']) ? date(DATE_ATOM, (int)strtotime((string)$u['premium_until'])) : null,
         'created_at' => date(DATE_ATOM, (int)strtotime((string)$u['created_at'])),
         'avatar_url' => boxAvatarUrl($u),
@@ -702,6 +744,87 @@ function boxSignedDownload(string $videoId, string $path = '/get', ?int $ttl = n
     return ['url' => boxVdsUrl() . $path . '?' . http_build_query(['v' => $videoId, 'exp' => $exp, 'sig' => hash_hmac('sha256', $videoId . ':' . $exp, $key)]), 'expires_at' => $exp];
 }
 
+/** VDS bakım işlemi (sabit işlemler: logs, selftest, update, restart). İmza tek kullanımlık ve 90 sn geçerli. */
+function boxVdsAdmin(string $action, string $method = 'GET', array $params = [], int $timeout = 30): array {
+    if (!in_array($action, ['logs', 'selftest', 'update', 'restart'], true)) throw new RuntimeException('Bilinmeyen VDS işlemi.');
+    $key = boxVdsKey();
+    if ($key === '') throw new RuntimeException('VDS imza anahtarı ayarlı değil.');
+    $exp = time() + 90;
+    $nonce = bin2hex(random_bytes(16));
+    $sig = hash_hmac('sha256', "admin:$action:$exp:$nonce", $key);
+    $url = boxVdsUrl() . '/stream/admin/' . $action . '?' . http_build_query($params + ['exp' => $exp, 'nonce' => $nonce, 'sig' => $sig]);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => $timeout, CURLOPT_USERAGENT => 'Box-Admin/' . boxVersion()]);
+    if ($method === 'POST') { curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, ''); }
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    $data = is_string($body) ? json_decode($body, true) : null;
+    if ($code === 404) throw new RuntimeException('VDS\'deki yt_stream.py eski; bakım uçları için yeni dosyayı kur.');
+    if (!is_array($data)) throw new RuntimeException('VDS yanıt vermedi: ' . ($err !== '' ? $err : 'HTTP ' . $code));
+    if ($code !== 200) throw new RuntimeException('VDS: ' . (string)($data['detail'] ?? ('HTTP ' . $code)));
+    return $data;
+}
+
+/** Bakım işlemini çalıştırır, sonucu panelde göstermek için saklar. [özet, ayrıntı] döner. */
+function boxVdsMaintenance(string $op, string $by = ''): array {
+    $ok = true;
+    switch ($op) {
+        case 'logs':
+            $r = boxVdsAdmin('logs', 'GET', ['lines' => 200], 25);
+            $summary = 'Son 200 log satırı getirildi.';
+            $output = (string)($r['output'] ?? '');
+            break;
+        case 'selftest':
+            $r = boxVdsAdmin('selftest', 'GET', ['q' => 'tarkan'], 60);
+            $lines = [];
+            foreach ((array)($r['checks'] ?? []) as $c) $lines[] = ($c['ok'] ? '✅ ' : '❌ ') . $c['name'] . ': ' . ($c['ok'] ? $c['count'] . ' sonuç' : ($c['error'] ?? '0 sonuç')) . ' (' . (int)$c['ms'] . ' ms)';
+            $good = count(array_filter((array)($r['checks'] ?? []), fn($c) => !empty($c['ok'])));
+            $ok = !empty($r['ok']);
+            $summary = 'Arama testi: ' . $good . '/' . count($lines) . ' başarılı (ytmusicapi ' . ($r['ytmusicapi'] ?? '?') . ').';
+            $output = implode("\n", $lines);
+            break;
+        case 'update':
+            $r = boxVdsAdmin('update', 'POST', [], 260);
+            $ok = !empty($r['ok']);
+            $summary = !$ok ? 'ytmusicapi güncellenemedi.' : (!empty($r['changed']) ? 'ytmusicapi ' . ($r['before'] ?? '?') . ' → ' . ($r['after'] ?? '?') . ' güncellendi. ' . ($r['restart'] ?? '') : 'ytmusicapi zaten güncel (' . ($r['after'] ?? $r['before'] ?? '?') . '). ' . ($r['restart'] ?? ''));
+            $output = (string)($r['output'] ?? '');
+            break;
+        case 'restart':
+            $r = boxVdsAdmin('restart', 'POST', [], 20);
+            $summary = 'VDS servisi: ' . (string)($r['restart'] ?? 'yeniden başlatılıyor.');
+            $output = '';
+            break;
+        default:
+            throw new RuntimeException('Bilinmeyen işlem.');
+    }
+    saveSite('vds_admin_last', json_encode(['op' => $op, 'at' => date('Y-m-d H:i:s'), 'by' => $by, 'ok' => $ok, 'summary' => $summary, 'output' => mb_substr($output, -20000)], JSON_UNESCAPED_UNICODE));
+    return [$summary, $output, $ok];
+}
+
+/** YouTube Music uyarısına eklenen teşhis: arama testi + son hata satırları; tam log dosya olarak. */
+function boxVdsDiagnoseAlert(string $headline): void {
+    $text = $headline;
+    $log = '';
+    try { [$sum, $out] = boxVdsMaintenance('selftest', 'otomatik'); $text .= "\n\n" . $sum . "\n" . $out; } catch (Throwable $e) { $text .= "\n\nArama testi yapılamadı: " . $e->getMessage(); }
+    try {
+        $r = boxVdsAdmin('logs', 'GET', ['lines' => 300], 25);
+        $log = (string)($r['output'] ?? '');
+        $errors = array_values(array_filter(preg_split('/\R/', $log), fn($l) => preg_match('/Error|Exception|Traceback|failed/i', $l)));
+        if ($errors) $text .= "\n\nSon hata satırları:\n" . implode("\n", array_slice($errors, -8));
+    } catch (Throwable $e) { $text .= "\n\nLoglar alınamadı: " . $e->getMessage(); }
+    $text .= "\n\nÇözüm: Panel › Servisler › VDS bakımı › \"ytmusicapi'yi güncelle\"";
+    staffAlert('services', $text);
+    if ($log !== '' && site('tg_alert_services', '1') === '1' && telegramConfigured()) {
+        $file = nbPrivateDir('cache') . '/vds-log-' . date('Ymd-His') . '.txt';
+        if (@file_put_contents($file, $log) !== false) {
+            try { telegramSendDocument($file, 'VDS logu (son 300 satır)'); } catch (Throwable $e) { error_log((string)$e); }
+            @unlink($file);
+        }
+    }
+}
+
 /** VDS sağlık kontrolü: /health yanıtı ve süresi. */
 function boxVdsHealth(): array {
     $ch = curl_init(boxVdsUrl() . '/health');
@@ -753,7 +876,7 @@ function boxVdsSample(array $health): void {
         $m = $point['music'];
         $bad = $m['n'] >= 5 && $m['err'] / max(1, $m['n']) > 0.3;
         $wasBad = site('vds_music_bad') === '1';
-        if ($bad && !$wasBad) staffAlert('services', "⚠️ YouTube Music araması hata veriyor: son saatte {$m['n']} istekten {$m['err']} tanesi başarısız. Arama yedek YouTube API ile yapılıyor.\nVDS'de: /opt/yt-api-venv/bin/pip install -U ytmusicapi && systemctl restart yt-stream");
+        if ($bad && !$wasBad) boxVdsDiagnoseAlert("⚠️ YouTube Music araması hata veriyor: son saatte {$m['n']} istekten {$m['err']} tanesi başarısız. Arama yedek YouTube API ile yapılıyor.");
         if (!$bad && $wasBad && $m['n'] > 0) staffAlert('services', '✅ YouTube Music araması yeniden düzgün çalışıyor.');
         saveSite('vds_music_bad', $bad ? '1' : ($m['n'] > 0 ? '0' : site('vds_music_bad')));
         if (empty($stats['music']) && site('vds_music_missing') !== '1') { staffAlert('services', '⚠️ VDS\'de ytmusicapi kurulu değil; arama YouTube API kotasından yapılıyor.'); saveSite('vds_music_missing', '1'); }

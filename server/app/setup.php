@@ -7,7 +7,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * oluşturur, mevcut veriye dokunmaz ve panelde "Güncelleme tamamlandı" raporu gösterir.
  */
 
-const BOX_SCHEMA_VERSION = 15;
+const BOX_SCHEMA_VERSION = 16;
 
 function boxVersion(): string {
     static $version = null;
@@ -114,6 +114,7 @@ function ensureSchema(bool $force = false): void {
             $add('notifications', 'body_en', 'body_en VARCHAR(400) NULL DEFAULT NULL AFTER title_en');
         }
         $add('users', 'library_order_at', 'library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER expiry_notified_for');
+        $add('users', 'premium_off', 'premium_off VARCHAR(255) NULL AFTER library_order_at');
         $add('tokens', 'device', 'device VARCHAR(120) NULL DEFAULT NULL AFTER token_hash');
         // 3.0: cihaz bilgisi
         $add('tokens', 'device_id', 'device_id VARCHAR(64) NULL DEFAULT NULL AFTER device');

@@ -27,6 +27,7 @@ CREATE TABLE users (
   apple_refresh TEXT NULL,
   expiry_notified_for DATETIME NULL DEFAULT NULL,
   library_order_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  premium_off VARCHAR(255) NULL,
   lang VARCHAR(8) NULL DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME NULL DEFAULT NULL,
