@@ -11,18 +11,19 @@ final class FeedStore: ObservableObject {
     private var loadedAt: Date?
     private var loadedSeeds: [String] = []
 
-    /// Dinleme geçmişine göre en çok dinlenen sanatçılar.
+    /// Dinleme geçmişine göre en çok dinlenen sanatçılar. Belirleyici olan dinleme sayısı ve son dinlenenler;
+    /// kitaplıkta çok dosyası olan ama dinlenmeyen sanatçı öne geçmesin diye dosya sayısının etkisi küçüktür.
     static func seeds(from library: LibraryStore) -> [String] {
         var score: [String: Int] = [:]
         for track in library.tracks {
             let name = track.displayArtist
             guard name != L("Bilinmeyen sanatçı") else { continue }
-            score[name, default: 0] += 1 + (library.playCounts[track.relativePath] ?? 0) * 3
+            score[name, default: 0] += 1 + (library.playCounts[track.relativePath] ?? 0) * 4
         }
-        for (offset, track) in library.recentlyPlayed.prefix(10).enumerated() {
-            score[track.displayArtist, default: 0] += 10 - offset
+        for (offset, track) in library.recentlyPlayed.prefix(20).enumerated() where track.displayArtist != L("Bilinmeyen sanatçı") {
+            score[track.displayArtist, default: 0] += (20 - offset) * 2
         }
-        return score.sorted { $0.value > $1.value }.prefix(3).map(\.key)
+        return score.sorted { $0.value > $1.value }.prefix(5).map(\.key)
     }
 
     func load(token: String?, seeds: [String], force: Bool = false) async {
@@ -73,5 +74,32 @@ final class FeedStore: ObservableObject {
         sections = []
         genres = []
         loadedAt = nil
+    }
+}
+
+/// "Sana özel" bölümünün açılma koşulu: tarz birkaç arama ve dinlemeden sonra belirlenir.
+/// Bir kez açılınca geçmiş silinse de açık kalır.
+enum TasteProgress {
+    static let searchesKey = "box.taste.searches"
+    static let unlockedKey = "box.taste.unlocked"
+    static let neededSearches = 2
+    static let neededListens = 2
+    /// Uygulamayı uzun süredir kullanan ve çok dinlemesi olan biri aramadan da açılsın.
+    static let establishedListens = 8
+
+    static func recordSearch() {
+        let current = UserDefaults.standard.integer(forKey: searchesKey)
+        if current < 1000 { UserDefaults.standard.set(current + 1, forKey: searchesKey) }
+    }
+
+    static func listens(_ library: LibraryStore) -> Int {
+        library.playCounts.values.filter { $0 > 0 }.count
+    }
+
+    static func isReady(searches: Int, listens: Int) -> Bool {
+        if UserDefaults.standard.bool(forKey: unlockedKey) { return true }
+        let ready = (searches >= neededSearches && listens >= neededListens) || listens >= establishedListens
+        if ready { UserDefaults.standard.set(true, forKey: unlockedKey) }
+        return ready
     }
 }

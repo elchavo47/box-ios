@@ -44,6 +44,8 @@ struct HomeView: View {
     @EnvironmentObject private var stream: StreamCache
 
     @State private var path = NavigationPath()
+    /// "Sana özel" için yapılan arama sayısı (SearchHistory artırır).
+    @AppStorage(TasteProgress.searchesKey) private var tasteSearches = 0
     @State private var filter: HomeFilter = .all
 
     enum HomeFilter: String, CaseIterable, Hashable {
@@ -86,12 +88,12 @@ struct HomeView: View {
             .boxScreenBackground()
             .refreshable {
                 await library.refresh()
-                if auth.has(.search) { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
+                if auth.has(.search) { await feed.load(token: auth.token, seeds: feedSeeds, force: true) }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .task(id: auth.has(.search)) {
+            .task(id: "\(auth.has(.search))-\(tasteReady)") {
                 if auth.has(.search) {
-                    await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library))
+                    await feed.load(token: auth.token, seeds: feedSeeds)
                     stream.warm(feed.sections.flatMap { $0.items.prefix(2) }, limit: 6)
                 }
             }
@@ -190,6 +192,12 @@ struct HomeView: View {
         }
     }
 
+    private var tasteListens: Int { TasteProgress.listens(library) }
+    private var tasteReady: Bool { TasteProgress.isReady(searches: tasteSearches, listens: tasteListens) }
+    /// Tarz belirlenmeden sunucuya sanatçı gönderilmez; kişisel bölümler yerine hazırlık kartı görünür.
+    private var feedSeeds: [String] { tasteReady ? FeedStore.seeds(from: library) : [] }
+    private var personalIDs: Set<String> { ["mix", "similar"] }
+
     /// Premium: dinleme geçmişine göre öneriler ve türler.
     /// Sıra: Sana özel karışık → Ruh haline göre → diğer öneriler.
     @ViewBuilder
@@ -205,7 +213,7 @@ struct HomeView: View {
                     }
                     Spacer()
                     Button(L("Tekrar dene")) {
-                        Task { await feed.load(token: auth.token, seeds: FeedStore.seeds(from: library), force: true) }
+                        Task { await feed.load(token: auth.token, seeds: feedSeeds, force: true) }
                     }
                     .font(.system(size: 14, weight: .semibold))
                 }
@@ -231,8 +239,12 @@ struct HomeView: View {
             }
         }
 
-        ForEach(feed.sections.filter { $0.id == "mix" }) { section in
-            feedSection(section)
+        if tasteReady {
+            ForEach(feed.sections.filter { $0.id == "mix" }) { section in
+                feedSection(section)
+            }
+        } else {
+            TastePreparingCard(searches: tasteSearches, listens: tasteListens) { router.tab = .search }
         }
 
         if !feed.genres.isEmpty {
@@ -266,7 +278,7 @@ struct HomeView: View {
             }
         }
 
-        ForEach(feed.sections.filter { $0.id != "mix" }) { section in
+        ForEach(feed.sections.filter { $0.id != "mix" && (tasteReady || !personalIDs.contains($0.id)) }) { section in
             feedSection(section)
         }
     }
@@ -600,6 +612,86 @@ private struct HomeGlow: View {
                                startPoint: .top, endPoint: .bottom)
             )
             .opacity(0.9)
+        }
+    }
+}
+
+/// Tarz henüz belirlenmemişken "Sana özel karışık" yerine görünen kart: ne kadar kaldığını gösterir.
+private struct TastePreparingCard: View {
+    let searches: Int
+    let listens: Int
+    let onSearch: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: L("Sana özel karışık"), subtitle: L("Tarzını öğreniyoruz"))
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(red: 0.33, green: 0.93, blue: 0.62).opacity(0.28), Color(red: 0.55, green: 0.42, blue: 1).opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(width: 46, height: 46)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L("Senin için hazırlıyoruz"))
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text(L("Birkaç şarkı arayıp dinledikçe tarzını öğreniyoruz. Karışığın hazır olunca burada görünecek."))
+                            .font(.system(size: 13))
+                            .foregroundColor(.boxSecondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                VStack(spacing: 10) {
+                    step(icon: "magnifyingglass", title: L("Arama"), value: searches, goal: TasteProgress.neededSearches)
+                    step(icon: "play.fill", title: L("Dinleme"), value: listens, goal: TasteProgress.neededListens)
+                }
+                Button(action: onSearch) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .semibold))
+                        Text(L("Aramaya başla")).font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(Capsule().fill(Color.white))
+                }
+                .buttonStyle(PressableStyle())
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.boxSurface))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.boxStroke, lineWidth: 1))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func step(icon: String, title: String, value: Int, goal: Int) -> some View {
+        let done = value >= goal
+        let progress = min(1, Double(value) / Double(max(1, goal)))
+        return HStack(spacing: 10) {
+            Image(systemName: done ? "checkmark.circle.fill" : icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(done ? Color(red: 0.33, green: 0.93, blue: 0.62) : .boxSecondaryText)
+                .frame(width: 18)
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 70, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule().fill(done ? Color(red: 0.33, green: 0.93, blue: 0.62) : Color.white.opacity(0.7))
+                        .frame(width: max(6, geo.size.width * progress))
+                }
+            }
+            .frame(height: 5)
+            Text(verbatim: "\(min(value, goal))/\(goal)")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundColor(.boxSecondaryText)
+                .frame(width: 30, alignment: .trailing)
         }
     }
 }

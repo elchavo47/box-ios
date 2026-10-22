@@ -21,6 +21,8 @@ final class SearchHistory: ObservableObject {
     func add(query: String) {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let isNew = !queries.contains { $0.compare(text, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+        if isNew { TasteProgress.recordSearch() }
         queries.removeAll { $0.compare(text, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
         queries.insert(text, at: 0)
         if queries.count > 20 { queries.removeLast(queries.count - 20) }

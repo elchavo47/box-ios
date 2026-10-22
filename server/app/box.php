@@ -586,9 +586,12 @@ function boxFeed(array $artists): array {
         foreach (array_keys($seeds) as $k) if ($k !== '' && str_contains($hay, $k)) return true;
         return false;
     };
-    $pick = function (array $pool, int $limit, ?callable $filter = null): array {
+    // Derleme / kesintisiz / "sequência" gibi birleştirme videoları öneriye girmez.
+    $isJunk = fn(array $r): bool => (bool)preg_match('/\b(sequ[eê]ncia|medley|mixtape|non ?stop|full album|playlist|compilation|derleme|1 saat|1 hour)\b|\bmix\b/iu', (string)$r['title']);
+    $pick = function (array $pool, int $limit, ?callable $filter = null) use ($isJunk): array {
         $seen = []; $out = [];
         foreach ($pool as $r) {
+            if ($isJunk($r)) continue;
             if ($filter && !$filter($r)) continue;
             $key = boxNorm($r['title']);
             $artistKey = boxNorm($r['channel']);
@@ -620,10 +623,20 @@ function boxFeed(array $artists): array {
     $items = $pick($similar, 18, fn($r) => !$isSeed($r));
     if (count($items) >= 4) $sections[] = ['id' => 'similar', 'title' => 'Benzer sanatçılardan', 'subtitle' => 'Dinlediklerine göre', 'items' => $items];
 
-    // 2) Karışık: sevdiğin sanatçılardan birkaç şarkı + benzerleri + günün türleri.
+    // 2) Karışık: sevdiğin sanatçıların kendi şarkılarından 2'şer + çoğunluğu benzer şarkı radyosundan.
+    // Günün ruh hali karışığa girmez (o, aşağıdaki "Ruh haline göre" bölümünde); yalnızca dinleme
+    // geçmişi yokken "Bugünün seçkisi" olarak kullanılır.
     $mix = [];
-    foreach (array_values($seeds) as $artist) {
-        try { $mix = array_merge($mix, array_slice(boxSearch($artist, true, 10, 43200), 0, 3)); } catch (RuntimeException $e) {}
+    foreach ($seeds as $seedKey => $artist) {
+        $own = [];
+        try { $own = boxMusicEnabled() ? boxMusicSearch($artist, true, 12, 43200) : boxSearch($artist, true, 12, 43200); } catch (RuntimeException $e) {}
+        // Yalnızca gerçekten o sanatçıya ait sonuçlar (adı geçen alakasız videolar değil).
+        $own = array_values(array_filter($own, function (array $r) use ($seedKey) {
+            $channel = boxNorm((string)$r['channel']);
+            return $channel !== '' && (str_contains($channel, $seedKey) || str_contains($seedKey, $channel));
+        }));
+        mt_srand($daySeed + crc32($seedKey)); shuffle($own); mt_srand();
+        $mix = array_merge($mix, array_slice($own, 0, 2));
     }
     $genres = boxGenres(); $keys = array_keys($genres); $day = (int)date('z');
     $todays = [$keys[$day % count($keys)], $keys[($day + 5) % count($keys)]];
@@ -644,7 +657,7 @@ function boxFeed(array $artists): array {
             try { $genrePools[$key] = boxSearch($genres[$key][1], true, 25, 43200); } catch (RuntimeException $e) { $genrePools[$key] = []; }
         }
     }
-    $mix = array_merge($mix, array_slice($similar, 0, 12), array_slice($genrePools[$todays[0]], 0, 8));
+    $mix = $seeds ? array_merge($mix, array_slice($similar, 0, 30)) : array_slice($genrePools[$todays[0]], 0, 20);
     mt_srand($daySeed + 1); shuffle($mix); mt_srand();
     $items = $pick($mix, 20);
     if ($items) $sections[] = ['id' => 'mix', 'title' => 'Sana özel karışık', 'subtitle' => $seeds ? 'Her gün yenilenir' : 'Bugünün seçkisi', 'items' => $items];
