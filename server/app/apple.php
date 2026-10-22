@@ -10,7 +10,7 @@ if (!defined('ROOT')) { http_response_code(404); exit; }
  * ve bildirim göndermek için gerekir.
  */
 
-const BOX_BUNDLE_ID = 'com.aydworks.box';
+if (!defined('BOX_BUNDLE_ID')) define('BOX_BUNDLE_ID', 'com.aydworks.box');
 
 function boxAppleConfig(): array {
     return [

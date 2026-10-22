@@ -16,7 +16,7 @@ declare(strict_types=1);
  */
 
 const BOX_APPLE_ROOT_G3_SHA256 = '63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179';
-const BOX_BUNDLE_ID = 'com.aydworks.box';
+if (!defined('BOX_BUNDLE_ID')) define('BOX_BUNDLE_ID', 'com.aydworks.box');
 const BOX_STORE_PRODUCTS = [
     'com.aydworks.premium.monthly' => ['Aylık', 'subscription'],
     'com.aydworks.premium.yearly' => ['Yıllık', 'subscription'],
