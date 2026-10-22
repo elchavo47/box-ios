@@ -23,6 +23,18 @@ final class FeedStore: ObservableObject {
         for (offset, track) in library.recentlyPlayed.prefix(20).enumerated() where track.displayArtist != L("Bilinmeyen sanatçı") {
             score[track.displayArtist, default: 0] += (20 - offset) * 2
         }
+        // Kendi oluşturduğu ya da içe aktardığı listeler de tarzı gösterir.
+        for playlist in library.playlists {
+            for path in playlist.paths.prefix(200) {
+                guard let track = library.resolve(path: path), track.displayArtist != L("Bilinmeyen sanatçı") else { continue }
+                score[track.displayArtist, default: 0] += 2
+            }
+            for item in (playlist.remote ?? []).prefix(200) {
+                let name = item.channel.replacingOccurrences(of: " - Topic", with: "").trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { continue }
+                score[name, default: 0] += 2
+            }
+        }
         return score.sorted { $0.value > $1.value }.prefix(5).map(\.key)
     }
 
@@ -92,13 +104,20 @@ enum TasteProgress {
         if current < 1000 { UserDefaults.standard.set(current + 1, forKey: searchesKey) }
     }
 
+    /// İçe aktarılan / oluşturulan listelerde bu kadar şarkı varsa tarz bunlardan hemen çıkarılır.
+    static let neededPlaylistSongs = 10
+
     @MainActor static func listens(_ library: LibraryStore) -> Int {
         library.playCounts.values.filter { $0 > 0 }.count
     }
 
-    static func isReady(searches: Int, listens: Int) -> Bool {
+    @MainActor static func playlistSongs(_ library: LibraryStore) -> Int {
+        library.playlists.reduce(0) { $0 + max($1.paths.count, $1.remote?.count ?? 0) }
+    }
+
+    static func isReady(searches: Int, listens: Int, playlistSongs: Int = 0) -> Bool {
         if UserDefaults.standard.bool(forKey: unlockedKey) { return true }
-        let ready = (searches >= neededSearches && listens >= neededListens) || listens >= establishedListens
+        let ready = (searches >= neededSearches && listens >= neededListens) || listens >= establishedListens || playlistSongs >= neededPlaylistSongs
         if ready { UserDefaults.standard.set(true, forKey: unlockedKey) }
         return ready
     }

@@ -193,7 +193,7 @@ struct HomeView: View {
     }
 
     private var tasteListens: Int { TasteProgress.listens(library) }
-    private var tasteReady: Bool { TasteProgress.isReady(searches: tasteSearches, listens: tasteListens) }
+    private var tasteReady: Bool { TasteProgress.isReady(searches: tasteSearches, listens: tasteListens, playlistSongs: TasteProgress.playlistSongs(library)) }
     /// Tarz belirlenmeden sunucuya sanatçı gönderilmez; kişisel bölümler yerine hazırlık kartı görünür.
     private var feedSeeds: [String] { tasteReady ? FeedStore.seeds(from: library) : [] }
     private var personalIDs: Set<String> { ["mix", "similar"] }
@@ -648,6 +648,13 @@ private struct TastePreparingCard: View {
                 VStack(spacing: 10) {
                     step(icon: "magnifyingglass", title: L("Arama"), value: searches, goal: TasteProgress.neededSearches)
                     step(icon: "play.fill", title: L("Dinleme"), value: listens, goal: TasteProgress.neededListens)
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "music.note.list").font(.system(size: 12, weight: .semibold)).foregroundColor(.boxSecondaryText)
+                    Text(L("Bir çalma listesi içe aktarırsan ya da oluşturursan hemen hazırlanır."))
+                        .font(.system(size: 12))
+                        .foregroundColor(.boxSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Button(action: onSearch) {
                     HStack(spacing: 7) {
