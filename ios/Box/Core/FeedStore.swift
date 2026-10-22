@@ -92,7 +92,7 @@ enum TasteProgress {
         if current < 1000 { UserDefaults.standard.set(current + 1, forKey: searchesKey) }
     }
 
-    static func listens(_ library: LibraryStore) -> Int {
+    @MainActor static func listens(_ library: LibraryStore) -> Int {
         library.playCounts.values.filter { $0 > 0 }.count
     }
 
