@@ -14,6 +14,7 @@ function panelAction(array $admin): string|array {
     if ($action === 'logout') {
         logAdmin((int)$admin['id'], 'logout');
         q('DELETE FROM admin_sessions WHERE id=?', [hash('sha256', (string)session_id())]);
+        panelForgetRemember();
         panelDropSession();
         return 'Oturum kapatıldı.';
     }
@@ -71,10 +72,11 @@ function panelAction(array $admin): string|array {
         $prefix = preg_replace('/[^a-f0-9]/', '', (string)($_POST['session'] ?? ''));
         if (strlen($prefix) < 12) throw new RuntimeException('Oturum bulunamadı.');
         q('DELETE FROM admin_sessions WHERE user_id=? AND id LIKE ?', [(int)$admin['id'], $prefix . '%']);
+        panelForgetSessionToken((int)$admin['id'], $prefix);
         logAdmin((int)$admin['id'], 'session_revoke'); return 'Oturum kapatıldı.';
     }
     if ($action === 'sessions_revoke') {
-        q('DELETE FROM admin_sessions WHERE user_id=? AND id<>?', [(int)$admin['id'], hash('sha256', (string)session_id())]);
+        q('DELETE FROM admin_sessions WHERE user_id=? AND id<>?', [(int)$admin['id'], hash('sha256', (string)session_id())]); panelForgetUserTokens((int)$admin['id'], true);
         logAdmin((int)$admin['id'], 'sessions_revoke'); return 'Bu tarayıcı dışındaki tüm oturumlar kapatıldı.';
     }
     if ($action === 'profile') {
@@ -86,7 +88,7 @@ function panelAction(array $admin): string|array {
         q('UPDATE admins SET password=? WHERE id=?',[password_hash($new,PASSWORD_DEFAULT),$admin['id']]);
         
         $fresh=q('SELECT * FROM admins WHERE id=?',[$admin['id']])->fetch(); $_SESSION['auth_hash']=panelSessionHash($fresh);
-        q('DELETE FROM admin_sessions WHERE user_id=? AND id<>?', [(int)$admin['id'], hash('sha256', (string)session_id())]);
+        q('DELETE FROM admin_sessions WHERE user_id=? AND id<>?', [(int)$admin['id'], hash('sha256', (string)session_id())]); panelForgetUserTokens((int)$admin['id'], true);
         logAdmin((int)$admin['id'],'password_change'); securityAlert("Panel şifresi değiştirildi: {$admin['username']}\nIP: ".clientIp());
         return 'Şifre değiştirildi. Diğer cihazlardaki oturumlar kapatıldı.';
     }
@@ -140,7 +142,7 @@ function panelAction(array $admin): string|array {
             if (!isset(NB_ROLES[$role]) || !in_array($status, ['active', 'suspended'], true)) throw new RuntimeException('Rol ya da durum geçersiz.');
             if ($target['role'] === 'admin' && ($role !== 'admin' || $status !== 'active') && (int)q("SELECT COUNT(*) FROM admins WHERE role='admin' AND status='active'")->fetchColumn() <= 1) throw new RuntimeException('Son aktif yöneticinin yetkisi alınamaz.');
             q('UPDATE admins SET role=?,status=? WHERE id=?', [$role, $status, $id]);
-            if ($status !== 'active') q('DELETE FROM admin_sessions WHERE user_id=?', [$id]);
+            if ($status !== 'active') { q('DELETE FROM admin_sessions WHERE user_id=?', [$id]); panelForgetUserTokens((int)$id); }
             logAdmin((int)$admin['id'], 'team_update', ['target_id' => $id, 'role' => $role, 'status' => $status]);
             securityAlert("Ekip yetkisi değişti: {$target['username']} → " . NB_ROLES[$role] . ($status !== 'active' ? ' (kapatıldı)' : '') . "\nYapan: {$admin['username']}");
             return $target['username'] . ' güncellendi.';
@@ -149,18 +151,18 @@ function panelAction(array $admin): string|array {
             $new = (string)($_POST['new_password'] ?? '');
             if (!nbPasswordStrong($new)) throw new RuntimeException('Yeni şifre en az 12 karakter olmalı, harf ve rakam içermeli.');
             q('UPDATE admins SET password=? WHERE id=?', [password_hash($new, PASSWORD_DEFAULT), $id]);
-            q('DELETE FROM admin_sessions WHERE user_id=?', [$id]);
+            { q('DELETE FROM admin_sessions WHERE user_id=?', [$id]); panelForgetUserTokens((int)$id); }
             logAdmin((int)$admin['id'], 'team_reset_password', ['target_id' => $id]);
             return $target['username'] . ' için yeni şifre ayarlandı; açık oturumları kapatıldı.';
         }
         if ($action === 'team_reset_2fa') {
             q('UPDATE admins SET totp_secret=NULL,totp_enabled_at=NULL,totp_recovery=NULL,totp_last_step=0 WHERE id=?', [$id]);
-            q('DELETE FROM admin_sessions WHERE user_id=?', [$id]);
+            { q('DELETE FROM admin_sessions WHERE user_id=?', [$id]); panelForgetUserTokens((int)$id); }
             logAdmin((int)$admin['id'], 'team_reset_2fa', ['target_id' => $id]);
             securityAlert("İki adımlı giriş sıfırlandı: {$target['username']}\nYapan: {$admin['username']}");
             return $target['username'] . ' için iki adımlı giriş kapatıldı.';
         }
-        q('DELETE FROM admin_sessions WHERE user_id=?', [$id]);
+        { q('DELETE FROM admin_sessions WHERE user_id=?', [$id]); panelForgetUserTokens((int)$id); }
         logAdmin((int)$admin['id'], 'team_kick', ['target_id' => $id]);
         return $target['username'] . ' için bütün oturumlar kapatıldı.';
     }

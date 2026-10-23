@@ -83,13 +83,18 @@ function actionAllowed(string $role, string $action): bool {
 function can(string $action): bool { return actionAllowed((string)($GLOBALS['NB_ADMIN']['role'] ?? ''), $action); }
 
 function panelUser(): ?array {
+    if (empty($_SESSION['admin_id']) && empty($_SESSION['pending_2fa']) && empty($_SESSION['pending_approval'])) panelRestoreRemembered();
     if (empty($_SESSION['admin_id']) || !empty($_SESSION['pending_2fa'])) return null;
     $user = q('SELECT * FROM admins WHERE id=?', [$_SESSION['admin_id']])->fetch();
     $staff = $user && $user['status'] === 'active' && isset(NB_ROLES[$user['role']]);
     
     if (!$staff || !isset($_SESSION['auth_hash']) || !hash_equals((string)$_SESSION['auth_hash'], hash('sha256', $user['password'] . '|' . ($user['totp_enabled_at'] ?? '')))) { panelDropSession(); return null; }
     
-    if (isset($_SESSION['ua']) && !hash_equals((string)$_SESSION['ua'], userAgentHash())) { panelDropSession(); return null; }
+    // Tarayıcı bağı: iOS/Safari güncellemesinde değişen sürüm numaraları sayılmaz (yoksa her güncellemede çıkış olur).
+    if (isset($_SESSION['ua']) && !hash_equals((string)$_SESSION['ua'], panelUaHash())) {
+        if (hash_equals((string)$_SESSION['ua'], userAgentHash())) $_SESSION['ua'] = panelUaHash();
+        else { panelDropSession(); return null; }
+    }
     $idle = !empty($_SESSION['remember']) ? 30 * 86400 : 2 * 3600;
     if (time() - (int)($_SESSION['last_seen'] ?? 0) > $idle) { panelDropSession(); return null; }
     if (time() - (int)($_SESSION['last_seen'] ?? 0) > 60) $_SESSION['last_seen'] = time();
@@ -105,8 +110,90 @@ function panelSessionHash(array $user): string { return hash('sha256', $user['pa
 
 function panelStartSession(array $user, bool $remember): void {
     session_regenerate_id(true);
-    $_SESSION = ['csrf' => bin2hex(random_bytes(24)), 'admin_id' => (int)$user['id'], 'auth_hash' => panelSessionHash($user), 'last_seen' => time(), 'login_at' => time(), 'ua' => userAgentHash()];
-    if ($remember) { $_SESSION['remember'] = true; $_SESSION['cookie_refreshed'] = time(); sessionCookie(30); }
+    $_SESSION = ['csrf' => bin2hex(random_bytes(24)), 'admin_id' => (int)$user['id'], 'auth_hash' => panelSessionHash($user), 'last_seen' => time(), 'login_at' => time(), 'ua' => panelUaHash()];
+    if ($remember) { $_SESSION['remember'] = true; $_SESSION['cookie_refreshed'] = time(); sessionCookie(30); panelIssueRemember($user); }
+    else panelForgetRemember();
+}
+
+/** Sürüm numaraları atılmış tarayıcı imzası. */
+function panelUaHash(): string {
+    return hash('sha256', (string)preg_replace('/[0-9._]+/', '', (string)($_SERVER['HTTP_USER_AGENT'] ?? '')));
+}
+
+// --- "Beni hatırla" jetonu -------------------------------------------------------------------
+// Oturum çerezi herhangi bir sebeple kaybolsa da (tarayıcı kapatma, iOS'un çerezi silmesi, sunucuda
+// oturum satırının gitmesi) 30 gün boyunca ayrı, tek kullanımlık bir jetonla oturum yeniden açılır.
+// Jeton her kullanımda yenilenir; şifre ya da iki adımlı giriş değişince, oturum panelden kapatılınca
+// ve çıkış yapılınca geçersiz olur. Veritabanında yalnızca doğrulayıcının özeti tutulur.
+
+function panelRememberCookie(): string { return (isHttps() ? '__Host-' : '') . 'boxrem'; }
+
+function panelRememberTable(): void {
+    static $ready = false;
+    if ($ready) return;
+    q("CREATE TABLE IF NOT EXISTS admin_remember (selector CHAR(24) PRIMARY KEY, validator_hash CHAR(64) NOT NULL, user_id BIGINT UNSIGNED NOT NULL, sid_hash CHAR(64) NOT NULL, auth_hash CHAR(64) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL, INDEX idx_admin_remember_user(user_id), INDEX idx_admin_remember_exp(expires_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $ready = true;
+}
+
+function panelRememberSetCookie(string $value, int $expires): void {
+    setcookie(panelRememberCookie(), $value, ['expires' => $expires, 'path' => '/', 'secure' => isHttps(), 'httponly' => true, 'samesite' => 'Lax']);
+    if ($value === '') unset($_COOKIE[panelRememberCookie()]); else $_COOKIE[panelRememberCookie()] = $value;
+}
+
+function panelRememberSelector(): ?string {
+    $raw = (string)($_COOKIE[panelRememberCookie()] ?? '');
+    return preg_match('/^([a-f0-9]{24})\.[a-f0-9]{64}$/', $raw, $m) ? $m[1] : null;
+}
+
+function panelIssueRemember(array $user): void {
+    try {
+        panelRememberTable();
+        if ($old = panelRememberSelector()) q('DELETE FROM admin_remember WHERE selector=?', [$old]);
+        $selector = bin2hex(random_bytes(12));
+        $validator = bin2hex(random_bytes(32));
+        q('INSERT INTO admin_remember(selector,validator_hash,user_id,sid_hash,auth_hash,expires_at) VALUES(?,?,?,?,?,DATE_ADD(NOW(),INTERVAL 30 DAY))',
+            [$selector, hash('sha256', $validator), (int)$user['id'], hash('sha256', (string)session_id()), panelSessionHash($user)]);
+        panelRememberSetCookie($selector . '.' . $validator, time() + 30 * 86400);
+        if (random_int(1, 20) === 1) q('DELETE FROM admin_remember WHERE expires_at<NOW()');
+    } catch (Throwable $e) {}
+}
+
+/** Bu tarayıcının jetonunu siler (çıkış). */
+function panelForgetRemember(): void {
+    if ($selector = panelRememberSelector()) { try { q('DELETE FROM admin_remember WHERE selector=?', [$selector]); } catch (Throwable $e) {} }
+    if (isset($_COOKIE[panelRememberCookie()])) panelRememberSetCookie('', time() - 3600);
+}
+
+/** Bir kullanıcının jetonlarını siler; $keepCurrent ise bu tarayıcınınki kalır. */
+function panelForgetUserTokens(int $userId, bool $keepCurrent = false): void {
+    try {
+        $keep = $keepCurrent ? (panelRememberSelector() ?? '') : '';
+        q('DELETE FROM admin_remember WHERE user_id=? AND selector<>?', [$userId, $keep]);
+    } catch (Throwable $e) {}
+}
+
+/** Paneldeki "oturumu kapat" (id öneki) ile aynı oturumun jetonunu siler. */
+function panelForgetSessionToken(int $userId, string $sidPrefix): void {
+    try { q('DELETE FROM admin_remember WHERE user_id=? AND sid_hash LIKE ?', [$userId, $sidPrefix . '%']); } catch (Throwable $e) {}
+}
+
+function panelRestoreRemembered(): void {
+    $raw = (string)($_COOKIE[panelRememberCookie()] ?? '');
+    if (!preg_match('/^([a-f0-9]{24})\.([a-f0-9]{64})$/', $raw, $m)) return;
+    try {
+        panelRememberTable();
+        $row = q('SELECT * FROM admin_remember WHERE selector=? AND expires_at>NOW()', [$m[1]])->fetch();
+        if (!$row || !hash_equals((string)$row['validator_hash'], hash('sha256', $m[2]))) { panelForgetRemember(); return; }
+        $user = q('SELECT * FROM admins WHERE id=?', [(int)$row['user_id']])->fetch();
+        if (!$user || $user['status'] !== 'active' || !isset(NB_ROLES[$user['role']]) || !hash_equals((string)$row['auth_hash'], panelSessionHash($user))) {
+            q('DELETE FROM admin_remember WHERE selector=?', [$m[1]]);
+            panelForgetRemember();
+            return;
+        }
+        q('DELETE FROM admin_sessions WHERE id=?', [(string)$row['sid_hash']]);
+        panelStartSession($user, true); // jeton burada yenilenir
+        logAdmin((int)$user['id'], 'login_remembered');
+    } catch (Throwable $e) {}
 }
 
 
