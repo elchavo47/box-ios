@@ -66,6 +66,9 @@ final class ServerState: ObservableObject {
 
     private let seenKey = "box.announcement.seen"
     private var observer: NSObjectProtocol?
+    /// Oturum jetonu: duyuru kitlesi ("hesabı olanlar" / "sadece premium") sunucuda
+    /// kullanıcıya göre süzülür; jeton gönderilmezse herkes misafir sayılır.
+    var token: () -> String? = { nil }
 
     init() {
         observer = NotificationCenter.default.addObserver(forName: .boxServerState, object: nil, queue: .main) { [weak self] note in
@@ -78,7 +81,7 @@ final class ServerState: ObservableObject {
     }
 
     func refresh() async {
-        guard let config: RemoteConfig = try? await APIClient.shared.send("config") else { return }
+        guard let config: RemoteConfig = try? await APIClient.shared.send("config", token: token()) else { return }
         maintenanceMessage = config.maintenance.on ? config.maintenance.message : nil
         registrationOpen = config.registrationOpen
         if let shortcuts = config.browserShortcuts {
@@ -91,6 +94,9 @@ final class ServerState: ObservableObject {
         }
         if let item = config.announcement, UserDefaults.standard.string(forKey: seenKey) != item.id {
             announcement = item
+        } else if config.announcement == nil {
+            // Çıkış yapıldı ya da artık bu kitlede değil: bekleyen duyuru kalmasın.
+            announcement = nil
         }
     }
 

@@ -110,6 +110,7 @@ struct BoxApp: App {
                         }
                     }
                     library.syncToken = { [weak auth] in auth?.token }
+                    server.token = { [weak auth] in auth?.token }
                     auth.beforeLogout = { [weak library] in await library?.syncNow() }
                     auth.onAccountDeleted = { [weak library] id in library?.forgetAccount(id) }
                     await library.refresh()
