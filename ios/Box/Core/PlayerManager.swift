@@ -137,6 +137,10 @@ final class PlayerManager: ObservableObject {
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
+        // Kilit ekranı / Denetim Merkezi bilgisini yalnızca biz yazarız. Sessiz video oynatıcısı (ve ses oynatıcısı)
+        // kendiliğinden yazarsa bilgiyi boşaltıp "Oynatılmıyor" gösterebilir.
+        player.automaticallyUpdatesNowPlayingInfoCenter = false
+        videoPlayer.automaticallyUpdatesNowPlayingInfoCenter = false
         videoPlayer.isMuted = true
         videoPlayer.automaticallyWaitsToMinimizeStalling = false
         configureAudioSession()
@@ -148,6 +152,7 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.saveState(force: true)
+                self.updateNowPlaying()
                 // Arka planda görüntü durur, ses ana oynatıcıdan kesintisiz devam eder.
                 if self.videoMode { self.videoPlayer.pause() }
             }
@@ -990,6 +995,10 @@ final class PlayerManager: ObservableObject {
 
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
+        for command in [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
+                        center.nextTrackCommand, center.previousTrackCommand, center.changePlaybackPositionCommand] {
+            command.isEnabled = true
+        }
 
         center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.resume() }
@@ -1027,6 +1036,7 @@ final class PlayerManager: ObservableObject {
     private func updateNowPlaying() {
         guard let track = current else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
             return
         }
 
@@ -1048,5 +1058,6 @@ final class PlayerManager: ObservableObject {
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 }
