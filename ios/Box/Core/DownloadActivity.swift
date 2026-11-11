@@ -42,11 +42,13 @@ final class DownloadActivityController {
     @available(iOS 16.1, *)
     private func makeState(items: [String: DownloadItem], active: [DownloadItem], finished: Bool) -> DownloadActivityAttributes.ContentState {
         var done = 0
+        var failed = 0
         var partial = 0.0
         for id in batch {
             guard let item = items[id] else { done += 1; continue }
             switch item.state {
-            case .done, .failed: done += 1
+            case .done: done += 1
+            case .failed: done += 1; failed += 1
             case .downloading(let p): partial += p
             case .processing: partial += 0.95
             case .preparing: break
@@ -61,6 +63,7 @@ final class DownloadActivityController {
             title: finished ? "" : (current?.title ?? ""),
             progress: progress,
             finished: finished,
+            failed: failed,
             status: finished ? L("İndirme tamamlandı") : L("İndiriliyor")
         )
     }

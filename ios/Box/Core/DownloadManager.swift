@@ -69,7 +69,10 @@ final class DownloadManager: ObservableObject {
     private var running = 0
     /// Her şarkının sunucuda hazırlanması birkaç saniye sürer; birden çok şarkıyı aynı anda hazırlatmak toplu indirmeyi hızlandırır.
     /// Şarkı çalarken sayı düşük tutulur, böylece çalma isteği sunucuda sıra beklemez.
-    private var maxConcurrent: Int { isPlaybackActive() ? 2 : 4 }
+    private var maxConcurrent: Int { min(isPlaybackActive() ? 2 : 4, adaptiveCap) }
+    /// Sunucu yoğunluğunda hatalar artarsa eşzamanlı indirme sayısı düşer, işler yoluna girince tekrar yükselir.
+    private var adaptiveCap = 4
+    private var okStreak = 0
     var isPlaybackActive: () -> Bool = { false }
     /// Hız sınırı (429) hatasında sunucunun istediği bekleme süresi.
     private var retryAfter: [String: TimeInterval] = [:]
@@ -123,6 +126,7 @@ final class DownloadManager: ObservableObject {
             return
         }
         waitingForWifi = false
+        if pending.isEmpty && running == 0 { adaptiveCap = 4; okStreak = 0 }
         while running < maxConcurrent, !pending.isEmpty {
             let next = pending.removeFirst()
             running += 1
@@ -177,9 +181,15 @@ final class DownloadManager: ObservableObject {
 
     /// Başarısız olursa bekleyip yeniden dener (ağ kopması, yoğunluk, sunucu hatası).
     private func run(_ result: SearchResult) async {
-        let delays: [UInt64] = [3, 10, 25]
+        let delays: [UInt64] = [3, 10, 25, 60]
         for attempt in 0...delays.count {
-            if await attemptDownload(result) { return }
+            if await attemptDownload(result) {
+                okStreak += 1
+                if okStreak >= 4, adaptiveCap < 4 { adaptiveCap += 1; okStreak = 0 }
+                return
+            }
+            okStreak = 0
+            if retryable[result.id] == true { adaptiveCap = max(1, adaptiveCap - 1) }
             guard attempt < delays.count, case .failed(let message)? = items[result.id]?.state,
                   retryable[result.id] == true else { return }
             update(result.id, .preparing)

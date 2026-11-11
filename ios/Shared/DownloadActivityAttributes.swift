@@ -13,6 +13,8 @@ struct DownloadActivityAttributes: ActivityAttributes {
         /// Genel ilerleme 0...1
         var progress: Double
         var finished: Bool
+        /// İndirilemeyen şarkı sayısı
+        var failed: Int
         /// Yerelleştirilmiş durum metni ("İndiriliyor", "Tamamlandı")
         var status: String
     }
