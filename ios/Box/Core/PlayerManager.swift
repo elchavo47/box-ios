@@ -1043,6 +1043,8 @@ final class PlayerManager: ObservableObject {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: clock.currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackRate) : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: Double(playbackRate),
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyIsLiveStream: false,
         ]
 
         if !track.album.isEmpty {
