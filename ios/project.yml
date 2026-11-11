@@ -18,7 +18,11 @@ targets:
     platform: iOS
     sources:
       - path: Box
+      - path: Shared
     scheme: {}
+    dependencies:
+      - target: BoxActivity
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aydworks.box
@@ -30,6 +34,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: NO
         CODE_SIGN_STYLE: Automatic
+        PROVISIONING_PROFILE_SPECIFIER: ${BOX_APP_PROFILE}
     entitlements:
       path: Box/Box.entitlements
       properties:
@@ -47,6 +52,7 @@ targets:
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio]
+        NSSupportsLiveActivities: true
         CADisableMinimumFrameDurationOnPhone: true
         UIFileSharingEnabled: true
         NSFaceIDUsageDescription: Kilitli klasörü Face ID ile açmak için kullanılır.
@@ -87,3 +93,28 @@ targets:
             UTTypeConformsTo: [public.json, public.data]
             UTTypeTagSpecification:
               public.filename-extension: [boxbackup]
+
+  BoxActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: BoxActivity
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aydworks.box.activity
+        PRODUCT_NAME: BoxActivity
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Automatic
+        PROVISIONING_PROFILE_SPECIFIER: ${BOX_EXT_PROFILE}
+        ENABLE_PREVIEWS: NO
+    info:
+      path: BoxActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Box
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

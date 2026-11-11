@@ -4,7 +4,8 @@ Uygulamaya yeni yetenek (Apple ile giriş, bildirim) eklenince eski profil
 geçersiz olur. Bu betik her derlemede imza sertifikasıyla eşleşen yeni bir
 profil üretir; böylece profili elle indirip GitHub'a koymak gerekmez.
 
-Kullanım: refresh_profile.py <bundle_id> <sertifika_seri_no> <çıktı.mobileprovision>
+Kullanım: refresh_profile.py <sertifika_seri_no> <çıktı_klasörü> <bundle_id>...
+Her bundle için <klasör>/<bundle_id>.mobileprovision yazar.
 Ortam: APPSTORE_KEY_ID, APPSTORE_ISSUER_ID, APPSTORE_KEY_PATH
 """
 import base64
@@ -56,16 +57,26 @@ def norm_serial(s: str) -> str:
     return s.strip().upper().lstrip("0")
 
 
+def ensure_bundle(identifier: str) -> str:
+    """Bundle ID'yi bulur; yoksa oluşturur (eklenti için ilk derlemede gerekir)."""
+    found = call("GET", f"/bundleIds?filter[identifier]={identifier}&limit=200")["data"]
+    found = [b for b in found if b["attributes"]["identifier"] == identifier]
+    if found:
+        return found[0]["id"]
+    created = call("POST", "/bundleIds", {
+        "data": {
+            "type": "bundleIds",
+            "attributes": {"identifier": identifier, "name": "Box " + identifier.split(".")[-1].title(), "platform": "IOS"},
+        }
+    })
+    print(f"Bundle ID oluşturuldu: {identifier}")
+    return created["data"]["id"]
+
+
 def main():
     global AUTH
-    bundle, serial, out = sys.argv[1], norm_serial(sys.argv[2]), sys.argv[3]
+    serial, out_dir, bundles = norm_serial(sys.argv[1]), sys.argv[2], sys.argv[3:]
     AUTH = token()
-
-    ids = call("GET", f"/bundleIds?filter[identifier]={bundle}&limit=200")["data"]
-    ids = [b for b in ids if b["attributes"]["identifier"] == bundle]
-    if not ids:
-        raise SystemExit(f"Bundle ID bulunamadı: {bundle}")
-    bundle_id = ids[0]["id"]
 
     certs = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=200")["data"]
     match = [c for c in certs if norm_serial(c["attributes"].get("serialNumber", "")) == serial]
@@ -74,26 +85,29 @@ def main():
     cert_id = match[0]["id"]
 
     # Önceki derlemelerin oluşturduğu profilleri temizle (aynı ad tekrar kullanılamıyor).
-    old = call("GET", f"/profiles?filter[profileType]=IOS_APP_STORE&limit=200")["data"]
+    old = call("GET", "/profiles?filter[profileType]=IOS_APP_STORE&limit=200")["data"]
     for p in old:
         if p["attributes"]["name"].startswith(PREFIX):
             call("DELETE", f"/profiles/{p['id']}")
 
-    name = f"{PREFIX} {time.strftime('%Y%m%d%H%M%S')}"
-    created = call("POST", "/profiles", {
-        "data": {
-            "type": "profiles",
-            "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
-            "relationships": {
-                "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
-                "certificates": {"data": [{"type": "certificates", "id": cert_id}]},
-            },
-        }
-    })
-    content = created["data"]["attributes"]["profileContent"]
-    with open(out, "wb") as f:
-        f.write(base64.b64decode(content))
-    print(f"Yeni profil oluşturuldu: {name}")
+    stamp = time.strftime('%Y%m%d%H%M%S')
+    for bundle in bundles:
+        bundle_id = ensure_bundle(bundle)
+        name = f"{PREFIX} {stamp} {bundle.split('.')[-1]}"
+        created = call("POST", "/profiles", {
+            "data": {
+                "type": "profiles",
+                "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
+                "relationships": {
+                    "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
+                    "certificates": {"data": [{"type": "certificates", "id": cert_id}]},
+                },
+            }
+        })
+        content = created["data"]["attributes"]["profileContent"]
+        with open(os.path.join(out_dir, bundle + ".mobileprovision"), "wb") as f:
+            f.write(base64.b64decode(content))
+        print(f"Yeni profil oluşturuldu: {name}")
 
 
 if __name__ == "__main__":

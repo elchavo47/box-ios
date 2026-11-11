@@ -7,6 +7,7 @@ struct BoxApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var player = PlayerManager()
     @StateObject private var downloads = DownloadManager()
+    private let downloadActivity = DownloadActivityController()
     @StateObject private var history = SearchHistory()
     @StateObject private var server = ServerState()
     @StateObject private var router = AppRouter()
@@ -57,6 +58,7 @@ struct BoxApp: App {
                 .tint(.accent)
                 .task {
                     downloads.attach(library: library, auth: auth)
+                    downloadActivity.bind(to: downloads)
                     stream.attach(auth: auth)
                     player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
                     player.resolveRemote = { [weak stream] result in

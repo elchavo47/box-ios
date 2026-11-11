@@ -14,6 +14,7 @@ jobs:
 
     env:
       APP_ID: com.aydworks.box
+      EXT_ID: com.aydworks.box.activity
 
     steps:
       - name: Checkout source
@@ -107,26 +108,39 @@ jobs:
             SERIAL="$(openssl pkcs12 -legacy -in "$RUNNER_TEMP/distribution.p12" -clcerts -nokeys -passin pass:"$P12_PASS" 2>/dev/null | openssl x509 -noout -serial 2>/dev/null | cut -d= -f2)"
           fi
           python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet --user pyjwt cryptography
-          FRESH="$RUNNER_TEMP/box-fresh.mobileprovision"
-          if [ -n "$SERIAL" ] && python3 .github/scripts/refresh_profile.py "$APP_ID" "$SERIAL" "$FRESH"; then
-            PLIST="$RUNNER_TEMP/box-fresh.plist"
-            security cms -D -i "$FRESH" > "$PLIST"
-            UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PLIST")"
-            NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PLIST")"
-            cp "$FRESH" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
-            echo "IOS_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
-            echo "IOS_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
-            echo "Yeni profil kullanılıyor: $NAME"
-            /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$PLIST" | grep -E "applesignin|aps-environment" || true
+          FRESH_DIR="$RUNNER_TEMP/fresh"
+          mkdir -p "$FRESH_DIR"
+          if [ -n "$SERIAL" ] && python3 .github/scripts/refresh_profile.py "$SERIAL" "$FRESH_DIR" "$APP_ID" "$EXT_ID"; then
+            for B in "$APP_ID" "$EXT_ID"; do
+              PLIST="$FRESH_DIR/$B.plist"
+              security cms -D -i "$FRESH_DIR/$B.mobileprovision" > "$PLIST"
+              UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PLIST")"
+              NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PLIST")"
+              cp "$FRESH_DIR/$B.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+              if [ "$B" = "$APP_ID" ]; then
+                echo "IOS_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+                echo "IOS_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+                /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$PLIST" | grep -E "applesignin|aps-environment" || true
+              else
+                echo "IOS_EXT_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+                echo "IOS_EXT_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+              fi
+              echo "Yeni profil kullanılıyor: $NAME"
+            done
           else
-            echo "::warning title=Profil::Yeni profil oluşturulamadı, secret'taki profil kullanılıyor."
+            echo "::error title=Profil::Uygulama ve Live Activity eklentisi için profil oluşturulamadı (App Store Connect API anahtarının yetkisini kontrol et)."
+            exit 1
           fi
           rm -f "$APPSTORE_KEY_PATH"
 
       - name: Create signed archive
         working-directory: ios
+        env:
+          BOX_APP_PROFILE: ${{ env.IOS_PROFILE_NAME }}
+          BOX_EXT_PROFILE: ${{ env.IOS_EXT_PROFILE_NAME }}
         run: |
           set -euo pipefail
+          xcodegen generate
 
           xcodebuild archive \
             -project Box.xcodeproj \
@@ -138,7 +152,6 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
 
       - name: Export App Store IPA
@@ -166,6 +179,8 @@ jobs:
             <dict>
               <key>$APP_ID</key>
               <string>$IOS_PROFILE_UUID</string>
+              <key>$EXT_ID</key>
+              <string>$IOS_EXT_PROFILE_UUID</string>
             </dict>
             <key>manageAppVersionAndBuildNumber</key>
             <false/>
@@ -234,6 +249,9 @@ jobs:
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$IOS_PROFILE_UUID.mobileprovision"
           fi
           security delete-keychain "$RUNNER_TEMP/box-signing.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/asc-key.p8" "$RUNNER_TEMP/box-fresh.mobileprovision" "$RUNNER_TEMP/box-fresh.plist"
+          if [ -n "${IOS_EXT_PROFILE_UUID:-}" ]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$IOS_EXT_PROFILE_UUID.mobileprovision"
+          fi
+          rm -f "$RUNNER_TEMP/asc-key.p8"; rm -rf "$RUNNER_TEMP/fresh"
           rm -f "$RUNNER_TEMP/distribution.p12" "$RUNNER_TEMP/box.mobileprovision" \
                 "$RUNNER_TEMP/box-profile.plist" "$RUNNER_TEMP/BoxExportOptions.plist"
