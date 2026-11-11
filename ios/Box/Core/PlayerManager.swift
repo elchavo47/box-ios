@@ -137,10 +137,6 @@ final class PlayerManager: ObservableObject {
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
-        // Kilit ekranı / Denetim Merkezi bilgisini yalnızca biz yazarız. Sessiz video oynatıcısı (ve ses oynatıcısı)
-        // kendiliğinden yazarsa bilgiyi boşaltıp "Oynatılmıyor" gösterebilir.
-        player.automaticallyUpdatesNowPlayingInfoCenter = false
-        videoPlayer.automaticallyUpdatesNowPlayingInfoCenter = false
         videoPlayer.isMuted = true
         videoPlayer.automaticallyWaitsToMinimizeStalling = false
         configureAudioSession()
