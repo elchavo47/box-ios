@@ -299,17 +299,17 @@ private struct ProfileView: View {
             hero
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
 
             statsStrip
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
 
             premiumCard
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 14, trailing: 0))
 
             Section {
                 NavigationLink {
@@ -567,12 +567,11 @@ private struct ProfileView: View {
             planBadge
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
+        .padding(.top, 6)
+        .padding(.bottom, 14)
         .background(
-            LinearGradient(colors: [Color.accent.opacity(user.premium ? 0.22 : 0.10), Color.clear], startPoint: .top, endPoint: .bottom)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            RadialGradient(colors: [Color.accent.opacity(user.premium ? 0.28 : 0.14), Color.clear], center: .init(x: 0.5, y: 0.3), startRadius: 0, endRadius: 230)
         )
-        .padding(.horizontal, 16)
     }
 
     private var statsStrip: some View {
