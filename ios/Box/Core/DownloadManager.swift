@@ -67,8 +67,9 @@ final class DownloadManager: ObservableObject {
 
     private var pending: [SearchResult] = []
     private var running = 0
-    /// Şarkı çalarken indirme tek tek ilerler, böylece çalma isteği sunucuda sıra beklemez.
-    private var maxConcurrent: Int { isPlaybackActive() ? 1 : 2 }
+    /// Her şarkının sunucuda hazırlanması birkaç saniye sürer; birden çok şarkıyı aynı anda hazırlatmak toplu indirmeyi hızlandırır.
+    /// Şarkı çalarken sayı düşük tutulur, böylece çalma isteği sunucuda sıra beklemez.
+    private var maxConcurrent: Int { isPlaybackActive() ? 2 : 4 }
     var isPlaybackActive: () -> Bool = { false }
     /// Hız sınırı (429) hatasında sunucunun istediği bekleme süresi.
     private var retryAfter: [String: TimeInterval] = [:]
@@ -130,7 +131,7 @@ final class DownloadManager: ObservableObject {
                 if !(await copyFromStreamCache(next)) {
                     await run(next)
                     // Şarkı çalıyorsa indirmeler arasında kısa ara ver; sunucu çalma isteğine yetişsin.
-                    if isPlaybackActive() { try? await Task.sleep(nanoseconds: 1_500_000_000) }
+                    if isPlaybackActive() { try? await Task.sleep(nanoseconds: 500_000_000) }
                 }
                 running -= 1
                 pump()
