@@ -623,8 +623,16 @@ final class LibraryStore: ObservableObject {
 
     func setDownloadedPath(_ path: String, for videoID: String) {
         videoPaths[videoID] = path
-        Self.save(videoPaths, to: videoPathsFile)
+        // Toplu indirmede her şarkıda diske yazmak ana iş parçacığını yoruyordu; yazmayı birleştir.
+        videoPathsSaveTask?.cancel()
+        videoPathsSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            Self.save(self.videoPaths, to: self.videoPathsFile)
+        }
     }
+
+    private var videoPathsSaveTask: Task<Void, Never>?
 
     /// YouTube listesini Box listesi olarak kaydeder (indirilmemiş şarkılar internetten çalar).
     @discardableResult

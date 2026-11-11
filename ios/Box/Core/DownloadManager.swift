@@ -230,6 +230,9 @@ final class DownloadManager: ObservableObject {
             let tempFile = try await FileDownloader.download(from: url) { [weak self] progress in
                 Task { @MainActor in
                     guard let self, self.items[id]?.state.isActive == true else { return }
+                    // Aynı anda birkaç indirme var; her küçük ilerlemeyi arayüze yansıtmak tüm şarkı satırlarını
+                    // sürekli yeniden çizdirip kasma yapıyordu. Yüzde 4'lük adımlarla bildir.
+                    if case .downloading(let last)? = self.items[id]?.state, progress < 1, abs(progress - last) < 0.04 { return }
                     self.update(id, .downloading(progress))
                 }
             }
