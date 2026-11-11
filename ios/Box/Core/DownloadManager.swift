@@ -209,11 +209,14 @@ final class DownloadManager: ObservableObject {
     }
 
     private func attemptDownload(_ result: SearchResult) async -> Bool {
-        guard let token = auth?.token, let library else {
+        guard let token = auth?.token, library != nil else {
             retryable[result.id] = false
             update(result.id, .failed(L("Oturum bulunamadı.")))
             return false
         }
+
+        // Kapak, indirme sürerken paralel hazırlansın (sıra beklemesin).
+        let artworkTask = Task { await Self.fetchArtwork(result) }
 
         do {
             let link: DownloadLinkResponse = try await APIClient.shared.send(
@@ -243,34 +246,14 @@ final class DownloadManager: ObservableObject {
                 return false
             }
             update(id, .processing)
-
-            let folder = library.documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-            let baseName = FileService.sanitize(result.title)
-            let destination = FileService.uniqueURL(for: baseName + ".m4a", in: folder)
-
-            let artwork = await Self.fetchArtwork(result)
-            let tagged = await Self.writeMetadata(
-                source: tempFile,
-                destination: destination,
-                title: result.title,
-                artist: result.channel,
-                artwork: artwork
-            )
-
-            if !tagged {
-                try FileManager.default.moveItem(at: tempFile, to: destination)
-            } else {
-                try? FileManager.default.removeItem(at: tempFile)
+            // Etiket yazma ve kitaplığa ekleme ayrı ilerler: indirme hattı (slot) hemen boşalır, sıradaki şarkı beklemeden başlar.
+            finishing += 1
+            Task { [weak self] in
+                guard let self else { return }
+                await self.finish(result, tempFile: tempFile, artwork: await artworkTask.value)
+                self.finishing -= 1
+                if self.pending.isEmpty && self.running <= 1 && self.finishing == 0 { Haptics.success() }
             }
-
-            await library.addFile(destination)
-            let path = library.relativePath(for: destination)
-            library.setDownloadedPath(path, for: id)
-            update(id, .done(path))
-            onFinished?(result, path)
-            if pending.isEmpty && running <= 1 { Haptics.success() }
             return true
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? L("İndirme başarısız oldu.")
@@ -284,6 +267,34 @@ final class DownloadManager: ObservableObject {
             update(result.id, .failed(message))
             return false
         }
+    }
+
+    private var finishing = 0
+
+    /// İnen dosyaya başlık/sanatçı/kapak yazar, indirilenler klasörüne taşır ve kitaplığa ekler.
+    private func finish(_ result: SearchResult, tempFile: URL, artwork: Data?) async {
+        guard let library else { try? FileManager.default.removeItem(at: tempFile); return }
+        let id = result.id
+        let folder = library.documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = FileService.uniqueURL(for: FileService.sanitize(result.title) + ".m4a", in: folder)
+        let tagged = await Self.writeMetadata(source: tempFile, destination: destination, title: result.title, artist: result.channel, artwork: artwork)
+        do {
+            if !tagged {
+                try FileManager.default.moveItem(at: tempFile, to: destination)
+            } else {
+                try? FileManager.default.removeItem(at: tempFile)
+            }
+        } catch {
+            retryable[id] = true
+            update(id, .failed(L("İndirme başarısız oldu.")))
+            return
+        }
+        await library.addFile(destination)
+        let path = library.relativePath(for: destination)
+        library.setDownloadedPath(path, for: id)
+        update(id, .done(path))
+        onFinished?(result, path)
     }
 
     // MARK: - Kapak ve etiket

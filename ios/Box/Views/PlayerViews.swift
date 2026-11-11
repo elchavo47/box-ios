@@ -110,6 +110,65 @@ private struct MiniProgress: View {
     }
 }
 
+/// Kapak görseli ve yatay kaydırma hareketi kendi görünümünde durur: sürükleme sırasında her karede
+/// tüm oynatma ekranı (arka plan, düğmeler, süre çubuğu) yeniden hesaplanmasın.
+private struct SwipeArtwork: View {
+    @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var library: LibraryStore
+    let track: Track
+    let side: CGFloat
+
+    @State private var swipeX: CGFloat = 0
+    @State private var heartPop = 0
+
+    var body: some View {
+        ZStack {
+            ArtworkView(url: track.url, size: side, cornerRadius: 10, fallback: track.artworkFallback)
+            // İnternetten çalan şarkıda dosyada kapak yok: oynatıcının indirdiği yüksek kaliteli
+            // (bantsız, 900 px) kapağı göster; küçük resim gerilip bulanık görünmesin.
+            if track.isRemote, player.current?.id == track.id, let hq = player.currentArtwork {
+                Image(uiImage: hq)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: side, height: side)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: player.currentArtwork)
+            .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
+            .scaleEffect(player.isPlaying ? 1 : 0.9)
+            .animation(.spring(response: 0.45, dampingFraction: 0.78), value: player.isPlaying)
+            .offset(x: swipeX)
+            .opacity(1 - min(abs(swipeX) / 400, 0.5))
+            .id(track.id)
+            .transition(.opacity)
+            .contentShape(Rectangle())
+            // Yatay kaydırma: sonraki / önceki. Dikey çekişi sistemin kapatma hareketine bırakır.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                        swipeX = value.translation.width
+                    }
+                    .onEnded { value in
+                        if abs(value.translation.width) > abs(value.translation.height) * 1.4 {
+                            if value.translation.width < -90 { player.next(); Haptics.tap() }
+                            else if value.translation.width > 90 { player.previous(); Haptics.tap() }
+                        }
+                        if swipeX != 0 { withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 } }
+                    }
+            )
+            .overlay { HeartPop(trigger: heartPop) }
+            .onTapGesture(count: 2) {
+                if !library.isFavorite(track) { library.toggleFavorite(track) }
+                Haptics.success()
+                heartPop += 1
+            }
+    }
+}
+
 // MARK: - Tam ekran oynatıcı
 
 struct FullPlayerView: View {
@@ -125,9 +184,7 @@ struct FullPlayerView: View {
     @State private var showLyrics = false
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
-    @State private var heartPop = 0
     @EnvironmentObject private var settings: AppSettings
-    @State private var swipeX: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -277,50 +334,7 @@ struct FullPlayerView: View {
     }
 
     private func artwork(_ track: Track, side: CGFloat) -> some View {
-        ZStack {
-            ArtworkView(url: track.url, size: side, cornerRadius: 10, fallback: track.artworkFallback)
-            // İnternetten çalan şarkıda dosyada kapak yok: oynatıcının indirdiği yüksek kaliteli
-            // (bantsız, 900 px) kapağı göster; küçük resim gerilip bulanık görünmesin.
-            if track.isRemote, player.current?.id == track.id, let hq = player.currentArtwork {
-                Image(uiImage: hq)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: side, height: side)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.25), value: player.currentArtwork)
-            .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
-            .scaleEffect(player.isPlaying ? 1 : 0.9)
-            .animation(.spring(response: 0.45, dampingFraction: 0.78), value: player.isPlaying)
-            .offset(x: swipeX)
-            .opacity(1 - min(abs(swipeX) / 400, 0.5))
-            .id(track.id)
-            .transition(.opacity)
-            .contentShape(Rectangle())
-            // Yatay kaydırma: sonraki / önceki. Dikey çekişi sistemin kapatma hareketine bırakır.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 18)
-                    .onChanged { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
-                        swipeX = value.translation.width
-                    }
-                    .onEnded { value in
-                        if abs(value.translation.width) > abs(value.translation.height) * 1.4 {
-                            if value.translation.width < -90 { player.next(); Haptics.tap() }
-                            else if value.translation.width > 90 { player.previous(); Haptics.tap() }
-                        }
-                        if swipeX != 0 { withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { swipeX = 0 } }
-                    }
-            )
-            .overlay { HeartPop(trigger: heartPop) }
-            .onTapGesture(count: 2) {
-                if !library.isFavorite(track) { library.toggleFavorite(track) }
-                Haptics.success()
-                heartPop += 1
-            }
+        SwipeArtwork(track: track, side: side)
     }
 
     private func titleRow(_ track: Track) -> some View {
