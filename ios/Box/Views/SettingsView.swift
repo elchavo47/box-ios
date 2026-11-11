@@ -5,6 +5,8 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var router: AppRouter
 
     @State private var backupURL: URL?
     @State private var showRestore = false
@@ -88,6 +90,25 @@ struct SettingsView: View {
                         }
                         .tint(.accent)
                     }
+                    if auth.has(.download) {
+                        Toggle(isOn: $settings.autoDownloadListened) {
+                            Label(L("Dinlediklerini Wi‑Fi'da otomatik indir"), systemImage: "arrow.down.circle")
+                        }
+                        .tint(.accent)
+                        Toggle(isOn: $settings.autoDownloadLikes) {
+                            Label(L("Beğendiklerini otomatik indir"), systemImage: "heart.circle")
+                        }
+                        .tint(.accent)
+                        if !library.undownloadedFavorites.isEmpty {
+                            Button {
+                                let list = library.undownloadedFavorites
+                                downloads.download(all: list)
+                                router.show(L("{0} şarkı indirmeye eklendi", list.count), icon: "arrow.down.circle.fill")
+                            } label: {
+                                Label(L("Beğenilenleri şimdi indir ({0})", library.undownloadedFavorites.count), systemImage: "heart.fill")
+                            }
+                        }
+                    }
                     if auth.has(.search) {
                         Toggle(isOn: $settings.searchSuggestions) {
                             Label(L("Arama önerileri"), systemImage: "text.magnifyingglass")
@@ -97,7 +118,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("İndirme ve arama"))
                 } footer: {
-                    Text(L("Mobil veride bekleyen indirmeler Wi‑Fi'a bağlanınca kendiliğinden başlar."))
+                    Text(L("Otomatik indirme dinlediğin şarkıyı yeniden indirmez; önbellekten kitaplığına kaydeder. \"Sadece Wi‑Fi'da indir\" açıksa mobil veride bekleyen indirmeler Wi‑Fi'a bağlanınca başlar."))
                 }
                 .listRowBackground(Color.boxSurface2)
             }
@@ -220,6 +241,8 @@ struct StorageView: View {
 
     @State private var cacheSize: Int64 = 0
     @State private var deleteTarget: Track?
+    @State private var showClearDownloads = false
+    @EnvironmentObject private var router: AppRouter
 
     private var downloadsSize: Int64 { library.downloadedTracks.reduce(0) { $0 + $1.fileSize } }
 
@@ -232,7 +255,12 @@ struct StorageView: View {
 
             Section(L("Özet")) {
                 row(L("Kitaplık"), Formatters.bytes(library.totalSize), L("{0} şarkı", library.tracks.count), icon: "music.note")
-                row(L("İndirilenler"), Formatters.bytes(downloadsSize), L("{0} şarkı", library.downloadedTracks.count), icon: "arrow.down.circle")
+                HStack {
+                    row(L("İndirilenler"), Formatters.bytes(downloadsSize), L("{0} şarkı", library.downloadedTracks.count), icon: "arrow.down.circle")
+                    Button(L("Temizle"), role: .destructive) { showClearDownloads = true }
+                        .font(.footnote.weight(.semibold))
+                        .disabled(library.downloadedTracks.isEmpty)
+                }
                 HStack {
                     row(L("Dinleme önbelleği"), Formatters.bytes(cacheSize), L("Kitaplıkta görünmez"), icon: "icloud")
                     Button(L("Temizle")) {
@@ -276,6 +304,17 @@ struct StorageView: View {
         .navigationTitle(L("Depolama"))
         .navigationBarTitleDisplayMode(.inline)
         .task { cacheSize = stream.totalSize }
+        .boxConfirm(
+            L("Tüm indirilenler silinsin mi?"),
+            isPresented: $showClearDownloads,
+            icon: "trash",
+            message: L("{0} şarkı ({1}) bu cihazdan silinir. Listelerin ve beğenilerin kalır; şarkılar internetten çalmaya devam eder.", library.downloadedTracks.count, Formatters.bytes(downloadsSize)),
+            confirmTitle: L("Hepsini sil")
+        ) {
+            if player.current?.relativePath.hasPrefix(AppConfig.downloadsFolderName + "/") == true { player.stop() }
+            let count = library.clearDownloads()
+            router.show(L("{0} şarkı silindi", count), icon: "trash.fill")
+        }
         .boxConfirm(
             deleteTarget.map { L("\"{0}\" silinsin mi?", $0.title) } ?? "",
             isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),

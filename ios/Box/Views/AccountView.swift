@@ -296,47 +296,20 @@ private struct ProfileView: View {
 
     var body: some View {
         List {
-            Section {
-                HStack(spacing: 16) {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        ZStack(alignment: .bottomTrailing) {
-                            UserAvatar(user: user, size: 68)
-                                .overlay {
-                                    if uploading { ProgressView().tint(.white) }
-                                }
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.black)
-                                .frame(width: 24, height: 24)
-                                .background(Circle().fill(Color.white))
-                                .overlay(Circle().stroke(Color.boxSurface2, lineWidth: 2))
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("Profil fotoğrafını değiştir"))
+            hero
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(user.name)
-                            .font(.system(size: 20, weight: .bold))
-                        Text(user.email)
-                            .font(.subheadline)
-                            .foregroundColor(.boxSecondaryText)
-                        planBadge
-                    }
-                }
-                .padding(.vertical, 6)
+            statsStrip
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
 
-                if user.avatarURL != nil {
-                    Button(role: .destructive) {
-                        Task {
-                            do { try await auth.removeAvatar() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
-                        }
-                    } label: {
-                        Label(L("Profil fotoğrafını kaldır"), systemImage: "person.crop.circle.badge.minus")
-                    }
-                }
-            }
-            .listRowBackground(Color.boxSurface2)
+            premiumCard
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
 
             Section {
                 NavigationLink {
@@ -345,10 +318,47 @@ private struct ProfileView: View {
                     Label(L("Ayarlar"), systemImage: "gearshape")
                 }
                 notificationsRow
+                NavigationLink {
+                    StorageView()
+                } label: {
+                    HStack {
+                        Label(L("Depolama"), systemImage: "internaldrive")
+                        Spacer()
+                        Text(Formatters.bytes(library.totalSize + cacheSize)).foregroundColor(.boxSecondaryText)
+                    }
+                }
+                Button {
+                    library.requestSync(immediately: true)
+                } label: {
+                    HStack {
+                        Label(L("Hesaba kaydet"), systemImage: "arrow.triangle.2.circlepath.icloud")
+                        Spacer()
+                        switch library.syncStatus {
+                        case .syncing: ProgressView().tint(.white)
+                        case .failed: Image(systemName: "exclamationmark.icloud").foregroundColor(.orange)
+                        case .idle: Image(systemName: "checkmark.icloud").foregroundColor(.accent)
+                        }
+                    }
+                }
+            } header: {
+                Text(L("Genel"))
+            } footer: {
+                Text(syncFooter)
             }
             .listRowBackground(Color.boxSurface2)
 
             Section {
+                Button {
+                    newName = user.name
+                    showRename = true
+                } label: {
+                    Label(L("İsmi değiştir"), systemImage: "pencil")
+                }
+                NavigationLink {
+                    DevicesView()
+                } label: {
+                    Label(L("Cihazlarım"), systemImage: "iphone.gen3")
+                }
                 if user.appleLinked == true {
                     HStack {
                         Label(L("Apple ile giriş"), systemImage: "apple.logo")
@@ -374,120 +384,27 @@ private struct ProfileView: View {
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                 }
             } header: {
-                Text(L("Giriş yöntemi"))
+                Text(L("Hesap ve güvenlik"))
             } footer: {
                 Text(user.appleLinked == true
                      ? (user.hasPassword == false ? L("Bu hesap Apple ile açıldı.") : L("E-posta ve şifrenle ya da Apple ile giriş yapabilirsin."))
-                     : L("Bağlarsan bir dahaki sefere şifre yazmadan Apple ile girersin."))
+                     : L("Apple'ı bağlarsan bir dahaki sefere şifre yazmadan girersin."))
             }
             .listRowBackground(Color.boxSurface2)
 
-            Section {
-                Button { showPremium = true } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.black)
-                            .frame(width: 30, height: 30)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accent))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Box Premium").foregroundColor(.white)
-                            Text(premiumRowSubtitle).font(.caption).foregroundColor(.boxSecondaryText)
-                        }
-                        Spacer()
-                        if !user.premium {
-                            Text(L("Premium'a geç"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Capsule().fill(Color.accent))
-                        } else {
-                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(.boxTertiaryText)
-                        }
-                    }
-                }
-            }
-            .listRowBackground(Color.boxSurface2)
-
-            if user.premium, let quota = auth.quota {
-                Section(L("Bugünkü kullanım")) {
-                    stat(L("İndirme"), quota.downloadsLimit > 0 ? "\(quota.downloadsUsed) / \(quota.downloadsLimit)" : "\(quota.downloadsUsed)", icon: "arrow.down.circle")
-                    stat(L("Arama"), quota.searchesLimit > 0 ? "\(quota.searchesUsed) / \(quota.searchesLimit)" : "\(quota.searchesUsed)", icon: "magnifyingglass")
+            if let error = player.lastStreamError, user.premium {
+                Section(L("Son akış hatası")) {
+                    Text(error).font(.caption).foregroundColor(.boxSecondaryText).textSelection(.enabled)
                 }
                 .listRowBackground(Color.boxSurface2)
             }
 
             Section {
-                stat(L("Şarkı"), "\(library.tracks.count)", icon: "music.note")
-                stat(L("Çalma listesi"), "\(library.playlists.count)", icon: "music.note.list")
-                stat(L("Beğenilen"), "\(library.favorites.count)", icon: "heart.fill")
-                stat(L("Kullanılan alan"), Formatters.bytes(library.totalSize), icon: "internaldrive")
-                Button {
-                    library.requestSync(immediately: true)
-                } label: {
-                    HStack {
-                        Label(L("Hesaba kaydet"), systemImage: "arrow.triangle.2.circlepath.icloud")
-                        Spacer()
-                        switch library.syncStatus {
-                        case .syncing: ProgressView().tint(.white)
-                        case .failed: Image(systemName: "exclamationmark.icloud").foregroundColor(.orange)
-                        case .idle: Image(systemName: "checkmark.icloud").foregroundColor(.accent)
-                        }
-                    }
-                }
-            } header: {
-                Text(L("Kitaplığın"))
-            } footer: {
-                Text(syncFooter)
-            }
-            .listRowBackground(Color.boxSurface2)
-
-            if user.premium {
-                Section {
-                    HStack {
-                        Label(L("Dinleme önbelleği"), systemImage: "icloud.and.arrow.down")
-                        Spacer()
-                        Text(Formatters.bytes(cacheSize)).foregroundColor(.boxSecondaryText)
-                    }
-                    Button {
-                        stream.clear()
-                        cacheSize = 0
-                    } label: {
-                        Label(L("Önbelleği temizle"), systemImage: "trash")
-                    }
-                    .disabled(cacheSize == 0)
-                    if let error = player.lastStreamError {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(L("Son akış hatası")).font(.footnote.weight(.semibold))
-                            Text(error).font(.caption).foregroundColor(.boxSecondaryText).textSelection(.enabled)
-                        }
-                    }
-                } footer: {
-                    Text(L("İndirmeden dinlediğin şarkılar tekrar beklememen için burada tutulur, kitaplıkta görünmez. Yer azalınca en eskileri kendiliğinden silinir."))
-                }
-                .listRowBackground(Color.boxSurface2)
-            }
-
-            Section(L("Hesap")) {
-                Button {
-                    newName = user.name
-                    showRename = true
-                } label: {
-                    Label(L("İsmi değiştir"), systemImage: "pencil")
-                }
-
-                NavigationLink {
-                    DevicesView()
-                } label: {
-                    Label(L("Cihazlarım"), systemImage: "iphone.gen3")
-                }
-
                 Button {
                     showLogoutConfirm = true
                 } label: {
                     Label(L("Çıkış yap"), systemImage: "rectangle.portrait.and.arrow.right")
                 }
-
                 Button(role: .destructive) {
                     deletePassword = ""
                     showDelete = true
@@ -511,6 +428,7 @@ private struct ProfileView: View {
             }
             .listRowBackground(Color.clear)
         }
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .onChange(of: photoItem) { item in
             guard let item else { return }
@@ -598,6 +516,159 @@ private struct ProfileView: View {
             Button(L("Tamam"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Üst bölüm
+
+    private var hero: some View {
+        VStack(spacing: 14) {
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                ZStack(alignment: .bottomTrailing) {
+                    UserAvatar(user: user, size: 96)
+                        .overlay {
+                            if uploading { ProgressView().tint(.white) }
+                        }
+                        .overlay(
+                            Circle()
+                                .stroke(user.premium ? Color.accent : Color.boxStroke, lineWidth: 2.5)
+                                .padding(-4)
+                        )
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.black)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.white))
+                        .overlay(Circle().stroke(Color.boxSurface, lineWidth: 3))
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("Profil fotoğrafını değiştir"))
+            .contextMenu {
+                if user.avatarURL != nil {
+                    Button(role: .destructive) {
+                        Task {
+                            do { try await auth.removeAvatar() } catch { errorMessage = (error as? LocalizedError)?.errorDescription }
+                        }
+                    } label: {
+                        Label(L("Profil fotoğrafını kaldır"), systemImage: "person.crop.circle.badge.minus")
+                    }
+                }
+            }
+
+            VStack(spacing: 4) {
+                Text(user.name)
+                    .font(.system(size: 24, weight: .bold))
+                    .multilineTextAlignment(.center)
+                Text(user.email)
+                    .font(.subheadline)
+                    .foregroundColor(.boxSecondaryText)
+            }
+            planBadge
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(
+            LinearGradient(colors: [Color.accent.opacity(user.premium ? 0.22 : 0.10), Color.clear], startPoint: .top, endPoint: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        )
+        .padding(.horizontal, 16)
+    }
+
+    private var statsStrip: some View {
+        HStack(spacing: 10) {
+            statTile("\(library.tracks.count)", L("Şarkı"), icon: "music.note")
+            statTile("\(library.playlists.count)", L("Liste"), icon: "music.note.list")
+            statTile("\(library.favorites.count)", L("Beğeni"), icon: "heart.fill")
+        }
+    }
+
+    private func statTile(_ value: String, _ title: String, icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.accent)
+            Text(value)
+                .font(.system(size: 22, weight: .bold))
+                .monospacedDigit()
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.boxSecondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.boxSurface2))
+    }
+
+    @ViewBuilder
+    private var premiumCard: some View {
+        Button { showPremium = true } label: {
+            if user.premium {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.black)
+                            .frame(width: 34, height: 34)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.accent))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Box Premium").font(.system(size: 17, weight: .bold)).foregroundColor(.white)
+                            Text(premiumRowSubtitle).font(.caption).foregroundColor(.boxSecondaryText)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(.boxTertiaryText)
+                    }
+                    if let quota = auth.quota {
+                        VStack(spacing: 10) {
+                            usageBar(L("İndirme"), used: quota.downloadsUsed, limit: quota.downloadsLimit)
+                            usageBar(L("Arama"), used: quota.searchesUsed, limit: quota.searchesLimit)
+                        }
+                    }
+                }
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.boxSurface2))
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.black)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("Premium'a geç")).font(.system(size: 17, weight: .bold)).foregroundColor(.black)
+                        Text(premiumRowSubtitle).font(.caption).foregroundColor(.black.opacity(0.7)).multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundColor(.black.opacity(0.6))
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(LinearGradient(colors: [Color.accent, Color.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                )
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func usageBar(_ title: String, used: Int, limit: Int) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title).font(.footnote).foregroundColor(.boxSecondaryText)
+                Spacer()
+                Text(limit > 0 ? "\(used) / \(limit)" : "\(used)")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundColor(.white)
+            }
+            if limit > 0 {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule()
+                            .fill(used >= limit ? Color.orange : Color.accent)
+                            .frame(width: proxy.size.width * min(1, CGFloat(used) / CGFloat(max(limit, 1))))
+                    }
+                }
+                .frame(height: 6)
+            }
         }
     }
 

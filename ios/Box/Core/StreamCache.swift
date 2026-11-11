@@ -147,7 +147,7 @@ final class StreamCache: ObservableObject {
 
     /// Sıradaki şarkıyı arka planda hazırlar.
     func prefetch(_ result: SearchResult) {
-        guard !isCached(result.id), tasks[result.id] == nil else { return }
+        guard !isCached(result.id), tasks[result.id] == nil, !downloadsBusy() else { return }
         Task { _ = try? await resolve(result) }
     }
 

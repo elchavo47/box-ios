@@ -18,6 +18,7 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var stream: StreamCache
     @Environment(\.dismiss) private var dismiss
 
@@ -282,7 +283,13 @@ struct PlaylistDetailView: View {
             confirmTitle: L("Listeyi sil")
         ) {
             if case .playlist(let id) = source {
-                library.deletePlaylist(id)
+                if let removed = library.deletePlaylistUndoable(id) {
+                    let store = library
+                    router.show(L("Liste silindi"), icon: "trash.fill", actionTitle: L("Geri al")) {
+                        store.restorePlaylist(removed)
+                        Haptics.success()
+                    }
+                }
                 dismiss()
             }
         }

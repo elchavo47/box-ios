@@ -459,7 +459,7 @@ struct SearchView: View {
     private func submit(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if auth.has(.playlist), trimmed.contains("list="), trimmed.lowercased().contains("youtu") {
+        if auth.has(.playlist), (trimmed.contains("list=") && trimmed.lowercased().contains("youtu")) || trimmed.lowercased().contains("open.spotify.com/playlist/") {
             importLink = trimmed
             showImport = true
             query = ""

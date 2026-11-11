@@ -280,6 +280,9 @@ struct PlaylistImportView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var saved = false
+    /// Spotify listesi eşleştirilirken ilerleme (0…1) ve bulunamayan şarkı sayısı.
+    @State private var matchProgress: Double?
+    @State private var notFound = 0
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -295,7 +298,7 @@ struct PlaylistImportView: View {
                 .padding(16)
             }
             .background(Color.boxSurface.ignoresSafeArea())
-            .navigationTitle(L("YouTube listesi"))
+            .navigationTitle(L("Liste içe aktar"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -308,7 +311,7 @@ struct PlaylistImportView: View {
             if !initialLink.isEmpty, link.isEmpty {
                 link = initialLink
                 Task { await fetch() }
-            } else if link.isEmpty, let clip = UIPasteboard.general.string, clip.contains("list=") {
+            } else if link.isEmpty, let clip = UIPasteboard.general.string, clip.contains("list=") || clip.contains("open.spotify.com/") {
                 link = clip
             }
         }
@@ -316,13 +319,13 @@ struct PlaylistImportView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L("YouTube veya YouTube Music'teki bir çalma listesinin bağlantısını yapıştır. Liste Box'a eklenir; şarkıları indirmeden dinleyebilir ya da tek dokunuşla hepsini indirebilirsin."))
+            Text(L("YouTube, YouTube Music ya da Spotify'daki herkese açık bir çalma listesinin bağlantısını yapıştır. Liste Box'a eklenir; şarkıları indirmeden dinleyebilir ya da tek dokunuşla hepsini indirebilirsin."))
                 .font(.subheadline)
                 .foregroundColor(.boxSecondaryText)
 
             HStack(spacing: 10) {
                 Image(systemName: "link").foregroundColor(.boxSecondaryText)
-                TextField("https://youtube.com/playlist?list=…", text: $link)
+                TextField("youtube.com/playlist?list=… / open.spotify.com/playlist/…", text: $link)
                     .focused($focused)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
@@ -345,7 +348,13 @@ struct PlaylistImportView: View {
             Button {
                 Task { await fetch() }
             } label: {
-                if loading { ProgressView().tint(.black) } else { Text(L("Listeyi getir")) }
+                if let matchProgress {
+                    Text(L("Şarkılar eşleştiriliyor… %{0}", Int(matchProgress * 100)))
+                } else if loading {
+                    ProgressView().tint(.black)
+                } else {
+                    Text(L("Listeyi getir"))
+                }
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty || loading)
@@ -354,6 +363,7 @@ struct PlaylistImportView: View {
                 Label(L("YouTube uygulamasında listeyi aç › Paylaş › Bağlantıyı kopyala"), systemImage: "1.circle")
                 Label(L("Box'a dön, bağlantı kendiliğinden gelir"), systemImage: "2.circle")
                 Label(L("Gizli listeler ve otomatik \"Mix\" listeleri desteklenmez"), systemImage: "info.circle")
+                Label(L("Spotify: Listeyi aç › ••• › Paylaş › Bağlantıyı kopyala (liste herkese açık olmalı, ilk ~100 şarkı alınır)"), systemImage: "music.note.list")
             }
             .font(.footnote)
             .foregroundColor(.boxSecondaryText)
@@ -375,6 +385,9 @@ struct PlaylistImportView: View {
                     Text(L("{0} • {1} şarkı", list.channel, list.items.count)).font(.subheadline).foregroundColor(.boxSecondaryText)
                     if missing.count < list.items.count {
                         Text(L("{0} tanesi zaten kitaplığında", list.items.count - missing.count)).font(.footnote).foregroundColor(.accent)
+                    }
+                    if notFound > 0 {
+                        Text(L("{0} şarkı YouTube Music'te bulunamadı", notFound)).font(.footnote).foregroundColor(.orange)
                     }
                 }
             }
@@ -436,7 +449,11 @@ struct PlaylistImportView: View {
         focused = false
         loading = true
         error = nil
-        defer { loading = false }
+        defer { loading = false; matchProgress = nil }
+        if text.lowercased().contains("spotify") {
+            await fetchSpotify(text, token: token)
+            return
+        }
         do {
             let response: PlaylistResponse = try await APIClient.shared.send("playlist", query: ["url": text], token: token)
             if response.playlist.items.isEmpty {
@@ -444,6 +461,61 @@ struct PlaylistImportView: View {
             } else {
                 playlist = response.playlist
             }
+        } catch {
+            self.error = (error as? LocalizedError)?.errorDescription ?? L("Liste alınamadı.")
+        }
+    }
+
+    private struct SpotifyResponse: Decodable {
+        struct Track: Decodable { let title: String; let artist: String; let duration: Int }
+        struct Playlist: Decodable { let title: String; let owner: String; let tracks: [Track] }
+        let playlist: Playlist
+    }
+
+    private struct MatchReply: Decodable {
+        let results: [SearchResult?]
+    }
+
+    /// Spotify listesi: şarkı adlarını sunucudan al, 25'erli gruplarla YouTube Music'te eşleştir.
+    private func fetchSpotify(_ text: String, token: String) async {
+        guard auth.has(.match) else {
+            error = L("Spotify listesi aktarmak hesabında kapalı.")
+            return
+        }
+        do {
+            let response: SpotifyResponse = try await APIClient.shared.send("spotify", query: ["url": text], token: token)
+            let tracks = response.playlist.tracks
+            var found: [SearchResult] = []
+            var seen = Set<String>()
+            var missed = 0
+            matchProgress = 0
+            for start in stride(from: 0, to: tracks.count, by: 25) {
+                let chunk = Array(tracks[start..<min(start + 25, tracks.count)])
+                let body: [String: Any] = ["items": chunk.map { ["title": $0.title, "artist": $0.artist, "duration": $0.duration] as [String: Any] }]
+                do {
+                    let reply: MatchReply = try await APIClient.shared.send("match", method: "POST", body: body, token: token)
+                    for index in chunk.indices {
+                        if index < reply.results.count, let result = reply.results[index] {
+                            if seen.insert(result.id).inserted { found.append(result) }
+                        } else {
+                            missed += 1
+                        }
+                    }
+                } catch {
+                    // Hız sınırı gibi bir hata: o ana kadar bulunanlarla devam et, kalanını bulunamadı say.
+                    missed += tracks.count - start
+                    if found.isEmpty { throw error }
+                    break
+                }
+                matchProgress = Double(min(start + 25, tracks.count)) / Double(max(tracks.count, 1))
+            }
+            if found.isEmpty {
+                error = L("Listedeki şarkılar YouTube Music'te bulunamadı.")
+                return
+            }
+            notFound = missed
+            let owner = response.playlist.owner
+            playlist = YouTubePlaylist(id: "", title: response.playlist.title, channel: owner.isEmpty ? "Spotify" : owner, thumbnail: nil, items: found)
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? L("Liste alınamadı.")
         }

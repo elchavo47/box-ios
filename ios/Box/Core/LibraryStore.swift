@@ -57,6 +57,10 @@ final class LibraryStore: ObservableObject {
 
     /// İnternet şarkıları (indirilmemiş) yalnızca premium'da görünür ve çalınır.
     /// Kapalıyken son çalınanlar, beğeniler, listeler vb. yalnızca cihazdaki dosyaları gösterir.
+    /// İnternet şarkısı "dinlendi" sayılınca / beğenilince çağrılır (otomatik indirme için).
+    var onRemoteListened: ((SearchResult) -> Void)?
+    var onRemoteLiked: ((SearchResult) -> Void)?
+
     var allowsRemote = false {
         didSet {
             guard allowsRemote != oldValue else { return }
@@ -390,6 +394,7 @@ final class LibraryStore: ObservableObject {
                 listen.counted = true
                 playCounts[track.relativePath, default: 0] += 1
                 saveHistory()
+                if let remote = track.remote { onRemoteListened?(remote) }
             }
             currentListen = listen
         }
@@ -624,13 +629,14 @@ final class LibraryStore: ObservableObject {
     /// YouTube listesini Box listesi olarak kaydeder (indirilmemiş şarkılar internetten çalar).
     @discardableResult
     func importPlaylist(_ list: YouTubePlaylist) -> Playlist {
-        if let index = playlists.firstIndex(where: { $0.sourceID == list.id }) {
+        // Kimliği boş liste (ör. Spotify'dan aktarılan) YouTube'dan yenilenemez: kaynak kaydı tutulmaz.
+        if !list.id.isEmpty, let index = playlists.firstIndex(where: { $0.sourceID == list.id }) {
             playlists[index].remote = list.items
             playlists[index].name = list.title
             savePlaylists()
             return playlists[index]
         }
-        let playlist = Playlist(name: list.title, remote: list.items, sourceID: list.id)
+        let playlist = Playlist(name: list.title, remote: list.items, sourceID: list.id.isEmpty ? nil : list.id)
         playlists.append(playlist)
         savePlaylists()
         return playlist
@@ -782,8 +788,58 @@ final class LibraryStore: ObservableObject {
             favorites.remove(track.relativePath)
         } else {
             favorites.insert(track.relativePath)
+            if let remote = track.remote { onRemoteLiked?(remote) }
         }
         saveFavorites()
+    }
+
+    /// Radyo için: tekrar önerilmemesi gereken video kimlikleri (sıradakiler, çalınanlar, kitaplıktaki indirilenler)
+    /// ve çeşitlilik için son şarkıya ek 2 tohum (sıradan/geçmişten farklı sanatçılar, rastgele).
+    func radioContext(last: Track, queue: [Track]) -> (exclude: [String], seeds: [Track]) {
+        var ids: [String] = []
+        var seen = Set<String>()
+        func add(_ id: String?) { if let id, seen.insert(id).inserted { ids.append(id) } }
+        func id(of track: Track) -> String? {
+            if let remote = track.remote { return remote.id }
+            return videoID(forPath: track.relativePath)
+        }
+        // Son eklenenler sona gitsin: sunucu son 200'ü alır.
+        for path in recentPaths.reversed() {
+            if path.hasPrefix("yt:") { add(String(path.dropFirst(3))) } else { add(videoID(forPath: path)) }
+        }
+        for track in queue { add(id(of: track)) }
+        add(id(of: last))
+
+        // Tohum adayları: sıradaki + son çalınan şarkılar; son şarkının sanatçısından farklı, birbirinden farklı sanatçılar.
+        let lastArtist = last.displayArtist.lowercased()
+        var pool = queue + recentlyPlayed.prefix(20)
+        pool.shuffle()
+        var artists: Set<String> = [lastArtist]
+        var seeds: [Track] = []
+        for track in pool {
+            let artist = track.displayArtist.lowercased()
+            if artist.isEmpty || artists.contains(artist) { continue }
+            artists.insert(artist)
+            seeds.append(track)
+            if seeds.count == 2 { break }
+        }
+        return (ids, seeds)
+    }
+
+    /// Beğenilen ama henüz indirilmemiş internet şarkıları.
+    var undownloadedFavorites: [SearchResult] {
+        favoriteTracks.compactMap { $0.isRemote ? $0.remote : nil }
+    }
+
+    /// İndirilenler klasöründeki tüm şarkıları siler; listelerdeki internet kayıtları kalır (internetten çalmaya devam eder).
+    @discardableResult
+    func clearDownloads() -> Int {
+        let list = downloadedTracks
+        for track in list { try? FileService.delete(track.url) }
+        let folder = documents.appendingPathComponent(AppConfig.downloadsFolderName, isDirectory: true)
+        pathDeleted(folder)
+        Task { await refresh() }
+        return list.count
     }
 
     // MARK: - Çalma listeleri
@@ -811,6 +867,37 @@ final class LibraryStore: ObservableObject {
     func deletePlaylist(_ id: UUID) {
         removeCover(for: id)
         playlists.removeAll { $0.id == id }
+        savePlaylists()
+    }
+
+    /// Silinen liste ("Geri al" için): liste, yeri ve kapak dosyası.
+    struct DeletedPlaylist {
+        let playlist: Playlist
+        let index: Int
+        let coverData: Data?
+    }
+
+    /// Listeyi siler ve geri alınabilmesi için bir kopyasını döner.
+    @discardableResult
+    func deletePlaylistUndoable(_ id: UUID) -> DeletedPlaylist? {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return nil }
+        let playlist = playlists[index]
+        var data: Data?
+        if let file = playlist.coverFile {
+            data = try? Data(contentsOf: coversDirectory.appendingPathComponent(file))
+        }
+        deletePlaylist(id)
+        return DeletedPlaylist(playlist: playlist, index: index, coverData: data)
+    }
+
+    /// Silinen listeyi aynı kimlik ve yerle geri koyar. Hesapta eşitlemede "yeniden eklendi" sayılır.
+    func restorePlaylist(_ deleted: DeletedPlaylist) {
+        guard !playlists.contains(where: { $0.id == deleted.playlist.id }) else { return }
+        if let file = deleted.playlist.coverFile, let data = deleted.coverData {
+            try? FileManager.default.createDirectory(at: coversDirectory, withIntermediateDirectories: true)
+            try? data.write(to: coversDirectory.appendingPathComponent(file), options: .atomic)
+        }
+        playlists.insert(deleted.playlist, at: min(deleted.index, playlists.count))
         savePlaylists()
     }
 

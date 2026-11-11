@@ -16,6 +16,7 @@ struct LibraryView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var router: AppRouter
     @State private var exportSelection: ExportSelection?
+    @State private var deleteTarget: Playlist?
 
     struct ExportSelection: Identifiable {
         let id = UUID()
@@ -32,6 +33,16 @@ struct LibraryView: View {
     @State private var newPlaylistName = ""
     @AppStorage("box.sort") private var sort: TrackSort = .title
     @State private var editMode: EditMode = .inactive
+
+    private func deleteWithUndo(_ id: UUID) {
+        guard let removed = library.deletePlaylistUndoable(id) else { return }
+        Haptics.soft()
+        let store = library
+        router.show(L("Liste silindi"), icon: "trash.fill", actionTitle: L("Geri al")) {
+            store.restorePlaylist(removed)
+            Haptics.success()
+        }
+    }
 
     enum LibSection: String, CaseIterable, Hashable {
         case playlists = "Listeler"
@@ -105,7 +116,7 @@ struct LibraryView: View {
                         Menu {
                             Button { showNewPlaylist = true } label: { Label(L("Yeni çalma listesi"), systemImage: "plus") }
                             if auth.has(.playlist) {
-                                Button { showImport = true } label: { Label(L("YouTube listesini içe aktar"), systemImage: "square.and.arrow.down.on.square") }
+                                Button { showImport = true } label: { Label(L("YouTube / Spotify listesi içe aktar"), systemImage: "square.and.arrow.down.on.square") }
                             }
                             Button { showListFile = true } label: { Label(L("Liste dosyası aç (.boxlist)"), systemImage: "doc.badge.plus") }
                             Button { exportSelection = ExportSelection(items: []) } label: { Label(L("Listeleri dışa aktar"), systemImage: "square.and.arrow.up") }
@@ -133,6 +144,15 @@ struct LibraryView: View {
             }
             .sheet(item: $exportSelection) { selection in
                 ListExportView(preselected: selection.items)
+            }
+            .boxConfirm(
+                deleteTarget.map { L("\"{0}\" silinsin mi?", $0.name) } ?? "",
+                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+                icon: "trash",
+                message: L("Şarkılar silinmez."),
+                confirmTitle: L("Listeyi sil")
+            ) {
+                if let target = deleteTarget { deleteWithUndo(target.id) }
             }
             .onChange(of: router.openPlaylist) { id in
                 guard let id else { return }
@@ -204,12 +224,13 @@ struct LibraryView: View {
             playlistRow(title: playlist.name, subtitle: playlistSubtitle(playlist, count: tracks.count), route: .playlist(playlist.id)) {
                 PlaylistArtwork(playlist: playlist, tracks: tracks, size: 56, cornerRadius: 0)
             }
-            .swipeActions {
-                Button(role: .destructive) {
-                    library.deletePlaylist(playlist.id)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    deleteTarget = playlist
                 } label: {
                     Label(L("Sil"), systemImage: "trash")
                 }
+                .tint(.red)
             }
             .swipeActions(edge: .leading) {
                 Button {

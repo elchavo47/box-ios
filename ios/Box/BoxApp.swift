@@ -67,7 +67,13 @@ struct BoxApp: App {
                         guard let stream else { throw APIError(message: L("Hazır değil."), status: 0) }
                         return try await stream.liveURL(result)
                     }
-                    player.prefetchRemote = { [weak stream] result in stream?.prepareLink(result) }
+                    player.prefetchRemote = { [weak stream] result in
+                        guard let stream else { return }
+                        // Her bağlantıda bağlantıyı hazırla; Wi‑Fi'da dosyanın kendisini de önceden indir (geçiş anında açılır).
+                        stream.prepareLink(result)
+                        let net = NetworkMonitor.shared
+                        if net.isOnline, !net.isExpensive { stream.prefetch(result) }
+                    }
                     player.videoURLFor = { [weak stream] id in
                         guard let stream else { throw APIError(message: L("Hazır değil."), status: 0) }
                         return try await stream.videoURL(id)
@@ -75,9 +81,10 @@ struct BoxApp: App {
                     player.videoIDFor = { [weak library] track in library?.videoID(forPath: track.relativePath) }
                     player.onStreamCached = { [weak stream] result, temp in stream?.store(result, temp: temp) }
                     player.onRemoteSeen = { [weak library] result in library?.remember(result) }
-                    player.radioProvider = { [weak feed, weak auth, weak library] track, exclude in
+                    player.radioProvider = { [weak feed, weak auth, weak library] track, known in
                         guard let feed, let auth, auth.has(.radio), let library else { return [] }
-                        let results = await feed.radio(for: track, exclude: exclude, token: auth.token)
+                        let (exclude, seeds) = library.radioContext(last: track, queue: known)
+                        let results = await feed.radio(for: track, exclude: exclude, seeds: seeds, token: auth.token)
                         return library.playable(results)
                     }
                     player.autoRadioEnabled = { [weak auth] in AppSettings.shared.autoRadio && auth?.has(.radio) == true }
@@ -98,6 +105,15 @@ struct BoxApp: App {
                     downloads.isPlaybackActive = { [weak player] in player?.isPlaying == true }
                     stream.downloadsBusy = { [weak downloads] in (downloads?.activeCount ?? 0) > 0 }
                     downloads.isAllowed = { [weak auth] in auth?.has(.download) == true }
+                    library.onRemoteListened = { [weak downloads, weak auth] result in
+                        guard AppSettings.shared.autoDownloadListened, auth?.has(.download) == true,
+                              NetworkMonitor.shared.isOnline, !NetworkMonitor.shared.isExpensive else { return }
+                        downloads?.download(result)
+                    }
+                    library.onRemoteLiked = { [weak downloads, weak auth] result in
+                        guard AppSettings.shared.autoDownloadLikes, auth?.has(.download) == true else { return }
+                        downloads?.download(result)
+                    }
                     downloads.onBlocked = { [weak router] in router?.show(L("İndirme hesabında kapalı."), icon: "lock.fill") }
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     PremiumStore.shared.start(auth: auth)
@@ -272,16 +288,35 @@ final class AppRouter: ObservableObject {
         let text: String
         var icon: String = "checkmark.circle.fill"
         var track: Track? = nil
+        /// Varsa baloncukta bir düğme gösterilir (ör. "Geri al").
+        var actionTitle: String? = nil
+        var action: (() -> Void)? = nil
+
+        static func == (lhs: Toast, rhs: Toast) -> Bool { lhs.id == rhs.id }
     }
 
     private var toastTask: Task<Void, Never>?
 
     /// Kısa bilgi baloncuğu (ör. "Listeye eklendi").
     func show(_ text: String, icon: String = "checkmark.circle.fill", track: Track? = nil) {
+        present(Toast(text: text, icon: icon, track: track), seconds: 2.2)
+    }
+
+    /// Düğmeli baloncuk (ör. silinen liste için "Geri al"); düğme için süre biraz daha uzundur.
+    func show(_ text: String, icon: String, actionTitle: String, seconds: Double = 6, action: @escaping () -> Void) {
+        present(Toast(text: text, icon: icon, actionTitle: actionTitle, action: action), seconds: seconds)
+    }
+
+    func dismissToast() {
         toastTask?.cancel()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = Toast(text: text, icon: icon, track: track) }
+        withAnimation(.easeIn(duration: 0.25)) { toast = nil }
+    }
+
+    private func present(_ value: Toast, seconds: Double) {
+        toastTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = value }
         toastTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             withAnimation(.easeIn(duration: 0.25)) { self.toast = nil }
         }

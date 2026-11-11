@@ -580,6 +580,7 @@ struct HeartPop: View {
 
 struct ToastView: View {
     let toast: AppRouter.Toast
+    var onAction: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 12) {
@@ -597,6 +598,17 @@ struct ToastView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
             Spacer(minLength: 0)
+            if let title = toast.actionTitle {
+                Button(action: onAction) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.accent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.accent.opacity(0.16)))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(10)
         .background(

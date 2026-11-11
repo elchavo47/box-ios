@@ -77,7 +77,8 @@ final class PlayerManager: ObservableObject {
     /// İnternet şarkısını hatırlamak için (geçmiş, beğeni, sıra).
     var onRemoteSeen: ((SearchResult) -> Void)?
     /// Sıra bitince benzer şarkılarla devam etmek için (otomatik radyo).
-    var radioProvider: ((Track, [String]) async -> [Track])?
+    /// (son şarkı, sırada bilinen şarkılar) → benzer şarkılar. Sıradakiler tekrar önerilmesin diye gönderilir.
+    var radioProvider: ((Track, [Track]) async -> [Track])?
     var autoRadioEnabled: () -> Bool = { false }
     /// Dinleme süresi (istatistik / Box Özeti için).
     var onListen: ((Track, Double) -> Void)?
@@ -217,7 +218,7 @@ final class PlayerManager: ObservableObject {
         guard let radioProvider, allowsRemote() else { return }
         radioLoading = true
         Task { @MainActor in
-            let more = await radioProvider(track, [track.remote?.id].compactMap { $0 })
+            let more = await radioProvider(track, [track])
             self.radioLoading = false
             if self.current?.id == track.id {
                 if let index = self.currentIndex {
@@ -589,7 +590,7 @@ final class PlayerManager: ObservableObject {
         } else if repeatMode == .off, autoRadioEnabled(), let radioProvider, let last = current {
             // Sıra bitti: benzer şarkılarla devam et.
             radioLoading = true
-            let known = queue.compactMap { $0.remote?.id }
+            let known = queue
             Task { @MainActor in
                 let more = await radioProvider(last, known)
                 self.radioLoading = false

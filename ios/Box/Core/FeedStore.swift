@@ -95,14 +95,17 @@ final class FeedStore: ObservableObject {
     }
 
     /// Bir şarkıya benzer şarkılar (radyo).
-    func radio(for track: Track, exclude: [String], token: String?) async -> [SearchResult] {
+    /// `seeds`: son şarkıya ek, radyoyu çeşitlendiren (en çok 2) başka şarkılar.
+    func radio(for track: Track, exclude: [String], seeds: [Track] = [], token: String?) async -> [SearchResult] {
         guard let token else { return [] }
         struct Response: Decodable { let results: [SearchResult] }
-        let response: Response? = try? await APIClient.shared.send(
-            "radio",
-            query: ["artist": track.displayArtist, "title": track.title, "exclude": exclude.suffix(80).joined(separator: ",")],
-            token: token
-        )
+        struct Seed: Encodable { let a: String; let t: String }
+        var query = ["artist": track.displayArtist, "title": track.title, "exclude": exclude.suffix(200).joined(separator: ",")]
+        let extra = seeds.prefix(2).map { Seed(a: $0.displayArtist, t: $0.title) }
+        if !extra.isEmpty, let data = try? JSONEncoder().encode(Array(extra)), let json = String(data: data, encoding: .utf8) {
+            query["seeds"] = json
+        }
+        let response: Response? = try? await APIClient.shared.send("radio", query: query, token: token)
         return response?.results ?? []
     }
 

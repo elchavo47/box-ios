@@ -8,6 +8,10 @@ final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
     @AppStorage("set.wifiOnlyDownloads") var wifiOnlyDownloads = false { willSet { objectWillChange.send() } }
+    /// Dinlenen internet şarkılarını Wi‑Fi'dayken kendiliğinden indir.
+    @AppStorage("set.autoDownloadListened") var autoDownloadListened = false { willSet { objectWillChange.send() } }
+    /// Beğenilen internet şarkılarını kendiliğinden indir.
+    @AppStorage("set.autoDownloadLikes") var autoDownloadLikes = false { willSet { objectWillChange.send() } }
     @AppStorage("set.crossfade") var crossfadeSeconds = 0.0 { willSet { objectWillChange.send() } }
     @AppStorage("set.autoRadio") var autoRadio = true { willSet { objectWillChange.send() } }
     /// Yalnızca premium kullanıcılar Tarayıcı sekmesini gizleyebilir.
@@ -59,7 +63,7 @@ struct EQSettings: Codable, Equatable {
 
 /// Ekolayzer hazır ayarları (32 Hz … 16 kHz, dB).
 enum EQPresetID: String, CaseIterable, Identifiable {
-    case flat, bass, bassBoost, vocal, pop, rock, electronic, hiphop, acoustic, classical, jazz, treble, night, speaker
+    case flat, bass, bassBoost, vocal, pop, rock, electronic, hiphop, acoustic, classical, jazz, treble, night, speaker, car
 
     var id: String { rawValue }
 
@@ -79,6 +83,7 @@ enum EQPresetID: String, CaseIterable, Identifiable {
         case .treble: return L("Tiz")
         case .night: return L("Gece (yumuşak)")
         case .speaker: return L("Küçük hoparlör")
+        case .car: return L("Araba")
         }
     }
 
@@ -98,6 +103,8 @@ enum EQPresetID: String, CaseIterable, Identifiable {
         case .treble: return [-1, -1, 0, 0, 0, 1, 2, 4, 5, 6]
         case .night: return [2, 2, 1, 0, 0, -1, -2, -3, -4, -4]
         case .speaker: return [-6, -4, 0, 3, 3, 2, 1, 1, 0, -1]
+        // Yol ve motor gürültüsü bası ve alt orta bandı bastırır: bası biraz öne al, çamurlu 250 Hz'i kıs, vokali ve tizi aç.
+        case .car: return [4, 4, 2, -2, -1, 1, 3, 4, 3, 2]
         }
     }
 }

@@ -87,13 +87,16 @@ struct RootView: View {
 
             if let toast = router.toast {
                 VStack {
-                    ToastView(toast: toast)
-                        .padding(.top, 8)
+                    ToastView(toast: toast) {
+                        toast.action?()
+                        router.dismissToast()
+                    }
+                    .padding(.top, 8)
                     Spacer()
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(4)
-                .allowsHitTesting(false)
+                .allowsHitTesting(toast.action != nil)
             }
 
             if let announcement = server.announcement, !showSplash {
