@@ -34,35 +34,6 @@ struct BoxApp: App {
         UINavigationBar.appearance().tintColor = .white
     }
 
-    /// Siri / Kısayollar komutunu çalıştırır. Uygulama yeni açıldıysa kitaplığın hazır olmasını kısa süre bekler.
-    @MainActor
-    private func perform(_ action: BoxAction) async {
-        var waited = 0
-        while library.tracks.isEmpty && library.playlists.isEmpty && waited < 20 {
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            waited += 1
-        }
-        switch action {
-        case .playFavorites:
-            let tracks = library.favoriteTracks
-            if tracks.isEmpty { router.show(L("Henüz beğendiğin şarkı yok."), icon: "heart") } else { player.play(tracks, startAt: 0) }
-        case .shuffleLibrary:
-            let tracks = library.tracks
-            if tracks.isEmpty { router.show(L("Kitaplığın boş."), icon: "music.note") } else { player.play(tracks, startAt: 0, shuffled: true) }
-        case .playPlaylist(let id):
-            guard let list = library.playlists.first(where: { $0.id.uuidString == id }) else {
-                router.show(L("Liste bulunamadı."), icon: "exclamationmark.triangle.fill")
-                return
-            }
-            let tracks = library.tracks(for: list)
-            if tracks.isEmpty { router.show(L("Bu liste boş."), icon: "music.note.list") } else { player.play(tracks, startAt: 0) }
-        case .togglePlayPause:
-            player.togglePlayPause()
-        case .nextTrack:
-            player.next()
-        }
-    }
-
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -85,9 +56,6 @@ struct BoxApp: App {
                 .preferredColorScheme(.dark)
                 .tint(.accent)
                 .task {
-                    IntentBridge.shared.handler = { action in
-                        Task { @MainActor in await self.perform(action) }
-                    }
                     downloads.attach(library: library, auth: auth)
                     stream.attach(auth: auth)
                     player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
@@ -265,6 +233,17 @@ struct BoxApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .boxShortcut)) { note in
                     guard let raw = note.object as? String, let action = BoxShortcutAction(rawValue: raw) else { return }
                     switch action {
+                    case .toggle: player.togglePlayPause()
+                    case .next: player.next()
+                    case .playlist:
+                        guard let id = note.userInfo?["id"] as? String,
+                              let list = library.playlists.first(where: { $0.id.uuidString == id }) else {
+                            router.show(L("Liste bulunamadı."), icon: "exclamationmark.triangle.fill")
+                            return
+                        }
+                        let tracks = library.tracks(for: list)
+                        if tracks.isEmpty { router.show(L("Bu liste boş."), icon: "music.note.list") }
+                        else { player.play(tracks, startAt: 0) }
                     case .favorites: player.play(library.favoriteTracks, startAt: 0, shuffled: true)
                     case .shuffle: player.play(library.tracks, startAt: 0, shuffled: true)
                     case .recent: player.play(library.recentlyPlayed, startAt: 0)
