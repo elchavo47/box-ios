@@ -120,10 +120,14 @@ struct LyricsSheet: View {
                                     if !selecting { selected = [] }
                                 }
                             } label: {
-                                Image(systemName: selecting ? "xmark" : "quote.bubble")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .frame(width: 38, height: 38)
-                                    .background(Circle().fill(Color.white.opacity(selecting ? 0.28 : 0.14)))
+                                HStack(spacing: 6) {
+                                    Image(systemName: selecting ? "xmark" : "square.and.arrow.up")
+                                    Text(selecting ? L("Vazgeç") : L("Söz kartı"))
+                                }
+                                .font(.system(size: 14, weight: .semibold))
+                                .padding(.horizontal, 14)
+                                .frame(height: 38)
+                                .background(Capsule().fill(Color.white.opacity(selecting ? 0.28 : 0.18)))
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(L("Söz kartı oluştur"))
