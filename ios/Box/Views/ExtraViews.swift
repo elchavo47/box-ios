@@ -93,6 +93,10 @@ struct LyricsSheet: View {
     @StateObject private var service = LyricsService.shared
     @State private var lyrics: Lyrics?
     @State private var loading = true
+    /// Söz kartı için satır seçme modu (en çok 5 satır).
+    @State private var selecting = false
+    @State private var selected: Set<Int> = []
+    @State private var showCard = false
 
     var body: some View {
         ZStack {
@@ -109,6 +113,21 @@ struct LyricsSheet: View {
                             Text(track.displayArtist).font(.system(size: 13)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
                         }
                         Spacer()
+                        if lyrics != nil {
+                            Button {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    selecting.toggle()
+                                    if !selecting { selected = [] }
+                                }
+                            } label: {
+                                Image(systemName: selecting ? "xmark" : "quote.bubble")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .frame(width: 38, height: 38)
+                                    .background(Circle().fill(Color.white.opacity(selecting ? 0.28 : 0.14)))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("Söz kartı oluştur"))
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -120,7 +139,23 @@ struct LyricsSheet: View {
                     ProgressView().tint(.white).frame(maxWidth: .infinity)
                     Spacer()
                 } else if let lyrics {
-                    LyricsBody(lyrics: lyrics, clock: player.clock) { player.seek(to: $0) }
+                    LyricsBody(lyrics: lyrics, clock: player.clock, selecting: selecting, selected: selected,
+                               onToggle: { id in
+                                   if selected.contains(id) { selected.remove(id) }
+                                   else if selected.count < 5 { selected.insert(id); Haptics.tap() }
+                               },
+                               onSeek: { player.seek(to: $0) })
+                    if selecting {
+                        Button {
+                            showCard = true
+                        } label: {
+                            Label(selected.isEmpty ? L("Kart için satır seç") : L("Kartı oluştur ({0})", selected.count), systemImage: "rectangle.portrait.on.rectangle.portrait")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(selected.isEmpty)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 16)
+                    }
                 } else {
                     Spacer()
                     VStack(spacing: 10) {
@@ -136,8 +171,22 @@ struct LyricsSheet: View {
             }
             .foregroundColor(.white)
         }
+        .sheet(isPresented: $showCard) {
+            if let track = player.current, let lyrics {
+                let texts = lyrics.lines.filter { selected.contains($0.id) }.map(\.text).filter { !$0.isEmpty }
+                LyricCardSheet(
+                    title: track.title,
+                    artist: track.displayArtist,
+                    lines: texts,
+                    color: player.artworkColor ?? UIColor(red: 0.12, green: 0.3, blue: 0.24, alpha: 1),
+                    artwork: player.currentArtwork
+                )
+            }
+        }
         .task(id: player.current?.id) {
             guard let track = player.current else { return }
+            selecting = false
+            selected = []
             loading = true
             lyrics = await service.lyrics(for: track)
             loading = false
@@ -148,6 +197,9 @@ struct LyricsSheet: View {
 private struct LyricsBody: View {
     let lyrics: Lyrics
     @ObservedObject var clock: PlaybackClock
+    let selecting: Bool
+    let selected: Set<Int>
+    let onToggle: (Int) -> Void
     let onSeek: (Double) -> Void
 
     private var activeIndex: Int? {
@@ -162,14 +214,25 @@ private struct LyricsBody: View {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(lyrics.lines) { line in
                         let active = line.id == activeIndex
+                        let picked = selected.contains(line.id)
                         Text(line.text.isEmpty ? " " : line.text)
                             .font(.system(size: lyrics.synced ? 26 : 20, weight: .bold))
-                            .foregroundColor(.white.opacity(!lyrics.synced || active ? 1 : 0.38))
+                            .foregroundColor(.white.opacity(selecting ? (picked ? 1 : 0.55) : (!lyrics.synced || active ? 1 : 0.38)))
+                            .padding(.horizontal, selecting ? 10 : 0)
+                            .padding(.vertical, selecting ? 6 : 0)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(picked ? 0.22 : 0))
+                            )
                             .scaleEffect(active ? 1.02 : 1, anchor: .leading)
                             .animation(.easeOut(duration: 0.25), value: active)
                             .id(line.id)
                             .onTapGesture {
-                                if let time = line.time { onSeek(time) }
+                                if selecting {
+                                    if !line.text.isEmpty { onToggle(line.id) }
+                                } else if let time = line.time {
+                                    onSeek(time)
+                                }
                             }
                     }
                     Text(lyrics.synced ? L("Sözler: lrclib.net") : L("Sözler: lrclib.net • senkron değil"))
