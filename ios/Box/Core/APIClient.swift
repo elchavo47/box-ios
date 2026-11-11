@@ -5,6 +5,8 @@ struct APIError: LocalizedError {
     let status: Int
     var maintenance = false
     var updateRequired = false
+    /// Sunucu `Retry-After` gönderdiyse (hız sınırı) beklenecek saniye; günlük kota gibi durumlarda nil.
+    var retryAfter: TimeInterval? = nil
 
     var errorDescription: String? { message }
 }
@@ -97,7 +99,8 @@ final class APIClient {
                 message: envelope?.error ?? L("Beklenmeyen bir hata oluştu ({0}).", status),
                 status: status,
                 maintenance: envelope?.maintenance == true,
-                updateRequired: envelope?.updateRequired == true
+                updateRequired: envelope?.updateRequired == true,
+                retryAfter: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap { TimeInterval($0) }
             )
             if error.maintenance || error.updateRequired {
                 await MainActor.run {

@@ -11,31 +11,62 @@ final class FeedStore: ObservableObject {
     private var loadedAt: Date?
     private var loadedSeeds: [String] = []
 
-    /// Dinleme geçmişine göre en çok dinlenen sanatçılar. Belirleyici olan dinleme sayısı ve son dinlenenler;
-    /// kitaplıkta çok dosyası olan ama dinlenmeyen sanatçı öne geçmesin diye dosya sayısının etkisi küçüktür.
+    /// Yayıncı / etiket / derleme kanalları gerçek sanatçı değildir; tohum olmasınlar.
+    private static let channelWords: Set<String> = [
+        "müzik", "muzik", "music", "records", "record", "plak", "production", "productions", "prodüksiyon",
+        "entertainment", "yapım", "yapim", "kanal", "channel", "tv", "radyo", "radio", "network"
+    ]
+
+    /// İnternet şarkısının "sanatçı"sı çoğu zaman kanal adıdır: "- Topic", VEVO, Official eklerini temizler,
+    /// yayıncı kanallarını (ör. "… Müzik") eler. Cihazdaki dosyaların etiketine dokunmaz.
+    static func seedName(_ raw: String, isRemote: Bool) -> String? {
+        var name = raw.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name != L("Bilinmeyen sanatçı") else { return nil }
+        guard isRemote else { return name }
+        for suffix in [" - Topic", "VEVO", " Official", " Resmi"] {
+            name = name.replacingOccurrences(of: suffix, with: "", options: .caseInsensitive)
+        }
+        name = name.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return nil }
+        let words = Set(name.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty })
+        return words.isDisjoint(with: channelWords) ? name : nil
+    }
+
+    /// Zevk puanı. Beğeni en güçlü sinyal, yeterince dinlenen şarkılar sonra gelir; hemen atlananlar puanı düşürür.
+    /// İnternetten dinlenen (indirilmemiş) şarkılar da sayılır.
     static func seeds(from library: LibraryStore) -> [String] {
         var score: [String: Int] = [:]
-        for track in library.tracks {
-            let name = track.displayArtist
-            guard name != L("Bilinmeyen sanatçı") else { continue }
-            score[name, default: 0] += 1 + (library.playCounts[track.relativePath] ?? 0) * 4
+        func add(_ track: Track, _ points: Int) {
+            guard let name = seedName(track.displayArtist, isRemote: track.isRemote) else { return }
+            score[name, default: 0] += points
         }
-        for (offset, track) in library.recentlyPlayed.prefix(20).enumerated() where track.displayArtist != L("Bilinmeyen sanatçı") {
-            score[track.displayArtist, default: 0] += (20 - offset) * 2
+        // Kitaplıktaki dosyalar: küçük bir taban puan.
+        for track in library.tracks { add(track, 1) }
+        // Yeterince dinlenen şarkılar (cihazdaki ve internetten dinlenen).
+        for (path, count) in library.playCounts where count > 0 {
+            if let track = library.resolve(path: path) { add(track, count * 4) }
+        }
+        // Beğeniler.
+        for track in library.favoriteTracks { add(track, 10) }
+        // Dinlemeden atlananlar.
+        for (path, skips) in library.skipCounts where skips > 0 {
+            if let track = library.resolve(path: path) { add(track, -skips * 3) }
+        }
+        for (offset, track) in library.recentlyPlayed.prefix(20).enumerated() {
+            // Hemen atlanıp bir daha dinlenmeyen şarkı "son dinlenen" olarak zevk puanı kazanmasın.
+            if (library.playCounts[track.relativePath] ?? 0) == 0, (library.skipCounts[track.relativePath] ?? 0) > 0 { continue }
+            add(track, (20 - offset) * 2)
         }
         // Kendi oluşturduğu ya da içe aktardığı listeler de tarzı gösterir.
         for playlist in library.playlists {
             for path in playlist.paths.prefix(200) {
-                guard let track = library.resolve(path: path), track.displayArtist != L("Bilinmeyen sanatçı") else { continue }
-                score[track.displayArtist, default: 0] += 2
+                if let track = library.resolve(path: path) { add(track, 2) }
             }
             for item in (playlist.remote ?? []).prefix(200) {
-                let name = item.channel.replacingOccurrences(of: " - Topic", with: "").trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { continue }
-                score[name, default: 0] += 2
+                if let name = seedName(item.channel, isRemote: true) { score[name, default: 0] += 2 }
             }
         }
-        return score.sorted { $0.value > $1.value }.prefix(5).map(\.key)
+        return score.filter { $0.value > 0 }.sorted { $0.value > $1.value }.prefix(5).map(\.key)
     }
 
     func load(token: String?, seeds: [String], force: Bool = false) async {

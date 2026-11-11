@@ -10,8 +10,8 @@ $week = $one('SELECT COALESCE(SUM(n),0) FROM error_daily WHERE day>=DATE_SUB(CUR
 $counts = array_column(q('SELECT status,COUNT(*) c FROM error_groups GROUP BY status')->fetchAll(), 'c', 'status');
 $where = $view === 'all' ? '' : 'WHERE g.status=' . db()->quote($view);
 $rows = q("SELECT g.*,(SELECT COALESCE(SUM(d.n),0) FROM error_daily d WHERE d.sig=g.sig AND d.day=CURDATE()) today,(SELECT COALESCE(SUM(d.n),0) FROM error_daily d WHERE d.sig=g.sig AND d.day>=DATE_SUB(CURDATE(),INTERVAL 6 DAY)) week FROM error_groups g $where ORDER BY g.status='open' DESC, g.last_seen DESC LIMIT 200")->fetchAll();
-$levelTone = ['Fatal' => 'bad', 'Exception' => 'bad', 'Error' => 'bad', 'Warning' => 'warn', 'Notice' => 'neutral', 'Deprecated' => 'neutral', 'Test' => 'info'];
-$levelName = ['Fatal' => 'Ölümcül', 'Exception' => 'İstisna', 'Error' => 'Hata', 'Warning' => 'Uyarı', 'Notice' => 'Not', 'Deprecated' => 'Eski kullanım', 'Test' => 'Deneme'];
+$levelTone = ['Fatal' => 'bad', 'Exception' => 'bad', 'Error' => 'bad', 'Warning' => 'warn', 'Notice' => 'neutral', 'Deprecated' => 'neutral', 'Test' => 'info', 'iOS' => 'bad'];
+$levelName = ['Fatal' => 'Ölümcül', 'Exception' => 'İstisna', 'Error' => 'Hata', 'Warning' => 'Uyarı', 'Notice' => 'Not', 'Deprecated' => 'Eski kullanım', 'Test' => 'Deneme', 'iOS' => 'iOS uygulaması'];
 $tg = function_exists('telegramConfigured') && telegramConfigured() && site('tg_alert_errors', '1') === '1';
 ?>
 <section class="kpis four">

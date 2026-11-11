@@ -67,7 +67,11 @@ final class DownloadManager: ObservableObject {
 
     private var pending: [SearchResult] = []
     private var running = 0
-    private let maxConcurrent = 2
+    /// Şarkı çalarken indirme tek tek ilerler, böylece çalma isteği sunucuda sıra beklemez.
+    private var maxConcurrent: Int { isPlaybackActive() ? 1 : 2 }
+    var isPlaybackActive: () -> Bool = { false }
+    /// Hız sınırı (429) hatasında sunucunun istediği bekleme süresi.
+    private var retryAfter: [String: TimeInterval] = [:]
     /// İndirme bitince çağrılır (ör. içe aktarılan listeye eklemek için).
     var onFinished: ((SearchResult, String) -> Void)?
 
@@ -125,6 +129,8 @@ final class DownloadManager: ObservableObject {
                 // Dinlemek için önbelleğe alınmışsa sunucuya gitmeden kopyala.
                 if !(await copyFromStreamCache(next)) {
                     await run(next)
+                    // Şarkı çalıyorsa indirmeler arasında kısa ara ver; sunucu çalma isteğine yetişsin.
+                    if isPlaybackActive() { try? await Task.sleep(nanoseconds: 1_500_000_000) }
                 }
                 running -= 1
                 pump()
@@ -177,7 +183,10 @@ final class DownloadManager: ObservableObject {
                   retryable[result.id] == true else { return }
             update(result.id, .preparing)
             let lower = message.lowercased()
-            let wait = lower.contains("çok fazla") || lower.contains("yoğun") ? max(delays[attempt], 30) : delays[attempt]
+            var wait = lower.contains("çok fazla") || lower.contains("yoğun") ? max(delays[attempt], 30) : delays[attempt]
+            // Mesaj metni dile göre değişir; sunucunun Retry-After değeri her dilde geçerli.
+            if let seconds = retryAfter[result.id] { wait = UInt64(min(max(seconds, 15), 90)) }
+            retryAfter[result.id] = nil
             try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
         }
     }
@@ -263,7 +272,11 @@ final class DownloadManager: ObservableObject {
             let message = (error as? LocalizedError)?.errorDescription ?? L("İndirme başarısız oldu.")
             let status = (error as? APIError)?.status ?? 0
             // Kota bitti / yetki yok / geçersiz video: tekrar denemenin anlamı yok.
-            retryable[result.id] = !(status == 400 || status == 401 || status == 403 || status == 404 || message.contains("Bugünlük"))
+            let retryAfterSeconds = (error as? APIError)?.retryAfter
+            retryAfter[result.id] = retryAfterSeconds
+            // 429 + Retry-After: geçici hız sınırı, beklenip denenir. 429 ama Retry-After yok: günlük kota doldu.
+            let quotaFull = status == 429 && retryAfterSeconds == nil
+            retryable[result.id] = !(status == 400 || status == 401 || status == 403 || status == 404 || quotaFull || message.contains("Bugünlük"))
             update(result.id, .failed(message))
             return false
         }

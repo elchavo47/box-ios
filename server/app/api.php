@@ -91,6 +91,35 @@ $str = function (string $key, int $max = 255): string {
 
 if ($route === 'ping') jsonOut(['ok' => true, 'service' => 'box', 'time' => time()]);
 
+// iOS uygulamasının MetricKit raporları (çökme, donma, aşırı CPU / disk yazma): panelde Hatalar sayfasına düşer
+// ve yeni bir tür olunca diğer hatalar gibi bildirim gider. Oturum gerekmez (çökme çıkış yapılmışken de olabilir).
+if ($route === 'diagnostics') {
+    $need('POST');
+    throttle('diag:' . clientIpHash(), 20, 3600);
+    $data = body(900 * 1024);
+    $kinds = ['crashDiagnostics' => 'Çökme', 'hangDiagnostics' => 'Donma', 'cpuExceptionDiagnostics' => 'Yüksek CPU', 'diskWriteExceptionDiagnostics' => 'Aşırı disk yazma'];
+    $saved = 0;
+    foreach ($kinds as $key => $label) {
+        $list = is_array($data[$key] ?? null) ? array_slice($data[$key], 0, 4) : [];
+        foreach ($list as $d) {
+            if (!is_array($d) || $saved >= 8) continue;
+            $meta = is_array($d['diagnosticMetaData'] ?? null) ? $d['diagnosticMetaData'] : [];
+            $ver = mb_substr((string)($meta['appVersion'] ?? '?'), 0, 20) . ' (' . mb_substr((string)($meta['appBuildVersion'] ?? '?'), 0, 20) . ')';
+            $info = [];
+            foreach (['exceptionType' => 'exc', 'signal' => 'sig'] as $field => $short) {
+                if (isset($meta[$field]) && is_scalar($meta[$field])) $info[] = $short . ' ' . $meta[$field];
+            }
+            if (isset($meta['terminationReason']) && is_string($meta['terminationReason'])) $info[] = mb_substr($meta['terminationReason'], 0, 120);
+            if (isset($meta['hangDuration']) && is_scalar($meta['hangDuration'])) $info[] = (string)$meta['hangDuration'];
+            $device = mb_substr((string)($meta['deviceType'] ?? ''), 0, 30) . ' ' . mb_substr((string)($meta['osVersion'] ?? ''), 0, 40);
+            $trace = trim($device) . "\n" . (json_encode($d['callStackTree'] ?? null, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '');
+            nbErrRecord('iOS', $label . ' · Box ' . $ver . ($info ? ' · ' . implode(' ', $info) : ''), 'ios-app', 0, $trace, true);
+            $saved++;
+        }
+    }
+    jsonOut(['ok' => true, 'saved' => $saved]);
+}
+
 if ($route === 'config') {
     jsonOut([
         'ok' => true,
@@ -508,7 +537,7 @@ switch ($route) {
         // İndirmeden dinleme: imzalı bağlantı verir, indirme kotasından düşmez.
         $u = boxApiUser();
         boxRequireFeature($u, 'stream');
-        throttle('stream:' . $u['id'], 30, 60);
+        throttle('stream:' . $u['id'], 60, 60);
         throttle('stream-day:' . $u['id'], 800, 86400);
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
@@ -526,11 +555,13 @@ switch ($route) {
         $videoId = isset($_GET['video_id']) && is_string($_GET['video_id']) ? $_GET['video_id'] : '';
         if (!preg_match(BOX_VIDEO_ID, $videoId)) jsonOut(['ok' => false, 'error' => 'Geçersiz video.'], 400);
         $limit = boxQuota($u)['downloads_limit'];
-        if ($limit > 0 && boxTodayDownloads((int)$u['id']) >= $limit) jsonOut(['ok' => false, 'error' => 'Bugünlük indirme hakkın doldu, yarın tekrar dene.'], 429);
+        // Aynı şarkı için son 10 dakikada verilmiş bağlantı varsa bu bir yeniden denemedir: ikinci kez sayılmaz.
+        $retry = (bool)q('SELECT 1 FROM downloads WHERE user_id=? AND video_id=? AND created_at>=DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1', [$u['id'], $videoId])->fetchColumn();
+        if (!$retry && $limit > 0 && boxTodayDownloads((int)$u['id']) >= $limit) jsonOut(['ok' => false, 'error' => 'Bugünlük indirme hakkın doldu, yarın tekrar dene.'], 429);
         try { $link = boxSignedDownload($videoId); }
         catch (RuntimeException $e) { jsonOut(['ok' => false, 'error' => $e->getMessage()], 503); }
         $title = isset($_GET['title']) && is_string($_GET['title']) ? mb_substr(trim($_GET['title']), 0, 255) : '';
-        q('INSERT INTO downloads(user_id,video_id,title) VALUES(?,?,?)', [$u['id'], $videoId, $title]);
+        if (!$retry) q('INSERT INTO downloads(user_id,video_id,title) VALUES(?,?,?)', [$u['id'], $videoId, $title]);
         jsonOut(['ok' => true, 'url' => $link['url'], 'expires_at' => $link['expires_at']]);
 }
 

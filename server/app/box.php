@@ -583,7 +583,15 @@ function boxFeed(array $artists): array {
     }
     $isSeed = function (array $r) use ($seeds): bool {
         $hay = boxNorm($r['channel'] . ' ' . $r['title']);
-        foreach (array_keys($seeds) as $k) if ($k !== '' && str_contains($hay, $k)) return true;
+        $words = ' ' . trim((string)preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($r['channel'] . ' ' . $r['title']))) . ' ';
+        foreach ($seeds as $k => $artist) {
+            if ($k === '') continue;
+            // Uzun adlar bitişik de eşleşir ("SezenAksuVEVO"); kısa adlar ("Sia") yalnızca tam kelime olarak,
+            // yoksa "Asia" gibi alakasız kelimelerin içinde de eşleşirdi.
+            if (mb_strlen($k) >= 5) { if (str_contains($hay, $k)) return true; continue; }
+            $w = trim((string)preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower((string)$artist)));
+            if ($w !== '' && str_contains($words, ' ' . $w . ' ')) return true;
+        }
         return false;
     };
     // Derleme / kesintisiz / "sequência" gibi birleştirme videoları öneriye girmez.

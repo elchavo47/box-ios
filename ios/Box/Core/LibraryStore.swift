@@ -11,7 +11,12 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var hasScanned = false
     /// Son çalınanlar (en yeni başta, en fazla 60).
     @Published private(set) var recentPaths: [String] = []
+    /// Şarkı yeterince dinlenince (≈30 sn ya da %30) artar; başlar başlamaz saymak atlananları da dinlenmiş gösteriyordu.
     @Published private(set) var playCounts: [String: Int] = [:]
+    /// 10 saniye dinlenmeden bırakılan şarkılar (önerilerde hafif olumsuz sinyal). Arayüzü yenilemesin diye yayınlanmaz.
+    private(set) var skipCounts: [String: Int] = [:]
+    /// Şu an çalan şarkının bu çalmadaki dinleme süresi.
+    private var currentListen: (path: String, seconds: Double, counted: Bool)?
     /// YouTube video kimliği → kitaplıktaki dosya yolu.
     @Published private(set) var videoPaths: [String: String] = [:] { didSet { rebuildVideoIndex() } }
     /// Dinlenen / beğenilen internet şarkılarının bilgileri ("yt:ID" → sonuç).
@@ -103,6 +108,8 @@ final class LibraryStore: ObservableObject {
     private struct History: Codable {
         var recent: [String]
         var counts: [String: Int]
+        /// Eski sürümlerde yok; opsiyonel olduğu için eski dosyalar sorunsuz okunur.
+        var skips: [String: Int]? = nil
     }
 
     init() {
@@ -130,6 +137,7 @@ final class LibraryStore: ObservableObject {
         if let history = Self.load(History.self, from: historyFile) {
             recentPaths = history.recent
             playCounts = history.counts
+            skipCounts = history.skips ?? [:]
         }
         canonicalizeFavorites()
         markSaved()
@@ -374,6 +382,17 @@ final class LibraryStore: ObservableObject {
 
     func addListen(_ track: Track, seconds: Double) {
         guard !track.isVaulted else { return }
+        // Dinleme sayısı şarkı yeterince dinlenince artar (kısa şarkılarda %30, en az 10 en çok 30 saniye).
+        if var listen = currentListen, listen.path == track.relativePath, !listen.counted {
+            listen.seconds += seconds
+            let needed = track.duration > 0 ? min(30, max(10, track.duration * 0.3)) : 30
+            if listen.seconds >= needed {
+                listen.counted = true
+                playCounts[track.relativePath, default: 0] += 1
+                saveHistory()
+            }
+            currentListen = listen
+        }
         let day = Self.dayKey(Date())
         stats.byDay[day, default: 0] += seconds
         stats.byArtist[track.displayArtist, default: 0] += seconds
@@ -662,7 +681,11 @@ final class LibraryStore: ObservableObject {
         recentPaths.removeAll { $0 == path }
         recentPaths.insert(path, at: 0)
         if recentPaths.count > 60 { recentPaths.removeLast(recentPaths.count - 60) }
-        playCounts[path, default: 0] += 1
+        // Önceki şarkı 10 saniye dinlenmeden bırakıldıysa "atlandı" say.
+        if let previous = currentListen, previous.path != path, !previous.counted, previous.seconds < 10 {
+            skipCounts[previous.path, default: 0] += 1
+        }
+        currentListen = (path: path, seconds: 0, counted: false)
         saveHistory()
     }
 
@@ -719,7 +742,7 @@ final class LibraryStore: ObservableObject {
     private var trackIndex: [String: Track] { trackByPath }
 
     private func saveHistory() {
-        Self.save(History(recent: recentPaths, counts: playCounts), to: historyFile)
+        Self.save(History(recent: recentPaths, counts: playCounts, skips: skipCounts), to: historyFile)
     }
 
     var totalSize: Int64 {

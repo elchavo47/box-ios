@@ -124,7 +124,11 @@ final class StreamCache: ObservableObject {
     }
 
     /// Listedeki ilk şarkıları VDS'de önceden hazırlatır (yt-dlp gecikmesi dokunmadan önce biter).
+    /// İndirme kuyruğu çalışırken ısıtma azaltılır (indirmeler sunucuyu zaten meşgul ediyor).
+    var downloadsBusy: () -> Bool = { false }
+
     func warm(_ results: [SearchResult], limit: Int = 6) {
+        let limit = downloadsBusy() ? min(limit, 2) : limit
         let now = Date()
         let targets = results.filter { !isCached($0.id) && (warmed[$0.id].map { now.timeIntervalSince($0) > 4 * 3600 } ?? true) }.prefix(limit)
         for result in targets {

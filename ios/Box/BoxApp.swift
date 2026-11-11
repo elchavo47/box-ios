@@ -95,10 +95,13 @@ struct BoxApp: App {
                     }
                     player.visualizer = { AppSettings.shared.visualizer }
                     downloads.network = network
+                    downloads.isPlaybackActive = { [weak player] in player?.isPlaying == true }
+                    stream.downloadsBusy = { [weak downloads] in (downloads?.activeCount ?? 0) > 0 }
                     downloads.isAllowed = { [weak auth] in auth?.has(.download) == true }
                     downloads.onBlocked = { [weak router] in router?.show(L("İndirme hesabında kapalı."), icon: "lock.fill") }
                     player.onListen = { [weak library] track, seconds in library?.addListen(track, seconds: seconds) }
                     PremiumStore.shared.start(auth: auth)
+                    DiagnosticsReporter.shared.start()
                     VaultStore.shared.onLock = { [weak player] in player?.dropVaultTracks() }
                     PushManager.shared.tokenProvider = { [weak auth] in auth?.token }
                     PushManager.shared.onOpen = { [weak router] target in
