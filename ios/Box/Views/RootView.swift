@@ -349,15 +349,15 @@ private struct UpdateRequiredView: View {
                 BoxMark(size: 72)
                 Text(L("Yeni sürüm hazır"))
                     .font(.title2.weight(.bold))
-                Text(L("Box'u kullanmaya devam etmek için uygulamayı TestFlight'tan güncelle."))
+                Text(L("Box'u kullanmaya devam etmek için uygulamayı App Store'dan güncelle."))
                     .font(.subheadline)
                     .foregroundColor(.boxSecondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 Button {
-                    if let url = URL(string: "itms-beta://") { UIApplication.shared.open(url) }
+                    if let url = URL(string: "itms-apps://apps.apple.com/app/id6824827061") { UIApplication.shared.open(url) }
                 } label: {
-                    Text(L("TestFlight'ı aç"))
+                    Text(L("App Store'u aç"))
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(width: 220)
