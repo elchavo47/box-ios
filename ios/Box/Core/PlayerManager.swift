@@ -1033,6 +1033,7 @@ final class PlayerManager: ObservableObject {
         guard let track = current else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             MPNowPlayingInfoCenter.default().playbackState = .stopped
+            WidgetBridge.shared.update(track: nil, playing: false, artwork: nil)
             return
         }
 
@@ -1057,5 +1058,6 @@ final class PlayerManager: ObservableObject {
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        WidgetBridge.shared.update(track: track, playing: isPlaying, artwork: currentArtwork)
     }
 }

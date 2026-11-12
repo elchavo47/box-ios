@@ -5,6 +5,7 @@ import WidgetKit
 @main
 struct BoxActivityBundle: WidgetBundle {
     var body: some Widget {
+        NowPlayingWidget()
         DownloadLiveActivity()
     }
 }

@@ -59,6 +59,7 @@ struct BoxApp: App {
                 .task {
                     downloads.attach(library: library, auth: auth)
                     downloadActivity.bind(to: downloads)
+                    WidgetBridge.shared.library = library
                     stream.attach(auth: auth)
                     player.onTrackStart = { [weak library] track in library?.recordPlay(track) }
                     player.resolveRemote = { [weak stream] result in
