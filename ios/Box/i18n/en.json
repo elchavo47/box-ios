@@ -784,5 +784,21 @@
 "Aramaya başla": "Start searching",
 "Bir çalma listesi içe aktarırsan ya da oluşturursan hemen hazırlanır.": "Import or create a playlist and it's ready right away.",
 "İndirme tamamlandı": "Download complete",
-"Söz kartı": "Lyric card"
+"Söz kartı": "Lyric card",
+"Seç": "Select",
+"Hepsini seç": "Select all",
+"Seçimi kaldır": "Deselect all",
+"Şarkı seç": "Select songs",
+"{0} seçili": "{0} selected",
+"{0} şarkı {1} listesine eklendi": "{0} songs added to {1}",
+"{0} şarkı sıraya eklendi": "{0} songs added to queue",
+"{0} şarkı silindi": "{0} songs deleted",
+"{0} şarkı silinsin mi?": "Delete {0} songs?",
+"Dosyalar cihazından silinir. Bu işlem geri alınamaz.": "The files will be removed from your device. This can't be undone.",
+"{0} şarkı indiriliyor": "Downloading {0} songs",
+"Listeden çıkar": "Remove from list",
+"Senin müziğin": "Your music",
+"dinleme": "plays",
+"En çok: {0}": "Most played: {0}",
+"Favori sanatçı: {0}": "Top artist: {0}"
 }
