@@ -28,6 +28,9 @@ struct PlaylistDetailView: View {
     @State private var shareURL: URL?
     @State private var showExport = false
     @State private var refreshError: String?
+    /// Toplu seçim
+    @State private var bulkMode = false
+    @State private var picked: Set<String> = []
 
     private var missing: [SearchResult] { tracks.compactMap(\.remote) }
     private var activeDownloads: Int { missing.filter { downloads.state(for: $0.id)?.isActive == true }.count }
@@ -42,6 +45,58 @@ struct PlaylistDetailView: View {
             return sum
         }
         return min(1, (Double(tracks.count - missing.count) + partial) / max(total, 1))
+    }
+
+    private func endBulk() {
+        bulkMode = false
+        picked = []
+    }
+
+    private var pickedTracks: [Track] { tracks.filter { picked.contains($0.id) } }
+
+    private var bulkBar: some View {
+        BulkBar(count: picked.count, total: tracks.count) {
+            if picked.count == tracks.count { picked = [] } else { picked = Set(tracks.map(\.id)) }
+            Haptics.tap()
+        } actions: {
+            BulkAddToPlaylist(tracks: pickedTracks) { endBulk() }
+            let remotes = pickedTracks.compactMap(\.remote).filter { downloads.state(for: $0.id)?.isActive != true }
+            if !remotes.isEmpty && auth.has(.download) {
+                Button {
+                    if let left = auth.quota?.downloadsLeft, remotes.count > left {
+                        quotaPrompt = remotes
+                    } else {
+                        downloads.download(all: remotes)
+                        Haptics.success()
+                        router.show(L("{0} şarkı indiriliyor", remotes.count), icon: "arrow.down.circle")
+                    }
+                    endBulk()
+                } label: {
+                    BulkActionLabel(title: L("İndir"), icon: "arrow.down.circle")
+                }
+            }
+            if source.isEditable || source == .favorites {
+                Button {
+                    removePicked()
+                } label: {
+                    BulkActionLabel(title: L("Listeden çıkar"), icon: "minus.circle", destructive: true)
+                }
+            }
+        }
+    }
+
+    private func removePicked() {
+        switch source {
+        case .favorites:
+            for track in pickedTracks { library.toggleFavorite(track) }
+        case .playlist(let id):
+            let offsets = IndexSet(tracks.indices.filter { picked.contains(tracks[$0].id) })
+            library.removeTracks(at: offsets, from: id)
+        case .tracks:
+            break
+        }
+        Haptics.soft()
+        endBulk()
     }
 
     private func downloadAll() {
@@ -133,10 +188,16 @@ struct PlaylistDetailView: View {
                 }
 
                 ForEach(tracks) { track in
-                    TrackRow(track: track)
+                    SelectableRow(selecting: bulkMode, isSelected: picked.contains(track.id)) {
+                        TrackRow(track: track)
+                    }
                         .listRowBackground(Color.clear)
                         .onTapGesture {
-                            player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
+                            if bulkMode {
+                                if picked.contains(track.id) { picked.remove(track.id) } else { picked.insert(track.id); Haptics.tap() }
+                            } else {
+                                player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
+                            }
                         }
                 }
                 .onDelete(perform: source.isEditable || source == .favorites ? delete : nil)
@@ -148,6 +209,9 @@ struct PlaylistDetailView: View {
         .boxScreenBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if bulkMode { bulkBar }
+        }
         .task(id: missing.count) { stream.warm(missing, limit: 8) }
         .task { if auth.isPremium { await auth.refresh() } }
         .sheet(item: Binding(get: { shareURL.map(ShareItem.init) }, set: { shareURL = $0?.url })) { item in
@@ -190,6 +254,13 @@ struct PlaylistDetailView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !tracks.isEmpty {
+                    Button(bulkMode ? L("Bitti") : L("Seç")) {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            if bulkMode { endBulk() } else { bulkMode = true }
+                        }
+                    }
+                }
                 if !tracks.isEmpty, !source.isEditable {
                     Button {
                         if source == .favorites {

@@ -33,6 +33,10 @@ struct LibraryView: View {
     @State private var newPlaylistName = ""
     @AppStorage("box.sort") private var sort: TrackSort = .title
     @State private var editMode: EditMode = .inactive
+    /// Toplu seçim (Şarkılar bölümü)
+    @State private var bulkMode = false
+    @State private var picked: Set<String> = []
+    @State private var confirmBulkDelete = false
 
     private func deleteWithUndo(_ id: UUID) {
         guard let removed = library.deletePlaylistUndoable(id) else { return }
@@ -88,7 +92,7 @@ struct LibraryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.editMode, $editMode)
-            .onChange(of: section) { _ in editMode = .inactive }
+            .onChange(of: section) { _ in editMode = .inactive; endBulk() }
             .boxScreenBackground()
             .navigationTitle(L("Kitaplık"))
             .searchable(text: $searchText, prompt: L("Kitaplığında ara"))
@@ -96,12 +100,29 @@ struct LibraryView: View {
                 if !text.isEmpty && section == .playlists { section = .songs }
             }
             .refreshable { await library.refresh() }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if bulkMode && section == .songs { bulkBar }
+            }
+            .boxConfirm(
+                L("{0} şarkı silinsin mi?", picked.count),
+                isPresented: $confirmBulkDelete,
+                icon: "trash",
+                message: L("Dosyalar cihazından silinir. Bu işlem geri alınamaz."),
+                confirmTitle: L("Sil")
+            ) { deletePicked() }
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     if library.isScanning {
                         ProgressView().tint(.white)
                     }
                     if section == .songs {
+                        if !library.tracks.isEmpty {
+                            Button(bulkMode ? L("Bitti") : L("Seç")) {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    if bulkMode { endBulk() } else { bulkMode = true }
+                                }
+                            }
+                        }
                         Menu {
                             Picker(L("Sırala"), selection: $sort) {
                                 ForEach(TrackSort.allCases) { option in
@@ -174,6 +195,53 @@ struct LibraryView: View {
                 Button(L("Vazgeç"), role: .cancel) { newPlaylistName = "" }
             }
         }
+    }
+
+    // MARK: Toplu seçim
+
+    private func endBulk() {
+        bulkMode = false
+        picked = []
+    }
+
+    private var pickedTracks: [Track] {
+        library.tracks.filter { picked.contains($0.id) }
+    }
+
+    private var bulkBar: some View {
+        let visible = sortedTracks
+        return BulkBar(count: picked.count, total: visible.count) {
+            if picked.count == visible.count { picked = [] } else { picked = Set(visible.map(\.id)) }
+            Haptics.tap()
+        } actions: {
+            BulkAddToPlaylist(tracks: pickedTracks) { endBulk() }
+            Button {
+                let list = pickedTracks
+                for item in list { player.addToQueue(item) }
+                Haptics.success()
+                router.show(L("{0} şarkı sıraya eklendi", list.count), icon: "text.append")
+                endBulk()
+            } label: {
+                BulkActionLabel(title: L("Sıraya ekle"), icon: "text.append")
+            }
+            Button { confirmBulkDelete = true } label: {
+                BulkActionLabel(title: L("Sil"), icon: "trash", destructive: true)
+            }
+        }
+    }
+
+    private func deletePicked() {
+        let list = pickedTracks
+        guard !list.isEmpty else { return }
+        if let current = player.current, picked.contains(current.id) { player.next() }
+        for track in list {
+            try? FileService.delete(track.url)
+            library.pathDeleted(track.url)
+        }
+        Haptics.soft()
+        router.show(L("{0} şarkı silindi", list.count), icon: "trash.fill")
+        endBulk()
+        Task { await library.refresh() }
     }
 
     // MARK: Bölümler
@@ -400,12 +468,18 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
 
             ForEach(tracks) { track in
-                TrackRow(track: track)
+                SelectableRow(selecting: bulkMode, isSelected: picked.contains(track.id)) {
+                    TrackRow(track: track)
+                }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 8))
                     .onTapGesture {
-                        player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
+                        if bulkMode {
+                            if picked.contains(track.id) { picked.remove(track.id) } else { picked.insert(track.id); Haptics.tap() }
+                        } else {
+                            player.play(tracks, startAt: tracks.firstIndex(of: track) ?? 0)
+                        }
                     }
                     .swipeActions(edge: .leading) {
                         Button { player.playNext(track) } label: { Label(L("Sıradaki"), systemImage: "text.line.first.and.arrowtriangle.forward") }
